@@ -58,17 +58,23 @@ export class HDFCBankParser extends BankParser {
   }
 
   protected isTransactionMessage(message: string): boolean {
-    const lowerMessage = message.toLowerCase();
-    if (lowerMessage.includes('e-mandate') && !lowerMessage.includes('debited')) return false;
-    if (lowerMessage.includes('will be deducted')) return false;
-    if (lowerMessage.includes('bill') && lowerMessage.includes('has been generated')) return false;
-    if (lowerMessage.includes('payment request') || lowerMessage.includes('collect request')) return false;
-    if (
-      lowerMessage.includes('payment') &&
-      lowerMessage.includes('has been received') &&
-      lowerMessage.includes('towards hdfc bank credit card')
-    ) return false;
-    return super.isTransactionMessage(message);
+    const lower = message.toLowerCase();
+    if (lower.includes('e-mandate') && !lower.includes('debited')) return false;
+    if (lower.includes('will be deducted') || lower.includes('will be debited')) return false;
+    if (lower.includes('bill alert') || (lower.includes('bill') && lower.includes('is due on'))) return false;
+    if (lower.includes('bill') && lower.includes('has been generated')) return false;
+    if (lower.includes('has requested') || lower.includes('payment request') || lower.includes('collect request') || lower.includes('ignore if already paid')) return false;
+    if (lower.includes('received towards your credit card')) return false;
+    if (lower.includes('payment') && lower.includes('credited to your card')) return false;
+    if (lower.includes('otp') || lower.includes('one time password') || lower.includes('verification code')) return false;
+    if (lower.includes('offer') || lower.includes('discount') || lower.includes('cashback offer') || lower.includes('win ')) return false;
+
+    const hdfcKeywords = [
+      'debited', 'credited', 'withdrawn', 'deposited',
+      'spent', 'received', 'transferred', 'paid',
+      'sent', 'deducted', 'txn',
+    ];
+    return hdfcKeywords.some(kw => lower.includes(kw));
   }
 
   isBalanceUpdateNotification(message: string): boolean {
@@ -118,14 +124,37 @@ export class HDFCBankParser extends BankParser {
 
   protected extractTransactionType(message: string): TransactionType | null {
     const lower = message.toLowerCase();
+    if (lower.includes('sent') && lower.includes('from hdfc')) return 'EXPENSE';
+    if (lower.includes('spent') && lower.includes('from hdfc bank card')) return 'EXPENSE';
+    if (lower.includes('payment') && lower.includes('credit card')) return 'EXPENSE';
+    if (lower.includes('towards') && lower.includes('credit card')) return 'EXPENSE';
     if (lower.includes('debited')) return 'EXPENSE';
-    if (lower.includes('spent')) return 'EXPENSE';
-    if (lower.includes('credited')) return 'INCOME';
+    if (lower.includes('withdrawn') && !lower.includes('block cc')) return 'EXPENSE';
+    if (lower.includes('spent') && !lower.includes('card')) return 'EXPENSE';
+    if (lower.includes('charged')) return 'EXPENSE';
     if (lower.includes('avl limit') || lower.includes('avl lmt')) return 'CREDIT';
+    if (lower.includes('credited')) return 'INCOME';
+    if (lower.includes('received')) return 'INCOME';
     return super.extractTransactionType(message);
   }
 
   protected extractMerchant(message: string, sender: string): string | null {
+    // "Sent Rs.X From HDFC Bank A/C *1234 To <payee> On DD/MM/YY"
+    if (/Sent Rs/i.test(message) && /From HDFC Bank/i.test(message)) {
+      const sentToMatch = /\bTo\s+(.+?)\s+On\s+\d{1,2}[/-]\d{1,2}[/-]\d{2,4}/i.exec(message);
+      if (sentToMatch?.[1]) {
+        const payee = (sentToMatch[1] ?? '').trim();
+        const merchant = payee.includes('@')
+          ? (() => {
+              const vpaName = payee.split('@')[0]?.trim() ?? '';
+              return /[a-zA-Z]/.test(vpaName) ? this.cleanMerchantName(vpaName) : 'UPI Payee';
+            })()
+          : this.cleanMerchantName(payee);
+        if (this.isValidMerchantName(merchant)) return merchant;
+        if (payee.includes('@')) return 'UPI Payee';
+      }
+    }
+
     const salaryMatch = CompiledPatterns.HDFC.SALARY_PATTERN.exec(message);
     if (salaryMatch) {
       const m = this.cleanMerchantName((salaryMatch[1] ?? '').trim());
