@@ -1,111 +1,152 @@
+// Exact 1:1 port of ICICIBankParser.kt from Cashiro parser-core
 import { BankParser } from '../base-parser.js';
-import type { TransactionType } from '../types.js';
-import { parseAmount, cleanMerchant } from '../normalize.js';
-
-const SENDERS = new Set(['ICICIB', 'ICICI', 'ICICIBK', 'IMOBILE', 'ICICIPU', 'ICICIN']);
-const DLT = /^[A-Z]{2}-ICICIB/;
-
-const AUTOPAY_MAP: Record<string, string> = {
-  'google play': 'Google Play Store',
-  netflix: 'Netflix',
-  spotify: 'Spotify',
-  'amazon prime': 'Amazon Prime',
-  hotstar: 'Disney+ Hotstar',
-  youtube: 'YouTube Premium',
-  jiocinema: 'JioCinema',
-  zee5: 'Zee5',
-  swiggy: 'Swiggy',
-  zomato: 'Zomato',
-};
+import type { ParsedTransaction, TransactionType } from '../types.js';
 
 export class ICICIBankParser extends BankParser {
-  getBankName() { return 'ICICI Bank'; }
+  getBankName(): string {
+    return 'ICICI Bank';
+  }
 
   canHandle(sender: string): boolean {
     const u = sender.toUpperCase();
-    return SENDERS.has(u) || DLT.test(u);
+    return (
+      u.includes('ICICI') ||
+      u.includes('ICICIB') ||
+      /^[A-Z]{2}-ICICIB-S$/.test(u) ||
+      /^[A-Z]{2}-ICICI-S$/.test(u)
+    );
   }
 
-  protected extractAmount(body: string): number | null {
-    const patterns: RegExp[] = [
-      /([A-Z]{3})\s*([\d,]+(?:\.\d{1,2})?)\s*spent/i,
-      /(?:Rs\.?|₹|INR)\s*([\d,]+(?:\.\d{1,2})?)\s*spent/i,
-      /debited\s+with\s+(?:Rs\.?|₹|INR)\s*([\d,]+(?:\.\d{1,2})?)/i,
-      /debited\s+for\s+(?:Rs\.?|₹|INR)\s*([\d,]+(?:\.\d{1,2})?)/i,
-      /credited\s+with\s+(?:Rs\.?|₹|INR)\s*([\d,]+(?:\.\d{1,2})?)/i,
-      /credited:\s*(?:Rs\.?|₹|INR)\s*([\d,]+(?:\.\d{1,2})?)/i,
-    ];
-    for (const p of patterns) {
-      const m = body.match(p);
-      if (m) {
-        const raw = m[2] ?? m[1];
-        if (raw) {
-          const amount = parseAmount(raw);
-          if (amount !== null) return amount;
-        }
-      }
-    }
-    return super.extractAmount(body);
+  override parse(smsBody: string, sender: string, timestamp: number): ParsedTransaction | null {
+    if (!this.isTransactionMessage(smsBody)) return null;
+    const amount = this.extractAmount(smsBody);
+    if (amount === null) return null;
+    const type = this.extractTransactionType(smsBody);
+    if (type === null) return null;
+
+    const currency = this.extractCurrencyFromMessage(smsBody) ?? 'INR';
+    const availableLimit = type === 'CREDIT' ? this.extractAvailableLimit(smsBody) : null;
+
+    return {
+      amount,
+      type,
+      merchant: this.extractMerchant(smsBody, sender),
+      reference: this.extractReference(smsBody),
+      accountLast4: this.extractAccountLast4(smsBody),
+      balance: this.extractBalance(smsBody),
+      creditLimit: availableLimit,
+      smsBody,
+      sender,
+      timestamp,
+      bankName: this.getBankName(),
+      transactionHash: null,
+      isFromCard: this.detectIsCard(smsBody),
+      currency,
+      fromAccount: null,
+      toAccount: null,
+    };
   }
 
-  protected extractTransactionType(body: string): TransactionType | null {
-    const lower = body.toLowerCase();
-
-    if (lower.includes('info by cash') || lower.includes('cash deposit')) return 'INCOME';
-
-    if (
-      (lower.includes('icici bank credit card') || (lower.includes('icici bank card') && lower.includes('spent'))) &&
-      (lower.includes('spent') || lower.includes('debited'))
-    ) {
-      return 'EXPENSE';
+  private extractCurrencyFromMessage(message: string): string | null {
+    const MONTH_ABBRS = new Set(['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']);
+    const m = /([A-Z]{3})\s+[0-9,]+(?:\.\d{2})?\s+spent/i.exec(message);
+    if (m) {
+      const currency = (m[1] ?? '').toUpperCase();
+      if (currency.length === 3 && !MONTH_ABBRS.has(currency)) return currency;
     }
-
-    return super.extractTransactionType(body);
+    return null;
   }
 
-  protected extractMerchant(body: string, sender: string): string | null {
-    const lower = body.toLowerCase();
+  protected override extractMerchant(message: string, sender: string): string | null {
+    const salaryMatch = /INF[*\s]([^*\n]+?)\s+SAL/i.exec(message);
+    if (salaryMatch?.[1]) return `Salary - ${salaryMatch[1].trim()}`;
 
-    if (lower.includes('info by cash')) return 'Cash Deposit';
-
-    if (lower.includes('autopay')) {
-      for (const [key, name] of Object.entries(AUTOPAY_MAP)) {
-        if (lower.includes(key)) return name;
-      }
-      return 'AutoPay';
+    const cardMerchantMatch = /at\s+([^.\n]+?)\s+on\s+\d{2}-[A-Za-z]{3}-\d{4}/i.exec(message);
+    if (cardMerchantMatch?.[1]) {
+      const m = this.cleanMerchantName(cardMerchantMatch[1].trim());
+      if (this.isValidMerchantName(m)) return m;
     }
 
-    // "to NAME. UPI" or "from NAME. UPI"
-    const toM = body.match(/\bto\s+([A-Za-z0-9][^.\n@]{2,40}?)\.\s*UPI/);
-    if (toM?.[1]) return cleanMerchant(toM[1]);
+    const achMatch = /(?:ACH|NACH)\s+(?:CR|DB)\s+([^.\n]+?)(?:\s+on|\s+Ref|$)/i.exec(message);
+    if (achMatch?.[1]) {
+      const m = this.cleanMerchantName(achMatch[1].trim());
+      if (this.isValidMerchantName(m)) return m;
+    }
 
-    const fromM = body.match(/\bfrom\s+([A-Za-z0-9][^.\n@]{2,40}?)\.\s*UPI/);
-    if (fromM?.[1]) return cleanMerchant(fromM[1]);
+    const towardsMatch = /towards\s+([^.\n]+?)(?:\s+Ref|\s+on|$)/i.exec(message);
+    if (towardsMatch?.[1]) {
+      const m = this.cleanMerchantName(towardsMatch[1].trim());
+      if (this.isValidMerchantName(m)) return m;
+    }
 
-    // "; NAME credited. UPI"
-    const creditM = body.match(/;\s*([A-Za-z0-9][^.\n]{2,40}?)\s+credited\.\s*UPI/);
-    if (creditM?.[1]) return cleanMerchant(creditM[1]);
+    const fromUpiMatch = /from\s+([^@\s]+)@/i.exec(message);
+    if (fromUpiMatch?.[1]) {
+      const m = this.cleanMerchantName(fromUpiMatch[1].trim());
+      if (this.isValidMerchantName(m)) return m;
+    }
 
-    // NEFT/IMPS/RTGS
-    const neftM = body.match(/(?:NEFT|IMPS|RTGS).*?(?:from|by|to)\s+([A-Za-z0-9][^.\n]{2,40}?)(?:\s+Ref|\.|$)/i);
-    if (neftM?.[1]) return cleanMerchant(neftM[1]);
+    const creditedUpiMatch = /credited\.\s+UPI:[0-9]+\.\s+([^@\n]+?)(?:-[^@\n]+)?@/i.exec(message);
+    if (creditedUpiMatch?.[1]) {
+      const m = this.cleanMerchantName(creditedUpiMatch[1].trim());
+      if (this.isValidMerchantName(m)) return m;
+    }
 
-    return super.extractMerchant(body, sender);
+    if (message.toLowerCase().includes('cash deposit')) return 'Cash Deposit';
+
+    const autopayMatch = /(?:autopay|mandate)\s+(?:from|for)\s+([^.\n]+?)(?:\s+Ref|$)/i.exec(message);
+    if (autopayMatch?.[1]) {
+      const m = this.cleanMerchantName(autopayMatch[1].trim());
+      if (this.isValidMerchantName(m)) return m;
+    }
+
+    return super.extractMerchant(message, sender);
   }
 
-  protected extractBalance(body: string): number | null {
-    const patterns = [
-      /Available\s+Balance\s+is\s+(?:Rs\.?|₹|INR)\s*([\d,]+(?:\.\d{1,2})?)/i,
-      /Avl\s+Bal\s+(?:Rs\.?|₹|INR)\s*([\d,]+(?:\.\d{1,2})?)/i,
-      /Updated\s+Bal[:\s]+(?:Rs\.?|₹|INR)\s*([\d,]+(?:\.\d{1,2})?)/i,
-    ];
-    for (const p of patterns) {
-      const m = body.match(p);
-      if (m?.[1]) {
-        const bal = parseAmount(m[1]);
-        if (bal !== null) return bal;
-      }
+  protected override extractAccountLast4(message: string): string | null {
+    const cardMatch = /ICICI\s+Bank\s+Card\s+(?:XX)?(\d{4})/i.exec(message);
+    if (cardMatch?.[1]) return cardMatch[1];
+
+    const accountMatch = /ICICI\s+Bank\s+(?:A\/c|Account)\s+(?:XX)?(\d+)/i.exec(message);
+    if (accountMatch?.[1]) {
+      const digits = accountMatch[1].replace(/\D/g, '');
+      return digits.length >= 4 ? digits.slice(-4) : digits;
     }
-    return super.extractBalance(body);
+
+    const acctMatch = /Acct\s+(?:XX)?(\d+)/i.exec(message);
+    if (acctMatch?.[1]) {
+      const digits = acctMatch[1].replace(/\D/g, '');
+      return digits.length >= 4 ? digits.slice(-4) : digits;
+    }
+
+    return super.extractAccountLast4(message);
+  }
+
+  protected override extractReference(message: string): string | null {
+    const rrnMatch = /RRN[:\s]+([0-9]+)/i.exec(message);
+    if (rrnMatch?.[1]) return rrnMatch[1];
+
+    const upiColonMatch = /UPI:\s*([0-9]+)/i.exec(message);
+    if (upiColonMatch?.[1]) return upiColonMatch[1];
+
+    const txnRefMatch = /transaction\s+reference\s+no\.?\s*([A-Z0-9]+)/i.exec(message);
+    if (txnRefMatch?.[1]) return txnRefMatch[1];
+
+    return super.extractReference(message);
+  }
+
+  protected override isTransactionMessage(message: string): boolean {
+    const lower = message.toLowerCase();
+    if (lower.includes('is due') || lower.includes('minimum amount due')) return false;
+    if (lower.includes('your icici bank credit card') && lower.includes('statement')) return false;
+    return super.isTransactionMessage(message);
+  }
+
+  protected override extractTransactionType(message: string): TransactionType | null {
+    const lower = message.toLowerCase();
+    if (lower.includes('debited') || lower.includes('debit')) return 'EXPENSE';
+    if (lower.includes('spent')) return 'EXPENSE';
+    if (lower.includes('credited') || lower.includes('credit')) return 'INCOME';
+    if (lower.includes('deposited')) return 'INCOME';
+    return super.extractTransactionType(message);
   }
 }

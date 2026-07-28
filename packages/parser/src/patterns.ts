@@ -1,34 +1,99 @@
-export const P = {
+// Exact 1:1 port of CompiledPatterns.kt from Cashiro parser-core
+
+export const CompiledPatterns = {
   Amount: {
-    RS_AMOUNT:       /(?:Rs\.?|₹)\s*([\d,]+(?:\.\d{1,2})?)/i,
-    INR_AMOUNT:      /INR\s*([\d,]+(?:\.\d{1,2})?)/i,
-    AMOUNT_PREFIX:   /[Aa]mount\s*(?:of\s*)?(?:Rs\.?|₹|INR)\s*([\d,]+(?:\.\d{1,2})?)/i,
-    AMOUNT_SUFFIX:   /([\d,]+(?:\.\d{1,2})?)\s*(?:Rs\.?|INR|₹)/i,
-    CURRENCY_AMOUNT: /([A-Z]{3})\s*([\d,]+(?:\.\d{1,2})?)\s*(?:spent|debited|credited)/i,
+    RS_PATTERN: /Rs\.?\s*([0-9,]+(?:\.\d{2})?)/i,
+    INR_PATTERN: /INR\s*([0-9,]+(?:\.\d{2})?)/i,
+    RUPEE_SYMBOL_PATTERN: /₹\s*([0-9,]+(?:\.\d{2})?)/,
+    get ALL_PATTERNS() {
+      return [this.RS_PATTERN, this.INR_PATTERN, this.RUPEE_SYMBOL_PATTERN];
+    },
   },
-  Balance: {
-    AVL_BAL:     /(?:Avl\.?\s*(?:Bal\.?|Balance)|Available\s*Bal(?:ance)?)[:\s]+(?:(?:Rs\.?|₹|INR)\s*)?([\d,]+(?:\.\d{1,2})?)/i,
-    UPDATED_BAL: /(?:Updated\s*Bal(?:ance)?|Remaining\s*Balance)[:\s]+(?:(?:Rs\.?|₹|INR)\s*)?([\d,]+(?:\.\d{1,2})?)/i,
-    BAL_IS:      /[Bb]alance\s+(?:is|:)\s*(?:(?:Rs\.?|₹|INR)\s*)?([\d,]+(?:\.\d{1,2})?)/,
-    BAL_COLON:   /\bBal[:\s]+(?:(?:Rs\.?|₹|INR)\s*)?([\d,]+(?:\.\d{1,2})?)/,
-  },
-  Merchant: {
-    TO:   /\bto\s+([A-Za-z0-9][^.\n,@]{2,50}?)(?:\s+(?:on|at|Ref|UPI|via|for|using)\b|\.|,|$)/i,
-    FROM: /\bfrom\s+([A-Za-z0-9][^.\n,@]{2,50}?)(?:\s+(?:on|at|Ref|UPI|via)\b|\.|,|$)/i,
-    AT:   /\bat\s+([A-Za-z0-9][^.\n,@]{2,50}?)(?:\s+(?:on|Ref)\b|\.|,|$)/i,
-    FOR:  /\bfor\s+([A-Za-z0-9][^.\n,@]{2,40}?)(?:\s+(?:on|at|Ref|from)\b|\.|,|$)/i,
-  },
-  Account: {
-    AC:      /[Aa][\/.]?[Cc](?:count\s*(?:[Nn]o\.?)?)?[\s.]*[Xx*]{0,4}(\d{4})\b/,
-    CARD:    /[Cc]ard[\s\w]*?[Xx*]{2,}(\d{4})\b/,
-    ENDING:  /(?:ending|no\.?)\s*[Xx*]*(\d{4})\b/i,
-    MASKED:  /[Xx*]{4,}(\d{4})\b/,
-  },
+
   Reference: {
-    REF:  /(?:[Rr]ef(?:erence)?\.?\s*(?:[Nn]o?\.?)?|UPI\s*[Rr]ef\.?\s*[Nn]o?\.?|Txn\s*(?:ID|[Nn]o)\.?)[:\s]*([A-Za-z0-9]{6,25})/,
-    IMPS: /IMPS\s*[Rr]ef\.?\s*[Nn]o?\.?[:\s]*(\d{6,15})/i,
+    GENERIC_REF: /(?:Ref|Reference|Txn|Transaction)(?:\s+No)?[:\s]+([A-Z0-9]+)/i,
+    UPI_REF: /UPI[:\s]+([0-9]+)/i,
+    REF_NUMBER: /Reference\s+Number[:\s]+([A-Z0-9]+)/i,
+    get ALL_PATTERNS() {
+      return [this.GENERIC_REF, this.UPI_REF, this.REF_NUMBER];
+    },
   },
-  UPI: {
-    VPA: /([a-zA-Z0-9._-]{2,}@[a-zA-Z]{2,})/,
+
+  Account: {
+    AC_WITH_MASK: /(?:A\/c|Account|Acct)(?:\s+No)?\.?\s+(?:[Xx*]*\**)?(\d+)/i,
+    CARD_WITH_MASK: /Card\s+(?:[Xx*]*\**)?(\d+)/i,
+    GENERIC_ACCOUNT: /(?:A\/c|Account).*?(\d+)(?:\s|$)/i,
+    get ALL_PATTERNS() {
+      return [this.AC_WITH_MASK, this.CARD_WITH_MASK, this.GENERIC_ACCOUNT];
+    },
   },
-};
+
+  Balance: {
+    AVL_BAL_RS: /(?:Bal|Balance|Avl Bal|Available Balance)[:\s]+Rs\.?\s*([0-9,]+(?:\.\d{2})?)/i,
+    AVL_BAL_INR: /(?:Bal|Balance|Avl Bal|Available Balance)[:\s]+INR\s*([0-9,]+(?:\.\d{2})?)/i,
+    AVL_BAL_RUPEE: /(?:Bal|Balance|Avl Bal|Available Balance)[:\s]+₹\s*([0-9,]+(?:\.\d{2})?)/i,
+    AVL_BAL_NO_CURRENCY: /(?:Bal|Balance|Avl Bal|Available Balance)[:\s]+([0-9,]+(?:\.\d{2})?)/i,
+    UPDATED_BAL_RS: /(?:Updated Balance|Remaining Balance)[:\s]+Rs\.?\s*([0-9,]+(?:\.\d{2})?)/i,
+    UPDATED_BAL_INR: /(?:Updated Balance|Remaining Balance)[:\s]+INR\s*([0-9,]+(?:\.\d{2})?)/i,
+    get ALL_PATTERNS() {
+      return [
+        this.AVL_BAL_RS,
+        this.AVL_BAL_INR,
+        this.AVL_BAL_RUPEE,
+        this.AVL_BAL_NO_CURRENCY,
+        this.UPDATED_BAL_RS,
+        this.UPDATED_BAL_INR,
+      ];
+    },
+  },
+
+  Merchant: {
+    TO_PATTERN: /to\s+([^.\n]+?)(?:\s+on|\s+at|\s+Ref|\s+UPI)/i,
+    FROM_PATTERN: /from\s+([^.\n]+?)(?:\s+on|\s+at|\s+Ref|\s+UPI)/i,
+    AT_PATTERN: /at\s+([^.\n]+?)(?:\s+on|\s+Ref)/i,
+    FOR_PATTERN: /for\s+([^.\n]+?)(?:\s+on|\s+at|\s+Ref)/i,
+    get ALL_PATTERNS() {
+      return [this.TO_PATTERN, this.FROM_PATTERN, this.AT_PATTERN, this.FOR_PATTERN];
+    },
+  },
+
+  HDFC: {
+    DLT_PATTERNS: [
+      /^[A-Z]{2}-HDFCBK.*$/,
+      /^[A-Z]{2}-HDFC.*$/,
+      /^HDFC-[A-Z]+$/,
+      /^[A-Z]{2}-HDFCB.*$/,
+    ],
+    SALARY_PATTERN: /for\s+[^-]+-[^-]+-[^-]+\s+[A-Z]+\s+SALARY-([^.\n]+)/i,
+    SIMPLE_SALARY_PATTERN: /SALARY[- ]([^.\n]+?)(?:\s+Info|$)/i,
+    INFO_PATTERN: /Info:\s*(?:UPI\/)?([^/.\n]+?)(?:\/|$)/i,
+    VPA_WITH_NAME: /VPA\s+[^@\s]+@[^\s]+\s*\(([^)]+)\)/i,
+    VPA_PATTERN: /VPA\s+([^@\s]+)@/i,
+    SPENT_PATTERN: /at\s+([^.\n]+?)\s+on\s+\d{2}/i,
+    DEBIT_FOR_PATTERN: /debited\s+for\s+([^.\n]+?)\s+on\s+\d{2}/i,
+    MANDATE_PATTERN: /To\s+([^\n]+?)\s*(?:\n|\d{2}\/\d{2})/i,
+    REF_SIMPLE: /Ref\s+(\d{9,12})/i,
+    UPI_REF_NO: /UPI\s+Ref\s+No\s+(\d{12})/i,
+    REF_NO: /Ref\s+No\.?\s+([A-Z0-9]+)/i,
+    REF_END: /(?:Ref|Reference)[:.\\s]+([A-Z0-9]{6,})(?:\s*$|\s*Not\s+You)/i,
+    ACCOUNT_DEPOSITED: /deposited\s+in\s+(?:HDFC\s+Bank\s+)?A\/c\s+(?:XX+)?(\d+)/i,
+    ACCOUNT_FROM: /from\s+(?:HDFC\s+Bank\s+)?A\/c\s+(?:XX+)?(\d+)/i,
+    ACCOUNT_SIMPLE: /HDFC\s+Bank\s+A\/c\s+(\d+)/i,
+    ACCOUNT_GENERIC: /A\/c\s+(?:XX+)?(\d+)/i,
+    AMOUNT_WILL_DEDUCT: /Rs\.?\s*([0-9,]+(?:\.\d{2})?)\s+will\s+be\s+deducted/i,
+    DEDUCTION_DATE: /deducted\s+on\s+(\d{2}\/\d{2}\/\d{2}),?\s*\d{2}:\d{2}:\d{2}/i,
+    MANDATE_MERCHANT: /For\s+([^\n]+?)\s+mandate/i,
+    UMN_PATTERN: /UMN\s+([a-zA-Z0-9@]+)/i,
+  },
+
+  Cleaning: {
+    TRAILING_PARENTHESES: /\s*\(.*?\)\s*$/,
+    REF_NUMBER_SUFFIX: /\s+Ref\s+No.*/i,
+    DATE_SUFFIX: /\s+on\s+\d{2}.*/,
+    UPI_SUFFIX: /\s+UPI.*/i,
+    TIME_SUFFIX: /\s+at\s+\d{2}:\d{2}.*/,
+    TRAILING_DASH: /\s*-\s*$/,
+    PVT_LTD: /(\s+PVT\.?\s*LTD\.?|\s+PRIVATE\s+LIMITED)$/i,
+    LTD: /(\s+LTD\.?|\s+LIMITED)$/i,
+  },
+} as const;

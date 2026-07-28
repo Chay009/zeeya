@@ -1,64 +1,12 @@
-const OTP_KEYWORDS = [
-  'otp',
-  'one time password',
-  'one-time password',
-  'verification code',
-  'is your password',
-  'do not share',
-  'never share',
-  'is the otp',
-  'is your otp',
-  'kyc',
-  'update your kyc',
-  'complete your kyc',
-  'promo',
-  'special offer',
-  'discount',
-  'cashback offer',
-  'get cashback',
-  'insurance premium',
-  'pre-approved loan',
-  'loan offer',
-  'min amount due',
-  'minimum amount due',
-  'minimum due',
-  'in arrears',
-  'is overdue',
-  'ignore if paid',
-  'pls pay min',
-  'payment request from',
-  'collect request',
-  'e-statement',
-  'your statement is',
-  'reward points',
-  'reward point',
-  'we are pleased',
-] as const;
-
-const TRANSACTION_KEYWORDS = [
-  'debited',
-  'credited',
-  'withdrawn',
-  'deposited',
-  'spent',
-  'received',
-  'payment of',
-  'transaction of',
-  'txn of',
-  'purchase of',
-  'sent rs',
-  'sent inr',
-  'sent ₹',
-  'transferred',
-] as const;
-
-export function isTransactionMessage(body: string): boolean {
-  const lower = body.toLowerCase();
-  for (const kw of OTP_KEYWORDS) {
-    if (lower.includes(kw)) return false;
-  }
-  for (const kw of TRANSACTION_KEYWORDS) {
-    if (lower.includes(kw)) return true;
-  }
-  return false;
-}
+export const SmsFilter = {
+  isTransactionMessage(message: string): boolean {
+    const lowerMessage = message.toLowerCase();
+    if (lowerMessage.includes('otp') || lowerMessage.includes('one time password') || lowerMessage.includes('verification code')) return false;
+    if (lowerMessage.includes('offer') || lowerMessage.includes('discount') || lowerMessage.includes('cashback offer') || lowerMessage.includes('win ')) return false;
+    if (lowerMessage.includes('has requested') || lowerMessage.includes('payment request') || lowerMessage.includes('collect request') || lowerMessage.includes('requesting payment') || lowerMessage.includes('requests rs') || lowerMessage.includes('ignore if already paid')) return false;
+    if (lowerMessage.includes('have received payment')) return false;
+    if (lowerMessage.includes('is due') || lowerMessage.includes('min amount due') || lowerMessage.includes('minimum amount due') || lowerMessage.includes('in arrears') || lowerMessage.includes('is overdue') || lowerMessage.includes('ignore if paid') || (lowerMessage.includes('pls pay') && lowerMessage.includes('min of'))) return false;
+    const transactionKeywords = ['debited', 'credited', 'withdrawn', 'withdrawal', 'withdrawing', 'deposited', 'spent', 'received', 'transferred', 'paid', 'credit', 'debit'];
+    return transactionKeywords.some(kw => lowerMessage.includes(kw));
+  },
+};

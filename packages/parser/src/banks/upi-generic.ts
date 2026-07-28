@@ -1,35 +1,30 @@
+// Generic UPI/wallet parser (no direct Kotlin equivalent — catches payment app senders)
 import { BankParser } from '../base-parser.js';
-import { cleanMerchant } from '../normalize.js';
 
-// Matches UPI app senders + payment wallets
-const SENDER_SUBSTRINGS = ['PAYTM', 'GPAY', 'PHONEPE', 'PHONPE', 'BHIMUPI', 'BHIM', 'AIRTLP', 'JIOMNY', 'AMAZONP', 'CRED'];
+const SENDER_SUBSTRINGS = ['PAYTM','GPAY','PHONEPE','PHONPE','BHIMUPI','BHIM','AIRTLP','JIOMNY','AMAZONP','CRED'];
 const UPI_DLT = /^[A-Z]{2}-(?:PAYTM|GPAY|PHONEPE|BHIM|JIOM)/;
 
 export class GenericUPIParser extends BankParser {
-  getBankName() { return 'UPI'; }
+  getBankName(): string {
+    return 'UPI';
+  }
 
   canHandle(sender: string): boolean {
     const u = sender.toUpperCase();
     if (UPI_DLT.test(u)) return true;
-    for (const sub of SENDER_SUBSTRINGS) {
-      if (u.includes(sub)) return true;
-    }
-    return false;
+    return SENDER_SUBSTRINGS.some(s => u.includes(s));
   }
 
-  protected extractMerchant(body: string, sender: string): string | null {
-    // "paid to NAME"
-    const paidM = body.match(/[Pp]aid\s+to\s+([A-Za-z0-9][^.\n@]{2,40}?)(?:\s+via|\s+using|\s+Ref|\.|$)/);
-    if (paidM?.[1]) return cleanMerchant(paidM[1]);
+  protected override extractMerchant(message: string, sender: string): string | null {
+    const paidM = /[Pp]aid\s+to\s+([A-Za-z0-9][^.\n@]{2,40}?)(?:\s+via|\s+using|\s+Ref|\.|$)/.exec(message);
+    if (paidM?.[1]) return this.cleanMerchantName(paidM[1]);
 
-    // "sent to NAME"
-    const sentM = body.match(/[Ss]ent\s+to\s+([A-Za-z0-9][^.\n@]{2,40}?)(?:\s+via|\s+Ref|\.|$)/);
-    if (sentM?.[1]) return cleanMerchant(sentM[1]);
+    const sentM = /[Ss]ent\s+to\s+([A-Za-z0-9][^.\n@]{2,40}?)(?:\s+via|\s+Ref|\.|$)/.exec(message);
+    if (sentM?.[1]) return this.cleanMerchantName(sentM[1]);
 
-    // "received from NAME"
-    const recvM = body.match(/[Rr]eceived\s+from\s+([A-Za-z0-9][^.\n@]{2,40}?)(?:\s+via|\s+Ref|\.|$)/);
-    if (recvM?.[1]) return cleanMerchant(recvM[1]);
+    const recvM = /[Rr]eceived\s+from\s+([A-Za-z0-9][^.\n@]{2,40}?)(?:\s+via|\s+Ref|\.|$)/.exec(message);
+    if (recvM?.[1]) return this.cleanMerchantName(recvM[1]);
 
-    return super.extractMerchant(body, sender);
+    return super.extractMerchant(message, sender);
   }
 }

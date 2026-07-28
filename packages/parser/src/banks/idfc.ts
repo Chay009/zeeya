@@ -1,53 +1,198 @@
 import { BankParser } from '../base-parser.js';
-import type { TransactionType } from '../types.js';
-import { parseAmount, cleanMerchant } from '../normalize.js';
-
-const SENDERS = new Set(['IDFCFB', 'IDFCBK', 'IDFCB', 'IDFCFIRST', 'IDFCBKTS']);
-const DLT = /^[A-Z]{2}-IDFC/;
+import type { ParsedTransaction, TransactionType } from '../types.js';
 
 export class IDFCFirstBankParser extends BankParser {
-  getBankName() { return 'IDFC First Bank'; }
+  getBankName(): string {
+    return 'IDFC First Bank';
+  }
 
   canHandle(sender: string): boolean {
     const u = sender.toUpperCase();
-    return SENDERS.has(u) || DLT.test(u);
+    return u.includes('IDFCBK') || u.includes('IDFCFB') || u.includes('IDFC');
   }
 
-  protected extractAmount(body: string): number | null {
-    const patterns = [
-      // Foreign currency: "USD 11.80 spent"
-      /[A-Z]{3}\s*([\d,]+(?:\.\d{1,2})?)\s*(?:spent|debited)/i,
-      /(?:Rs\.?|₹|INR)\s*([\d,]+(?:\.\d{1,2})?)\s*(?:debited|credited|spent)/i,
-      /(?:Rs\.?|₹|INR)\s*([\d,]+(?:\.\d{1,2})?)/i,
-    ];
-    for (const p of patterns) {
-      const m = body.match(p);
-      if (m?.[1]) {
-        const amount = parseAmount(m[1]);
-        if (amount !== null) return amount;
+  parse(smsBody: string, sender: string, timestamp: number): ParsedTransaction | null {
+    if (!this.isTransactionMessage(smsBody)) return null;
+    const amount = this.extractAmount(smsBody);
+    if (amount === null) return null;
+    const type = this.extractTransactionType(smsBody);
+    if (type === null) return null;
+    const currency = this.extractCurrencyFromMessage(smsBody) ?? 'INR';
+    const availableLimit = type === 'CREDIT' ? this.extractAvailableLimit(smsBody) : null;
+    return {
+      amount,
+      type,
+      merchant: this.extractMerchant(smsBody, sender),
+      reference: this.extractReference(smsBody),
+      accountLast4: this.extractAccountLast4(smsBody),
+      balance: this.extractBalance(smsBody),
+      creditLimit: availableLimit,
+      smsBody,
+      sender,
+      timestamp,
+      bankName: this.getBankName(),
+      transactionHash: null,
+      isFromCard: this.detectIsCard(smsBody),
+      currency,
+      fromAccount: null,
+      toAccount: null,
+    };
+  }
+
+  private extractCurrencyFromMessage(message: string): string | null {
+    const m = /([A-Z]{3})\s+[0-9,]+(?:\.\d{2})?\s+spent/i.exec(message);
+    if (m) {
+      const currency = m[1]!.toUpperCase();
+      if (!/^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)$/.test(currency)) {
+        return currency;
       }
     }
-    return super.extractAmount(body);
+    return null;
   }
 
-  protected extractTransactionType(body: string): TransactionType | null {
-    const lower = body.toLowerCase();
+  protected extractAmount(message: string): number | null {
+    const patterns = [
+      /[A-Z]{3}\s+([0-9,]+(?:\.\d{2})?)\s+spent/i,
+      /Debit\s+Rs\.?\s*([0-9,]+(?:\.\d{2})?)/i,
+      /debited\s+by\s+Rs\.?\s*([0-9,]+(?:\.\d{2})?)/i,
+      /debited\s+by\s+INR\s*([0-9,]+(?:\.\d{2})?)/i,
+      /credited\s+by\s+Rs\.?\s*([0-9,]+(?:\.\d{2})?)/i,
+      /credited\s+with\s+INR\s*([0-9,]+(?:\.\d{2})?)/i,
+      /credited\s+by\s+INR\s*([0-9,]+(?:\.\d{2})?)/i,
+      /interest\s+of\s+Rs\.?\s*([0-9,]+(?:\.\d{2})?)/i,
+    ];
+    for (const pattern of patterns) {
+      const m = pattern.exec(message);
+      if (m) {
+        const val = parseFloat(m[1]!.replace(/,/g, ''));
+        if (!isNaN(val)) return val;
+      }
+    }
+    return super.extractAmount(message);
+  }
 
-    if (lower.includes('interest') && lower.includes('credited')) return 'INCOME';
-    if (lower.includes('avl credit limit') || lower.includes('available credit limit')) {
-      return lower.includes('debited') || lower.includes('spent') ? 'EXPENSE' : null;
+  protected isTransactionMessage(message: string): boolean {
+    const lower = message.toLowerCase();
+    if (
+      lower.includes('otp') ||
+      lower.includes('one time password') ||
+      lower.includes('verification code')
+    ) return false;
+    if (
+      lower.includes('offer') ||
+      lower.includes('discount') ||
+      lower.includes('cashback offer') ||
+      lower.includes('win ')
+    ) return false;
+    if (
+      lower.includes('has requested') ||
+      lower.includes('payment request') ||
+      lower.includes('collect request') ||
+      lower.includes('requesting payment') ||
+      lower.includes('requests rs') ||
+      lower.includes('ignore if already paid')
+    ) return false;
+    const transactionKeywords = [
+      'debit', 'debited', 'credited', 'withdrawn', 'deposited',
+      'spent', 'received', 'transferred', 'paid', 'interest',
+    ];
+    return transactionKeywords.some(kw => lower.includes(kw));
+  }
+
+  protected extractTransactionType(message: string): TransactionType | null {
+    const lower = message.toLowerCase();
+    if (lower.includes('debit')) return 'EXPENSE';
+    if (lower.includes('debited')) return 'EXPENSE';
+    if (lower.includes('spent')) return 'EXPENSE';
+    if (lower.includes('credited')) return 'INCOME';
+    if (lower.includes('withdrawn') || lower.includes('withdrawal')) return 'EXPENSE';
+    if (lower.includes('deposited') || lower.includes('deposit')) return 'INCOME';
+    if (lower.includes('cash deposit')) return 'INCOME';
+    if (lower.includes('interest') && lower.includes('earned')) return 'INCOME';
+    if (lower.includes('monthly interest')) return 'INCOME';
+    return super.extractTransactionType(message);
+  }
+
+  protected extractMerchant(message: string, sender: string): string | null {
+    const lower = message.toLowerCase();
+
+    if (lower.includes('monthly interest')) return 'Interest Credit';
+
+    if (lower.includes('cash deposit')) {
+      const atmM = /ATM\s+(?:ID\s+)?([A-Z0-9]+)/i.exec(message);
+      if (atmM) return `Cash Deposit - ATM ${atmM[1]!}`;
+      return 'Cash Deposit';
     }
 
-    return super.extractTransactionType(body);
+    if (message.toUpperCase().includes('UPI')) {
+      const upiM = /(?:to|from|at)\s+([a-zA-Z0-9._-]+@[a-zA-Z0-9]+)/i.exec(message);
+      if (upiM) return `UPI - ${upiM[1]!}`;
+      return 'UPI Transaction';
+    }
+
+    if (message.toUpperCase().includes('IMPS')) {
+      const mobileM = /mobile\s+[X]*(\d{3,4})/i.exec(message);
+      if (mobileM) return `IMPS Transfer - Mobile XXX${mobileM[1]!}`;
+      return 'IMPS Transfer';
+    }
+
+    if (message.toUpperCase().includes('NEFT')) return 'NEFT Transfer';
+    if (message.toUpperCase().includes('RTGS')) return 'RTGS Transfer';
+
+    if (message.toUpperCase().includes('ATM')) {
+      const atmIdM = /ATM\s+([A-Z]{2}\d+)/i.exec(message);
+      if (atmIdM) return `ATM - ${atmIdM[1]!}`;
+      return 'ATM Transaction';
+    }
+
+    const toM = /(?:to|at|for)\s+([A-Z][A-Z0-9\s&.-]+?)(?:\s+on|\s+New|\.|,|$)/i.exec(message);
+    if (toM) {
+      const merchant = this.cleanMerchantName(toM[1]!);
+      if (this.isValidMerchantName(merchant)) return merchant;
+    }
+
+    return super.extractMerchant(message, sender);
   }
 
-  protected extractMerchant(body: string, sender: string): string | null {
-    // "spent at MERCHANT"
-    const spentM = body.match(/[Ss]pent\s+at\s+([A-Za-z0-9][^.\n]{2,40}?)(?:\s+on|\s+Ref|\.|$)/);
-    if (spentM?.[1]) return cleanMerchant(spentM[1]);
+  protected extractAccountLast4(message: string): string | null {
+    const cardEndingM = /Credit\s+Card\s+ending\s+[X]*(\d{4})/i.exec(message);
+    if (cardEndingM) return cardEndingM[1]!;
 
-    if (/\bATM\b/.test(body)) return 'ATM Withdrawal';
+    const acM = /A\/C\s+[X]*(\d{3,4})/i.exec(message);
+    if (acM) {
+      const digits = acM[1]!;
+      return digits.length >= 4 ? digits.slice(-4) : digits;
+    }
 
-    return super.extractMerchant(body, sender);
+    return super.extractAccountLast4(message);
+  }
+
+  protected extractBalance(message: string): number | null {
+    const patterns = [
+      /New\s+Bal\s*:\s*(?:INR|Rs\.?)\s*([0-9,]+(?:\.\d{2})?)/i,
+      /New\s+balance\s+is\s+INR\s*([0-9,]+(?:\.\d{2})?)/i,
+      /Updated\s+balance\s+is\s+INR\s*([0-9,]+(?:\.\d{2})?)/i,
+    ];
+    for (const pattern of patterns) {
+      const m = pattern.exec(message);
+      if (m) {
+        const val = parseFloat(m[1]!.replace(/,/g, ''));
+        if (!isNaN(val)) return val;
+      }
+    }
+    return super.extractBalance(message);
+  }
+
+  protected extractReference(message: string): string | null {
+    const impsM = /IMPS\s+Ref\s+no\s+(\d+)/i.exec(message);
+    if (impsM) return impsM[1]!;
+
+    const upiM = /UPI[:/]\s*([0-9]+)/i.exec(message);
+    if (upiM) return upiM[1]!;
+
+    const txnM = /(?:txn|transaction)\s*(?:id|ref|no)[:\s]*([A-Z0-9]+)/i.exec(message);
+    if (txnM) return txnM[1]!;
+
+    return super.extractReference(message);
   }
 }
