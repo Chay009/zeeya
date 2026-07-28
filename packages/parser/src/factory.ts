@@ -17,15 +17,15 @@ import { LazyPayParser } from './banks/lazypay.js';
 import { UtkarshBankParser } from './banks/utkarsh.js';
 import { ICICIBankParser } from './banks/icici.js';
 import { KarnatakaBankParser } from './banks/karnataka.js';
-// TODO: KeralaGraminBankParser
-// TODO: IDBIBankParser
-// TODO: JupiterBankParser
+import { KeralaGraminBankParser } from './banks/kerala-gramin.js';
+import { IDBIBankParser } from './banks/idbi.js';
+import { JupiterBankParser } from './banks/jupiter.js';
 import { AxisBankParser } from './banks/axis.js';
 import { PNBBankParser } from './banks/pnb.js';
 import { CanaraBankParser } from './banks/canara.js';
 import { BankOfBarodaParser } from './banks/bob.js';
-// TODO: BankOfIndiaParser
-// TODO: JioPaymentsBankParser
+import { BankOfIndiaParser } from './banks/bank-of-india.js';
+import { JioPaymentsBankParser } from './banks/jio-payments.js';
 import { KotakBankParser } from './banks/kotak.js';
 import { IDFCFirstBankParser } from './banks/idfc.js';
 import { UnionBankParser } from './banks/union.js';
@@ -94,10 +94,15 @@ const PARSERS: BankParser[] = [
   new UtkarshBankParser(),
   new ICICIBankParser(),
   new KarnatakaBankParser(),
+  new KeralaGraminBankParser(),
+  new IDBIBankParser(),
+  new JupiterBankParser(),
   new AxisBankParser(),
   new PNBBankParser(),
   new CanaraBankParser(),
   new BankOfBarodaParser(),
+  new BankOfIndiaParser(),
+  new JioPaymentsBankParser(),
   new KotakBankParser(),
   new IDFCFirstBankParser(),
   new UnionBankParser(),
