@@ -35,7 +35,7 @@ export class UtkarshBankParser extends BankParser {
     return super.extractAmount(message);
   }
 
-  protected override extractMerchant(message: string, sender: string): string | null {
+  protected override extractMerchant(message: string, _sender: string): string | null {
     const lowerMessage = message.toLowerCase();
 
     // Pattern 1: "for UPI - merchant/reference"

@@ -11,12 +11,12 @@ import { DBSBankParser } from './banks/dbs.js';
 import { IndianBankParser } from './banks/indian-bank.js';
 import { FederalBankParser } from './banks/federal.js';
 import { JuspayParser } from './banks/juspay.js';
-// TODO: SliceParser
-// TODO: CredParser
-// TODO: LazyPayParser
-// TODO: UtkarshBankParser
+import { SliceParser } from './banks/slice.js';
+import { CredParser } from './banks/cred.js';
+import { LazyPayParser } from './banks/lazypay.js';
+import { UtkarshBankParser } from './banks/utkarsh.js';
 import { ICICIBankParser } from './banks/icici.js';
-// TODO: KarnatakaBankParser
+import { KarnatakaBankParser } from './banks/karnataka.js';
 // TODO: KeralaGraminBankParser
 // TODO: IDBIBankParser
 // TODO: JupiterBankParser
@@ -88,7 +88,12 @@ const PARSERS: BankParser[] = [
   new IndianBankParser(),
   new FederalBankParser(),
   new JuspayParser(),
+  new SliceParser(),
+  new CredParser(),
+  new LazyPayParser(),
+  new UtkarshBankParser(),
   new ICICIBankParser(),
+  new KarnatakaBankParser(),
   new AxisBankParser(),
   new PNBBankParser(),
   new CanaraBankParser(),
