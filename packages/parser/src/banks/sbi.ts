@@ -168,6 +168,13 @@ export class SBIBankParser extends BankParser {
       if (this.isValidMerchantName(m)) return m;
     }
 
+    // "on DD/MM/YY -MERCHANT" (reverse ATM withdrawal / suffix merchant)
+    const reverseAtmMatch = /on\s+\d{2}\/\d{2}\/\d{2,4}\s*-\s*([^.\n]+)/i.exec(message);
+    if (reverseAtmMatch?.[1]) {
+      const m = this.cleanMerchantName(reverseAtmMatch[1].trim());
+      if (this.isValidMerchantName(m)) return m;
+    }
+
     const creditForMerchantMatch = /has\s+credit\s+for\s+([^.\n]+?)\s+of/i.exec(message);
     if (creditForMerchantMatch?.[1]) {
       const m = this.cleanMerchantName(creditForMerchantMatch[1].trim());
