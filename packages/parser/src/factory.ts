@@ -6,11 +6,11 @@ import type { ParseResult, SmsInput } from './types.js';
 import { HDFCMutualFundParser } from './banks/hdfc-mutual-fund.js';
 import { HDFCBankParser } from './banks/hdfc.js';
 import { SBIBankParser } from './banks/sbi.js';
-// TODO: SaraswatBankParser
-// TODO: DBSBankParser
-// TODO: IndianBankParser
-// TODO: FederalBankParser
-// TODO: JuspayParser
+import { SaraswatBankParser } from './banks/saraswat.js';
+import { DBSBankParser } from './banks/dbs.js';
+import { IndianBankParser } from './banks/indian-bank.js';
+import { FederalBankParser } from './banks/federal.js';
+import { JuspayParser } from './banks/juspay.js';
 // TODO: SliceParser
 // TODO: CredParser
 // TODO: LazyPayParser
@@ -83,6 +83,11 @@ const PARSERS: BankParser[] = [
   new HDFCMutualFundParser(),  // must precede HDFCBankParser
   new HDFCBankParser(),
   new SBIBankParser(),
+  new SaraswatBankParser(),
+  new DBSBankParser(),
+  new IndianBankParser(),
+  new FederalBankParser(),
+  new JuspayParser(),
   new ICICIBankParser(),
   new AxisBankParser(),
   new PNBBankParser(),
