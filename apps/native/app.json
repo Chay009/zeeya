@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "scheme": "zeeya",
+    "userInterfaceStyle": "automatic",
+    "orientation": "default",
+    "web": {
+      "bundler": "metro"
+    },
+    "name": "zeeya",
+    "slug": "zeeya",
+    "plugins": ["expo-font"],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}

@@ -1,0 +1,3 @@
+{
+  "extends": "@zeeya/config/tsconfig.base.json"
+}

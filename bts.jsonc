@@ -1,0 +1,31 @@
+// Better-T-Stack project metadata
+//
+// Keep this file to use the `add` command.
+// Add addons: pnpm dlx create-better-t-stack@latest add
+//
+// Docs: https://better-t-stack.dev/docs
+// Stack Builder: https://better-t-stack.dev/new
+
+{
+  "$schema": "https://r2.better-t-stack.dev/schema.json",
+  "version": "3.37.0",
+  "createdAt": "2026-07-28T06:45:22.143Z",
+  "reproducibleCommand": "pnpm create better-t-stack@latest . --frontend tanstack-start native-uniwind --backend hono --runtime workers --database postgres --orm drizzle --api trpc --auth better-auth --payments none --addons oxlint turborepo --examples none --db-setup neon --manual-db --web-deploy cloudflare --server-deploy cloudflare --no-git --package-manager pnpm --install",
+  "dbSetupOptions": {
+    "mode": "manual",
+  },
+  "database": "postgres",
+  "orm": "drizzle",
+  "backend": "hono",
+  "runtime": "workers",
+  "frontend": ["tanstack-start", "native-uniwind"],
+  "addons": ["oxlint", "turborepo"],
+  "examples": [],
+  "auth": "better-auth",
+  "payments": "none",
+  "packageManager": "pnpm",
+  "dbSetup": "neon",
+  "api": "trpc",
+  "webDeploy": "cloudflare",
+  "serverDeploy": "cloudflare",
+}

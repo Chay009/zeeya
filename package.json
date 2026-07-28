@@ -1,0 +1,39 @@
+{
+  "name": "zeeya",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "type": "module",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "check-types": "turbo run check-types",
+    "dev:native": "turbo run dev -F native",
+    "dev:web": "turbo run dev -F web",
+    "dev:server": "turbo run dev -F server",
+    "db:push": "turbo run db:push -F @zeeya/db",
+    "db:studio": "turbo run db:studio -F @zeeya/db",
+    "db:generate": "turbo run db:generate -F @zeeya/db",
+    "db:migrate": "turbo run db:migrate -F @zeeya/db",
+    "deploy": "turbo run deploy -F @zeeya/infra",
+    "destroy": "turbo run destroy -F @zeeya/infra",
+    "check": "oxlint && oxfmt --write"
+  },
+  "dependencies": {
+    "@zeeya/env": "workspace:*",
+    "dotenv": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "catalog:",
+    "@types/node": "^22.13.14",
+    "@zeeya/config": "workspace:*",
+    "oxfmt": "^0.57.0",
+    "oxlint": "^1.72.0",
+    "turbo": "^2.10.2",
+    "typescript": "^6"
+  },
+  "packageManager": "pnpm@10.33.0"
+}

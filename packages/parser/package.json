@@ -1,0 +1,14 @@
+{
+  "name": "@zeeya/parser",
+  "type": "module",
+  "version": "0.1.0",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    }
+  },
+  "devDependencies": {
+    "@zeeya/config": "workspace:*",
+    "typescript": "^6"
+  }
+}

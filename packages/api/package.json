@@ -1,0 +1,27 @@
+{
+  "name": "@zeeya/api",
+  "type": "module",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {},
+  "dependencies": {
+    "@trpc/client": "catalog:",
+    "@trpc/server": "catalog:",
+    "@zeeya/auth": "workspace:*",
+    "@zeeya/db": "workspace:*",
+    "@zeeya/env": "workspace:*",
+    "dotenv": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@zeeya/config": "workspace:*",
+    "hono": "catalog:",
+    "typescript": "^6"
+  }
+}
