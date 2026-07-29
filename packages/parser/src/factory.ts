@@ -29,11 +29,11 @@ import { JioPaymentsBankParser } from './banks/jio-payments.js';
 import { KotakBankParser } from './banks/kotak.js';
 import { IDFCFirstBankParser } from './banks/idfc.js';
 import { UnionBankParser } from './banks/union.js';
-// TODO: HSBCBankParser
-// TODO: CentralBankOfIndiaParser
-// TODO: SouthIndianBankParser
-// TODO: JKBankParser
-// TODO: JioPayParser
+import { HSBCBankParser } from './banks/hsbc.js';
+import { CentralBankOfIndiaParser } from './banks/central-bank.js';
+import { SouthIndianBankParser } from './banks/south-indian.js';
+import { JKBankParser } from './banks/jk-bank.js';
+import { JioPayParser } from './banks/jio-pay.js';
 // TODO: IPPBParser
 // TODO: DOPBankParser
 // TODO: CityUnionBankParser
@@ -106,6 +106,11 @@ const PARSERS: BankParser[] = [
   new KotakBankParser(),
   new IDFCFirstBankParser(),
   new UnionBankParser(),
+  new HSBCBankParser(),
+  new CentralBankOfIndiaParser(),
+  new SouthIndianBankParser(),
+  new JKBankParser(),
+  new JioPayParser(),
   new IndusIndBankParser(),
   new YesBankParser(),
   new GenericUPIParser(),
