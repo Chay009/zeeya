@@ -49,17 +49,14 @@ export class CityUnionBankParser extends BankParser {
 
   protected override extractTransactionType(message: string): TransactionType | null {
     const lower = message.toLowerCase();
-    // Debit patterns
-    if (lower.includes('is debited')) return 'EXPENSE';
-    if (lower.includes('debited for')) return 'EXPENSE';
-    if (lower.includes('debited from')) return 'EXPENSE';
-    // Credit patterns
+    // Use "is credited/debited" patterns — these refer to the user's own a/c.
+    // "credited to a/c" and "debited from a/c" describe the counterparty so are skipped.
     if (lower.includes('is credited')) return 'INCOME';
     if (lower.includes('credited for')) return 'INCOME';
     if (lower.includes('credited with')) return 'INCOME';
-    if (lower.includes('credited to')) return 'INCOME';
-    // NEFT/Transfer patterns
     if (lower.includes('neft trf')) return 'INCOME';
+    if (lower.includes('is debited')) return 'EXPENSE';
+    if (lower.includes('debited for')) return 'EXPENSE';
     return super.extractTransactionType(message);
   }
 

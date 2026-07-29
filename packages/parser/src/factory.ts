@@ -34,11 +34,11 @@ import { CentralBankOfIndiaParser } from './banks/central-bank.js';
 import { SouthIndianBankParser } from './banks/south-indian.js';
 import { JKBankParser } from './banks/jk-bank.js';
 import { JioPayParser } from './banks/jio-pay.js';
-// TODO: IPPBParser
-// TODO: DOPBankParser
-// TODO: CityUnionBankParser
-// TODO: IndianOverseasBankParser
-// TODO: AirtelPaymentsBankParser
+import { IPPBParser } from './banks/ippb.js';
+import { DOPBankParser } from './banks/dop.js';
+import { CityUnionBankParser } from './banks/city-union.js';
+import { IndianOverseasBankParser } from './banks/indian-overseas.js';
+import { AirtelPaymentsBankParser } from './banks/airtel-payments.js';
 import { IndusIndBankParser } from './banks/indusind.js';
 // TODO: AMEXBankParser
 // TODO: OneCardParser
@@ -111,6 +111,11 @@ const PARSERS: BankParser[] = [
   new SouthIndianBankParser(),
   new JKBankParser(),
   new JioPayParser(),
+  new IPPBParser(),
+  new DOPBankParser(),
+  new CityUnionBankParser(),
+  new IndianOverseasBankParser(),
+  new AirtelPaymentsBankParser(),
   new IndusIndBankParser(),
   new YesBankParser(),
   new GenericUPIParser(),
