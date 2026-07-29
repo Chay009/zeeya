@@ -64,13 +64,12 @@ export class AirtelPaymentsBankParser extends BankParser {
 
   protected override extractReference(message: string): string | null {
     // Pattern: "Txn ID: 560992310006" or "Txn ID xxxxxxxx"
-    const txnIdMatch = /Txn\s+ID[:\s]+([A-Z0-9]+)/i.exec(message);
+    const txnIdMatch = /Txn\s+ID[:\s]+([A-Za-z0-9]+)/i.exec(message);
     if (txnIdMatch?.[1]) {
       const txnId = txnIdMatch[1];
-      // Filter out masked IDs like "xxxxxxxx"
-      if (!txnId.toLowerCase().includes('x')) {
-        return txnId;
-      }
+      // Masked IDs (e.g. "xxxxxxxx") → return null, don't fall to super
+      if (txnId.toLowerCase().includes('x')) return null;
+      return txnId;
     }
 
     // Alternative pattern for transaction ID
