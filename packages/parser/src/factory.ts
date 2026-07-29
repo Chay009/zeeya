@@ -46,6 +46,11 @@ import { UCOBankParser } from './banks/uco.js';
 import { AUBankParser } from './banks/au-bank.js';
 import { YesBankParser } from './banks/yes.js';
 import { BandhanBankParser } from './banks/bandhan.js';
+import { NSDLPaymentsBankParser } from './banks/nsdl-payments.js';
+import { PunjabSindBankParser } from './banks/punjab-sind.js';
+import { KeralaBankParser } from './banks/kerala-bank.js';
+import { CashfreeParser } from './banks/cashfree.js';
+import { NaviMutualFundParser } from './banks/navi-mutual-fund.js';
 // --- International banks below (P2 / P3) ---
 // TODO: ADCBParser, FABParser, EmiratesNBDParser, LivBankParser
 // TODO: CitiBankParser, DiscoverCardParser, OldHickoryParser
@@ -70,8 +75,6 @@ import { BandhanBankParser } from './banks/bandhan.js';
 // TODO: NMBTanzaniaParser, GreaterBankParser
 // TODO: AccessBankParser, ZenithBankParser, KeystoneBankParser
 // TODO: JaizBankParser, OpayBankParser
-// TODO: NSDLPaymentsBankParser, PunjabSindBankParser, KeralaBankParser
-// TODO: CashfreeParser, NaviMutualFundParser
 // TODO: EmiratesIslamicParser, SNBAlAhliBankParser, STCBankParser
 // TODO: SabbBankParser, MellatBankParser, BankinoBankParser
 // TODO: BluBankParser, ArabBankParser
@@ -123,6 +126,11 @@ const PARSERS: BankParser[] = [
   new AUBankParser(),
   new YesBankParser(),
   new BandhanBankParser(),
+  new NSDLPaymentsBankParser(),
+  new PunjabSindBankParser(),
+  new KeralaBankParser(),
+  new CashfreeParser(),
+  new NaviMutualFundParser(),
   new GenericUPIParser(),
 ];
 
