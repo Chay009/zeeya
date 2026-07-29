@@ -14,6 +14,7 @@
     "@zeeya/auth": "workspace:*",
     "@zeeya/db": "workspace:*",
     "@zeeya/env": "workspace:*",
+    "@zeeya/parser": "workspace:*",
     "better-auth": "catalog:",
     "dotenv": "catalog:",
     "hono": "catalog:",
