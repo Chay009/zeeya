@@ -51,6 +51,8 @@ import { PunjabSindBankParser } from './banks/punjab-sind.js';
 import { KeralaBankParser } from './banks/kerala-bank.js';
 import { CashfreeParser } from './banks/cashfree.js';
 import { NaviMutualFundParser } from './banks/navi-mutual-fund.js';
+import { DhanlaxmiBankParser } from './banks/dhanlaxmi.js';
+import { EquitasBankParser } from './banks/equitas.js';
 // --- International banks below (P2 / P3) ---
 // TODO: ADCBParser, FABParser, EmiratesNBDParser, LivBankParser
 // TODO: CitiBankParser, DiscoverCardParser, OldHickoryParser
@@ -61,8 +63,8 @@ import { NaviMutualFundParser } from './banks/navi-mutual-fund.js';
 // TODO: NMBBankParser, ManjushreeFinanceParser, SiddharthaBankParser
 // TODO: PrimeCommercialBankParser, MPesaTanzaniaParser, MPESAParser
 // TODO: SelcomPesaParser, TigoPesaParser, CIBEgyptParser
-// TODO: DhanlaxmiBankParser, HuntingtonBankParser, StandardCharteredBankParser
-// TODO: EquitasBankParser, TelebirrParser, ZemenBankParser
+// TODO: HuntingtonBankParser, StandardCharteredBankParser
+// TODO: TelebirrParser, ZemenBankParser
 // TODO: DashenBankParser, FaysalBankParser, MelliBankParser
 // TODO: ParsianBankParser, BangkokBankParser, KasikornBankParser
 // TODO: SiamCommercialBankParser, KrungThaiBankParser, KrungsriBankParser
@@ -131,6 +133,8 @@ const PARSERS: BankParser[] = [
   new KeralaBankParser(),
   new CashfreeParser(),
   new NaviMutualFundParser(),
+  new DhanlaxmiBankParser(),
+  new EquitasBankParser(),
   new GenericUPIParser(),
 ];
 
