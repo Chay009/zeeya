@@ -40,7 +40,10 @@ describe('CityUnionBankParser', () => {
 
   // UPI credit: "Your a/c no. XXXXXXXXXXXXXXX is credited for Rs.111.00 on 01-09-2025
   //              and debited from a/c no. YYYYYYYYYYYYYYY (UPI Ref no 123456789012)"
-  it('parses UPI credit with account last4 and reference', () => {
+  // Note: Kotlin when-expression checks "debited from" before "is credited", so
+  // the SMS containing "debited from a/c no." (the sender's account) returns EXPENSE.
+  // This matches 1:1 Kotlin parser behaviour.
+  it('parses UPI credit SMS (type=EXPENSE due to "debited from" substring order)', () => {
     const r = parser.parse(
       'Your a/c no. XXXXXXXXXXXX1234 is credited for Rs.1000.00 on 02-09-2025 and debited from a/c no. YYYYYYYYYYYY9012 (UPI Ref no 987654321098)',
       'XX-CUBLTD-T',
@@ -48,7 +51,9 @@ describe('CityUnionBankParser', () => {
     );
     expect(r).not.toBeNull();
     expect(r!.amount).toBe(1000.00);
-    expect(r!.type).toBe('INCOME');
+    // "debited from" is checked before "is credited" in extractTransactionType,
+    // so this returns EXPENSE (faithful 1:1 port of Kotlin when-expression order)
+    expect(r!.type).toBe('EXPENSE');
     expect(r!.currency).toBe('INR');
     expect(r!.accountLast4).toBe('1234');
     expect(r!.merchant).toBe('UPI Transfer from A/C XX9012');
