@@ -40,12 +40,12 @@ import { CityUnionBankParser } from './banks/city-union.js';
 import { IndianOverseasBankParser } from './banks/indian-overseas.js';
 import { AirtelPaymentsBankParser } from './banks/airtel-payments.js';
 import { IndusIndBankParser } from './banks/indusind.js';
-// TODO: AMEXBankParser
-// TODO: OneCardParser
-// TODO: UCOBankParser
-// TODO: AUBankParser
+import { AMEXBankParser } from './banks/amex.js';
+import { OneCardParser } from './banks/one-card.js';
+import { UCOBankParser } from './banks/uco.js';
+import { AUBankParser } from './banks/au-bank.js';
 import { YesBankParser } from './banks/yes.js';
-// TODO: BandhanBankParser
+import { BandhanBankParser } from './banks/bandhan.js';
 // --- International banks below (P2 / P3) ---
 // TODO: ADCBParser, FABParser, EmiratesNBDParser, LivBankParser
 // TODO: CitiBankParser, DiscoverCardParser, OldHickoryParser
@@ -117,7 +117,12 @@ const PARSERS: BankParser[] = [
   new IndianOverseasBankParser(),
   new AirtelPaymentsBankParser(),
   new IndusIndBankParser(),
+  new AMEXBankParser(),
+  new OneCardParser(),
+  new UCOBankParser(),
+  new AUBankParser(),
   new YesBankParser(),
+  new BandhanBankParser(),
   new GenericUPIParser(),
 ];
 
