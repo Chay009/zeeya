@@ -2,6 +2,12 @@
 import { BankParser } from '../base-parser.js';
 import type { TransactionType } from '../types.js';
 
+/**
+ * Parser for LazyPay wallet transactions.
+ * Handles messages from BP-LZYPAY-S, JM-LZYPAY-S, JD-LZYPAY-S and similar senders.
+ * LazyPay is a Buy Now Pay Later (BNPL) wallet service similar to Amazon Pay/Juspay.
+ * All transactions are treated as CREDIT type since they're wallet-based credit transactions.
+ */
 export class LazyPayParser extends BankParser {
   getBankName(): string {
     return 'LazyPay';
@@ -69,6 +75,7 @@ export class LazyPayParser extends BankParser {
 
   protected override extractTransactionType(_message: string): TransactionType | null {
     // LazyPay is a credit service - all transactions are credit-based
+    // Similar to how JuspayParser handles Amazon Pay
     return 'CREDIT';
   }
 

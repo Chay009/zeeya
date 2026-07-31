@@ -14,25 +14,21 @@ export class AirtelPaymentsBankParser extends BankParser {
   }
 
   protected override extractAmount(message: string): number | null {
-    // "credited with Rs.20.00"
-    const creditedWithMatch = /credited\s+with\s+Rs\.?\s*([0-9,]+(?:\.\d{2})?)/i.exec(message);
-    if (creditedWithMatch?.[1]) {
-      const val = parseFloat(creditedWithMatch[1].replace(/,/g, ''));
-      if (!isNaN(val)) return val;
-    }
+    const amountPatterns = [
+      // "credited with Rs.20.00"
+      /credited\s+with\s+Rs\.?\s*([0-9,]+(?:\.\d{2})?)/i,
+      // "Rs. 5.00 debited from"
+      /Rs\.?\s*([0-9,]+(?:\.\d{2})?)\s+debited\s+from/i,
+      // "debited with Rs.5.00" (potential variant)
+      /debited\s+with\s+Rs\.?\s*([0-9,]+(?:\.\d{2})?)/i,
+    ];
 
-    // "Rs. 5.00 debited from"
-    const debitedFromMatch = /Rs\.?\s*([0-9,]+(?:\.\d{2})?)\s+debited\s+from/i.exec(message);
-    if (debitedFromMatch?.[1]) {
-      const val = parseFloat(debitedFromMatch[1].replace(/,/g, ''));
-      if (!isNaN(val)) return val;
-    }
-
-    // "debited with Rs.5.00" (potential variant)
-    const debitedWithMatch = /debited\s+with\s+Rs\.?\s*([0-9,]+(?:\.\d{2})?)/i.exec(message);
-    if (debitedWithMatch?.[1]) {
-      const val = parseFloat(debitedWithMatch[1].replace(/,/g, ''));
-      if (!isNaN(val)) return val;
+    for (const pattern of amountPatterns) {
+      const match = pattern.exec(message);
+      if (match?.[1]) {
+        const val = parseFloat(match[1].replace(/,/g, ''));
+        if (!isNaN(val)) return val;
+      }
     }
 
     return super.extractAmount(message);
@@ -54,20 +50,18 @@ export class AirtelPaymentsBankParser extends BankParser {
 
   protected override extractMerchant(message: string, sender: string): string | null {
     const lowerMessage = message.toLowerCase();
-
     if (lowerMessage.includes('airtel payments bank')) {
       return 'Airtel Payments Bank Transaction';
     }
-
     return super.extractMerchant(message, sender) ?? 'Airtel Payments Bank';
   }
 
   protected override extractReference(message: string): string | null {
     // Pattern: "Txn ID: 560992310006" or "Txn ID xxxxxxxx"
-    const txnIdMatch = /Txn\s+ID[:\s]+([A-Za-z0-9]+)/i.exec(message);
+    const txnIdMatch = /Txn\s+ID[:\s]+([A-Z0-9]+)/i.exec(message);
     if (txnIdMatch?.[1]) {
       const txnId = txnIdMatch[1];
-      // Masked IDs (e.g. "xxxxxxxx") → return null, don't fall to super
+      // Filter out masked IDs like "xxxxxxxx" — no reference when masked
       if (txnId.toLowerCase().includes('x')) return null;
       return txnId;
     }
