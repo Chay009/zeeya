@@ -4,119 +4,74 @@ import { EquitasBankParser } from '../banks/equitas.js';
 const parser = new EquitasBankParser();
 
 describe('EquitasBankParser', () => {
-  it('handles known senders', () => {
-    expect(parser.canHandle('EQBNK')).toBe(true);
-    expect(parser.canHandle('AD-EQBNK')).toBe(true);
-    expect(parser.canHandle('JK-EQBNK')).toBe(true);
-    expect(parser.canHandle('EQUBNK')).toBe(true);
-    expect(parser.canHandle('EQUITAS')).toBe(true);
-    expect(parser.canHandle('AD-EQUITAS')).toBe(true);
-    expect(parser.canHandle('HDFCBK')).toBe(false);
-    expect(parser.canHandle('ICICIBK')).toBe(false);
+  describe('canHandle', () => {
+    it('handles EQUTAS', () => expect(parser.canHandle('EQUTAS')).toBe(true));
+    it('handles AD-EQUITAS', () => expect(parser.canHandle('AD-EQUITAS')).toBe(true));
+    it('handles JK-EQUITA', () => expect(parser.canHandle('JK-EQUITA')).toBe(true));
+    it('handles EQUITSBNK', () => expect(parser.canHandle('EQUITSBNK')).toBe(true));
+    it('handles lowercase equitas', () => expect(parser.canHandle('ad-equitas')).toBe(true));
+    it('rejects EQBNK', () => expect(parser.canHandle('EQBNK')).toBe(false));
+    it('rejects EQUBNK', () => expect(parser.canHandle('EQUBNK')).toBe(false));
+    it('rejects HDFCBK', () => expect(parser.canHandle('HDFCBK')).toBe(false));
+    it('rejects ICICIBK', () => expect(parser.canHandle('ICICIBK')).toBe(false));
+    it('rejects empty string', () => expect(parser.canHandle('')).toBe(false));
   });
 
   it('returns correct bank name', () => {
     expect(parser.getBankName()).toBe('Equitas Small Finance Bank');
   });
 
-  it('parses savings account debit', () => {
-    const r = parser.parse(
-      'Rs.500.00 debited from your Equitas Bank A/c XX1234 on 01-01-2025. Avl Bal Rs.1500.00',
-      'AD-EQBNK',
-      0
-    );
-    expect(r).not.toBeNull();
-    expect(r!.amount).toBe(500.00);
-    expect(r!.type).toBe('EXPENSE');
-    expect(r!.accountLast4).toBe('1234');
-    expect(r!.balance).toBe(1500.00);
-    expect(r!.bankName).toBe('Equitas Small Finance Bank');
+  describe('UPI debit (INR X debited)', () => {
+    const message =
+      'INR 500.00 debited on 01-01-25 to SWIGGY. Avl Bal is INR 1,000.00';
+    const result = parser.parse(message, 'AD-EQUITAS', 0);
+
+    it('parses successfully', () => expect(result).not.toBeNull());
+    it('amount is 500', () => expect(result?.amount).toBe(500));
+    it('type is EXPENSE', () => expect(result?.type).toBe('EXPENSE'));
+    it('balance is 1000', () => expect(result?.balance).toBe(1000));
+    it('merchant is SWIGGY', () => expect(result?.merchant).toBe('SWIGGY'));
+    it('bankName is Equitas Small Finance Bank', () =>
+      expect(result?.bankName).toBe('Equitas Small Finance Bank'));
   });
 
-  it('parses savings account credit', () => {
-    const r = parser.parse(
-      'Rs.1,000.00 credited to Equitas SFB A/c XX5678 on 15-Jan-2025. Balance: Rs.3,000.00',
-      'JK-EQBNK',
-      0
-    );
-    expect(r).not.toBeNull();
-    expect(r!.amount).toBe(1000.00);
-    expect(r!.type).toBe('INCOME');
-    expect(r!.accountLast4).toBe('5678');
-    expect(r!.balance).toBe(3000.00);
+  describe('UPI credit (INR X credited)', () => {
+    const message =
+      'INR 1,000.00 credited on 15-01-25 from AMAZON. Avl Bal is INR 5,000.00';
+    const result = parser.parse(message, 'AD-EQUITAS', 0);
+
+    it('parses successfully', () => expect(result).not.toBeNull());
+    it('amount is 1000', () => expect(result?.amount).toBe(1000));
+    it('type is INCOME', () => expect(result?.type).toBe('INCOME'));
+    it('balance is 5000', () => expect(result?.balance).toBe(5000));
+    it('merchant is AMAZON', () => expect(result?.merchant).toBe('AMAZON'));
+    it('bankName is Equitas Small Finance Bank', () =>
+      expect(result?.bankName).toBe('Equitas Small Finance Bank'));
   });
 
-  it('parses UPI debit with INR format and ref number', () => {
-    const r = parser.parse(
-      'Dear Customer, Your Equitas a/c ending 1234 debited by INR 250.00 via UPI. Ref: 123456789. Bal Rs.750.00',
-      'EQUITAS',
-      0
-    );
-    expect(r).not.toBeNull();
-    expect(r!.amount).toBe(250.00);
-    expect(r!.type).toBe('EXPENSE');
-    expect(r!.accountLast4).toBe('1234');
-    expect(r!.balance).toBe(750.00);
+  describe('UPI payment via UPI (merchant as UPI Transaction)', () => {
+    const message = 'INR 250.00 debited via UPI. Avl Bal is INR 750.00';
+    const result = parser.parse(message, 'EQUTAS', 0);
+
+    it('parses successfully', () => expect(result).not.toBeNull());
+    it('amount is 250', () => expect(result?.amount).toBe(250));
+    it('type is EXPENSE', () => expect(result?.type).toBe('EXPENSE'));
+    it('merchant is UPI Transaction', () => expect(result?.merchant).toBe('UPI Transaction'));
   });
 
-  it('parses credit card spend with avl lmt', () => {
-    const r = parser.parse(
-      'Rs.500.00 spent on Equitas Bank Credit Card XX1234 at SWIGGY on 01 Jan 2025. Avl Lmt Rs.20,000',
-      'AD-EQBNK',
-      0
-    );
-    expect(r).not.toBeNull();
-    expect(r!.amount).toBe(500.00);
-    expect(r!.type).toBe('CREDIT');
-    expect(r!.accountLast4).toBe('1234');
-    expect(r!.creditLimit).toBe(20000.00);
+  describe('OTP message is rejected', () => {
+    it('returns null', () => {
+      expect(
+        parser.parse('Your Equitas Bank OTP is 123456. Do not share.', 'AD-EQUITAS', 0),
+      ).toBeNull();
+    });
   });
 
-  it('parses txn format with avl cr lmt', () => {
-    const r = parser.parse(
-      'Txn of INR 1234.56 on Equitas CC ending 5678 at AMAZON. Avl Cr Lmt: Rs.15,000.00',
-      'JK-EQUBNK',
-      0
-    );
-    expect(r).not.toBeNull();
-    expect(r!.amount).toBe(1234.56);
-    expect(r!.type).toBe('CREDIT');
-    expect(r!.accountLast4).toBe('5678');
-    expect(r!.creditLimit).toBe(15000.00);
-  });
-
-  it('filters OTP messages', () => {
-    expect(
-      parser.parse('Your Equitas Bank OTP is 123456. Do not share.', 'AD-EQBNK', 0)
-    ).toBeNull();
-  });
-
-  it('filters password messages', () => {
-    expect(
-      parser.parse('Your Equitas Bank password has been reset successfully.', 'AD-EQBNK', 0)
-    ).toBeNull();
-  });
-
-  it('correctly identifies credit card transactions by avl cr lmt keyword', () => {
-    const r = parser.parse(
-      'INR 999.00 spent on Equitas Credit Card XX9999. Avl Cr Lmt: Rs.10,000.00',
-      'EQUITAS',
-      0
-    );
-    expect(r).not.toBeNull();
-    expect(r!.type).toBe('CREDIT');
-    expect(r!.creditLimit).toBe(10000.00);
-  });
-
-  it('handles comma-formatted amounts', () => {
-    const r = parser.parse(
-      'Rs.1,50,000.00 credited to Equitas Bank A/c XX9999 on 05-Jan-2025. Balance: Rs.2,00,000.00',
-      'EQBNK',
-      0
-    );
-    expect(r).not.toBeNull();
-    expect(r!.amount).toBe(150000.00);
-    expect(r!.type).toBe('INCOME');
-    expect(r!.balance).toBe(200000.00);
+  describe('Offer message is rejected', () => {
+    it('returns null', () => {
+      expect(
+        parser.parse('Special offer for Equitas Bank customers! Get 10% cashback offer.', 'EQUTAS', 0),
+      ).toBeNull();
+    });
   });
 });

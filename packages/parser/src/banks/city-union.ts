@@ -57,6 +57,7 @@ export class CityUnionBankParser extends BankParser {
     if (lower.includes('neft trf')) return 'INCOME';
     if (lower.includes('is debited')) return 'EXPENSE';
     if (lower.includes('debited for')) return 'EXPENSE';
+    if (lower.includes('debited from')) return 'EXPENSE';
     return super.extractTransactionType(message);
   }
 

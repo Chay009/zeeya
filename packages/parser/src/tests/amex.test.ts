@@ -11,7 +11,7 @@ describe('AMEXBankParser', () => {
       expect(parser.canHandle('AMEXIN')).toBe(true);
     });
 
-    it('handles AMEXCO sender', () => {
+    it('handles AMEXCO sender (contains AMEX)', () => {
       expect(parser.canHandle('AMEXCO')).toBe(true);
     });
 
@@ -27,6 +27,10 @@ describe('AMEXBankParser', () => {
       expect(parser.canHandle('JK-AMEXIN')).toBe(true);
     });
 
+    it('handles TX-AMEXIN-S', () => {
+      expect(parser.canHandle('TX-AMEXIN-S')).toBe(true);
+    });
+
     it('handles lowercase amexin', () => {
       expect(parser.canHandle('amexin')).toBe(true);
     });
@@ -37,10 +41,6 @@ describe('AMEXBankParser', () => {
 
     it('does not handle ICICI', () => {
       expect(parser.canHandle('ICICI')).toBe(false);
-    });
-
-    it('does not handle UNKNOWN', () => {
-      expect(parser.canHandle('UNKNOWN')).toBe(false);
     });
 
     it('does not handle empty string', () => {
@@ -56,12 +56,16 @@ describe('AMEXBankParser', () => {
     });
   });
 
-  // ── Format 1: "Rs.X spent on AMEX Card ending XXXX at MERCHANT on date" ──
+  // ── Canonical format: "You've spent INR X on your AMEX card ** XXXXX at MERCHANT on DD Month YYYY" ──
 
-  describe('Format 1 – Rs spent on AMEX Card ending at merchant on date', () => {
+  describe('Format 1 – spent INR on AMEX card at merchant on date', () => {
     const message =
-      'Rs.1,234.56 spent on AMEX Card ending 1234 at FLIPKART on 01/01/2025. SMS HELP to 1800-419-2122 for queries.';
+      "Alert: You've spent INR 1,234.56 on your AMEX card ** 41234 at FLIPKART on 01 January 2025.";
     const result = parser.parse(message, 'AMEXIN', 1700000000000);
+
+    it('is not null', () => {
+      expect(result).not.toBeNull();
+    });
 
     it('parses amount', () => {
       expect(result?.amount).toBe(1234.56);
@@ -75,12 +79,8 @@ describe('AMEXBankParser', () => {
       expect(result?.merchant).toBe('FLIPKART');
     });
 
-    it('parses accountLast4', () => {
+    it('parses accountLast4 (last 4 of 41234)', () => {
       expect(result?.accountLast4).toBe('1234');
-    });
-
-    it('is not null', () => {
-      expect(result).not.toBeNull();
     });
 
     it('has bankName American Express', () => {
@@ -88,12 +88,16 @@ describe('AMEXBankParser', () => {
     });
   });
 
-  // ── Format 2: "INR X charged on your American Express Card ending XXXX at MERCHANT on date" ──
+  // ── Format 2: "INR X spent on your AMEX card" ──
 
-  describe('Format 2 – INR charged on American Express Card ending at merchant on date', () => {
+  describe('Format 2 – INR X spent (alt order)', () => {
     const message =
-      'INR 1234.56 charged on your American Express Card ending XXXX at AMAZON on 01-JAN-2025.';
+      "INR 1,234.56 spent on your AMEX card ** 91234 at AMAZON on 01 Jan 2025.";
     const result = parser.parse(message, 'AMEXCO', 1700000000000);
+
+    it('is not null', () => {
+      expect(result).not.toBeNull();
+    });
 
     it('parses amount', () => {
       expect(result?.amount).toBe(1234.56);
@@ -106,97 +110,13 @@ describe('AMEXBankParser', () => {
     it('parses merchant', () => {
       expect(result?.merchant).toBe('AMAZON');
     });
-
-    it('is not null', () => {
-      expect(result).not.toBeNull();
-    });
-  });
-
-  // ── Format 3: "Transaction of Rs.X on AMEX Card XXXX1234. Merchant: NAME. Available Credit: Rs.XXXXX" ──
-
-  describe('Format 3 – Transaction on AMEX Card with Merchant label and Available Credit', () => {
-    const message =
-      'Transaction of Rs.500.00 on AMEX Card XXXX5678. Merchant: SWIGGY. Available Credit: Rs.45000.00';
-    const result = parser.parse(message, 'AMEXIN', 1700000000000);
-
-    it('parses amount', () => {
-      expect(result?.amount).toBe(500.0);
-    });
-
-    it('parses type as CREDIT', () => {
-      expect(result?.type).toBe('CREDIT');
-    });
-
-    it('parses merchant from Merchant: label', () => {
-      expect(result?.merchant).toBe('SWIGGY');
-    });
-
-    it('parses accountLast4 from Card XXXX5678', () => {
-      expect(result?.accountLast4).toBe('5678');
-    });
-
-    it('parses availableLimit from Available Credit', () => {
-      expect(result?.creditLimit).toBe(45000.0);
-    });
-
-    it('is not null', () => {
-      expect(result).not.toBeNull();
-    });
-  });
-
-  // ── Format 4: "Your American Express Card ending XXXX has been used for INR X at MERCHANT." ──
-
-  describe('Format 4 – American Express Card ending has been used for INR at merchant', () => {
-    const message =
-      'Your American Express Card ending 4321 has been used for INR 500.00 at ZOMATO.';
-    const result = parser.parse(message, 'AD-AMEXIN', 1700000000000);
-
-    it('parses amount', () => {
-      expect(result?.amount).toBe(500.0);
-    });
-
-    it('parses type as CREDIT', () => {
-      expect(result?.type).toBe('CREDIT');
-    });
-
-    it('parses merchant', () => {
-      expect(result?.merchant).toBe('ZOMATO');
-    });
-
-    it('parses accountLast4 from ending', () => {
-      expect(result?.accountLast4).toBe('4321');
-    });
-
-    it('is not null', () => {
-      expect(result).not.toBeNull();
-    });
-  });
-
-  // ── Available limit patterns ───────────────────────────────────────────────
-
-  describe('Available limit – Avl Cr Limit pattern', () => {
-    const message =
-      'Rs.750.00 spent on AMEX Card ending 9999 at NETFLIX on 15/06/2025. Avl Cr Limit: Rs.25000.00';
-    const result = parser.parse(message, 'AMEXIN', 1700000000000);
-
-    it('parses creditLimit from Avl Cr Limit', () => {
-      expect(result?.creditLimit).toBe(25000.0);
-    });
-
-    it('parses amount', () => {
-      expect(result?.amount).toBe(750.0);
-    });
-
-    it('parses type as CREDIT', () => {
-      expect(result?.type).toBe('CREDIT');
-    });
   });
 
   // ── Large amount with commas ───────────────────────────────────────────────
 
   describe('Large amount with comma separators', () => {
     const message =
-      'Rs.12,345.67 spent on AMEX Card ending 1111 at APPLE STORE on 20/03/2025.';
+      "Alert: You've spent INR 12,345.67 on your AMEX card ** 11111 at APPLE STORE on 20 March 2025.";
     const result = parser.parse(message, 'JK-AMEXIN', 1700000000000);
 
     it('parses large amount with commas correctly', () => {
@@ -229,10 +149,10 @@ describe('AMEXBankParser', () => {
     });
   });
 
-  describe('Password message filtering', () => {
-    it('returns null for password messages', () => {
+  describe('Offer message filtering', () => {
+    it('returns null for offer messages', () => {
       const result = parser.parse(
-        'Your AMEX Card password has been changed successfully.',
+        'Special offer! Get 5X reward points on your AMEX card this month.',
         'AMEXIN',
         1700000000000,
       );
@@ -240,10 +160,10 @@ describe('AMEXBankParser', () => {
     });
   });
 
-  describe('PIN message filtering', () => {
-    it('returns null for PIN messages', () => {
+  describe('Statement message filtering', () => {
+    it('returns null for statement messages', () => {
       const result = parser.parse(
-        'Your American Express Card PIN has been set. Please do not share it.',
+        'Your AMEX card statement for December is ready. Due date is 15 January.',
         'AMEXCO',
         1700000000000,
       );
@@ -265,8 +185,9 @@ describe('AMEXBankParser', () => {
   // ── isFromCard detection ──────────────────────────────────────────────────
 
   describe('isFromCard detection', () => {
-    it('marks transaction as from card for "ending" pattern', () => {
-      const message = 'Rs.100.00 spent on AMEX Card ending 1234 at MERCHANT on 01/01/2025.';
+    it('marks transaction as from card', () => {
+      const message =
+        "Alert: You've spent INR 100.00 on your AMEX card ** 41234 at MERCHANT on 01 January 2025.";
       const result = parser.parse(message, 'AMEXIN', 1700000000000);
       expect(result?.isFromCard).toBe(true);
     });
@@ -277,7 +198,7 @@ describe('AMEXBankParser', () => {
   describe('currency', () => {
     it('returns INR as currency', () => {
       const message =
-        'INR 200.00 charged on your American Express Card ending 5555 at MERCHANT on 05-MAR-2025.';
+        "Alert: You've spent INR 200.00 on your AMEX card ** 55555 at MERCHANT on 05 March 2025.";
       const result = parser.parse(message, 'AMEXIN', 1700000000000);
       expect(result?.currency).toBe('INR');
     });

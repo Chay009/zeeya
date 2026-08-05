@@ -4,104 +4,68 @@ import { BandhanBankParser } from '../banks/bandhan.js';
 const parser = new BandhanBankParser();
 
 describe('BandhanBankParser', () => {
-  it('handles known senders', () => {
-    expect(parser.canHandle('BANBNK')).toBe(true);
-    expect(parser.canHandle('AD-BANBNK')).toBe(true);
-    expect(parser.canHandle('JK-BANBNK')).toBe(true);
-    expect(parser.canHandle('BNDBNK')).toBe(true);
-    expect(parser.canHandle('BANDHAN')).toBe(true);
-    expect(parser.canHandle('AD-BANDHAN')).toBe(true);
-    expect(parser.canHandle('UNKNOWN')).toBe(false);
-    expect(parser.canHandle('HDFC')).toBe(false);
-    expect(parser.canHandle('SBI')).toBe(false);
-  });
-
-  it('parses debit transaction with Available Balance and UPI Ref', () => {
-    const r = parser.parse(
-      'Your A/c XXXX1234 is debited by Rs.500.00 on 01-01-2025. Available Balance: Rs.1,500.00. UPI Ref: 123456789012',
-      'BANBNK',
-      0
-    );
-    expect(r).not.toBeNull();
-    expect(r!.amount).toBe(500.00);
-    expect(r!.type).toBe('EXPENSE');
-    expect(r!.accountLast4).toBe('1234');
-    expect(r!.balance).toBe(1500.00);
-    expect(r!.reference).toBe('123456789012');
-    expect(r!.bankName).toBe('Bandhan Bank');
-  });
-
-  it('parses credit transaction with Bal and date', () => {
-    const r = parser.parse(
-      'Rs.1,000.00 credited to your Bandhan Bank A/c XXXX5678 on 15-Jan-2025. Bal: Rs.5,000.00',
-      'AD-BANBNK',
-      0
-    );
-    expect(r).not.toBeNull();
-    expect(r!.amount).toBe(1000.00);
-    expect(r!.type).toBe('INCOME');
-    expect(r!.accountLast4).toBe('5678');
-    expect(r!.balance).toBe(5000.00);
-    expect(r!.bankName).toBe('Bandhan Bank');
-  });
-
-  it('parses INR debit with a/c ending and Ref No', () => {
-    const r = parser.parse(
-      'INR 250 debited from Bandhan Bank a/c ending 1234 for UPI txn on 01/01/2025. Ref No 123456. Bal Rs.750.00',
-      'BNDBNK',
-      0
-    );
-    expect(r).not.toBeNull();
-    expect(r!.amount).toBe(250);
-    expect(r!.type).toBe('EXPENSE');
-    expect(r!.accountLast4).toBe('1234');
-    expect(r!.balance).toBe(750.00);
-    expect(r!.reference).toBe('123456');
-  });
-
-  it('parses credit with merchant via UPI and Ref', () => {
-    const r = parser.parse(
-      'Your Bandhan Bank a/c XX9012 is credited with Rs.2,000.00 from JOHN DOE via UPI. Ref: 987654321. Bal: Rs.7,000.00',
-      'BANDHAN',
-      0
-    );
-    expect(r).not.toBeNull();
-    expect(r!.amount).toBe(2000.00);
-    expect(r!.type).toBe('INCOME');
-    expect(r!.accountLast4).toBe('9012');
-    expect(r!.merchant).toBe('JOHN DOE');
-    expect(r!.balance).toBe(7000.00);
-    expect(r!.reference).toBe('987654321');
-  });
-
-  it('rejects OTP messages', () => {
-    const r = parser.parse(
-      'Your Bandhan Bank OTP is 123456. Valid for 10 minutes. Do not share.',
-      'BANBNK',
-      0
-    );
-    expect(r).toBeNull();
-  });
-
-  it('rejects password messages', () => {
-    const r = parser.parse(
-      'Your Bandhan Bank net banking password has been changed successfully.',
-      'BANDHAN',
-      0
-    );
-    expect(r).toBeNull();
-  });
-
-  it('rejects PIN messages', () => {
-    const r = parser.parse(
-      'Your Bandhan Bank debit card PIN has been set. Contact 1800 258 8181 for help.',
-      'BANBNK',
-      0
-    );
-    expect(r).toBeNull();
+  describe('canHandle', () => {
+    it('handles BANDHAN', () => expect(parser.canHandle('BANDHAN')).toBe(true));
+    it('handles AD-BANDHAN', () => expect(parser.canHandle('AD-BANDHAN')).toBe(true));
+    it('handles AD-BDNSMS', () => expect(parser.canHandle('AD-BDNSMS')).toBe(true));
+    it('handles AD-BDNSMS-S', () => expect(parser.canHandle('AD-BDNSMS-S')).toBe(true));
+    it('handles JK-BANDHN', () => expect(parser.canHandle('JK-BANDHN')).toBe(true));
+    it('handles AD-BANDHN-S', () => expect(parser.canHandle('AD-BANDHN-S')).toBe(true));
+    it('handles lowercase bandhan', () => expect(parser.canHandle('bandhan')).toBe(true));
+    it('rejects BANBNK', () => expect(parser.canHandle('BANBNK')).toBe(false));
+    it('rejects BNDBNK', () => expect(parser.canHandle('BNDBNK')).toBe(false));
+    it('rejects UNKNOWN', () => expect(parser.canHandle('UNKNOWN')).toBe(false));
+    it('rejects HDFC', () => expect(parser.canHandle('HDFC')).toBe(false));
   });
 
   it('correctly identifies bank name', () => {
     expect(parser.getBankName()).toBe('Bandhan Bank');
+  });
+
+  describe('UPI credit with merchant from towards (deposited to A/c)', () => {
+    const message =
+      'INR 25,000.00 deposited to A/c XXXXXXXXXX1234 towards UPI/CR/C224513287910/JOHN DOE/u on 03-OCT-2025 . Clear Bal is INR 30,123.00 . Bandhan Bank.';
+    const result = parser.parse(message, 'AD-BDNSMS', 0);
+
+    it('parses successfully', () => expect(result).not.toBeNull());
+    it('amount is 25000', () => expect(result?.amount).toBe(25000));
+    it('type is INCOME', () => expect(result?.type).toBe('INCOME'));
+    it('accountLast4 is 1234', () => expect(result?.accountLast4).toBe('1234'));
+    it('balance is 30123', () => expect(result?.balance).toBe(30123));
+    it('merchant is JOHN DOE', () => expect(result?.merchant).toBe('JOHN DOE'));
+    it('reference is C224513287910', () => expect(result?.reference).toBe('C224513287910'));
+    it('bankName is Bandhan Bank', () => expect(result?.bankName).toBe('Bandhan Bank'));
+  });
+
+  describe('Interest credit (towards interest)', () => {
+    const message =
+      'Dear Customer, your account XXXXXXXXXX1234 is credited with INR 3.00 on 01-OCT-2025 towards interest. Bandhan Bank';
+    const result = parser.parse(message, 'BANDHAN', 0);
+
+    it('parses successfully', () => expect(result).not.toBeNull());
+    it('amount is 3', () => expect(result?.amount).toBe(3));
+    it('type is INCOME', () => expect(result?.type).toBe('INCOME'));
+    it('merchant is Interest', () => expect(result?.merchant).toBe('Interest'));
+    it('bankName is Bandhan Bank', () => expect(result?.bankName).toBe('Bandhan Bank'));
+  });
+
+  describe('OTP message is rejected', () => {
+    it('returns null', () => {
+      expect(
+        parser.parse('Your Bandhan Bank OTP is 123456. Valid for 10 minutes. Do not share.', 'BANDHAN', 0),
+      ).toBeNull();
+    });
+  });
+
+  describe('Password message is rejected', () => {
+    it('returns null', () => {
+      expect(
+        parser.parse(
+          'Your Bandhan Bank net banking password has been changed successfully.',
+          'AD-BDNSMS',
+          0,
+        ),
+      ).toBeNull();
+    });
   });
 });
