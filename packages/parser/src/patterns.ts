@@ -75,7 +75,7 @@ export const CompiledPatterns = {
     REF_SIMPLE: /Ref\s+(\d{9,12})/i,
     UPI_REF_NO: /UPI\s+Ref\s+No\s+(\d{12})/i,
     REF_NO: /Ref\s+No\.?\s+([A-Z0-9]+)/i,
-    REF_END: /(?:Ref|Reference)[:.\\s]+([A-Z0-9]{6,})(?:\s*$|\s*Not\s+You)/i,
+    REF_END: /(?:Ref|Reference)[:\.\s]+([A-Z0-9]{6,})(?:\s*$|\s*Not\s+You)/i,
     ACCOUNT_DEPOSITED: /deposited\s+in\s+(?:HDFC\s+Bank\s+)?A\/c\s+(?:XX+)?(\d+)/i,
     ACCOUNT_FROM: /from\s+(?:HDFC\s+Bank\s+)?A\/c\s+(?:XX+)?(\d+)/i,
     ACCOUNT_SIMPLE: /HDFC\s+Bank\s+A\/c\s+(\d+)/i,
@@ -84,6 +84,13 @@ export const CompiledPatterns = {
     DEDUCTION_DATE: /deducted\s+on\s+(\d{2}\/\d{2}\/\d{2}),?\s*\d{2}:\d{2}:\d{2}/i,
     MANDATE_MERCHANT: /For\s+([^\n]+?)\s+mandate/i,
     UMN_PATTERN: /UMN\s+([a-zA-Z0-9@]+)/i,
+    CARD_LAST4: /Card\s+x(\d{4})/i,
+    BLOCK_DC: /BLOCK\s+DC\s+(\d{4})/i,
+    HDFC_BANK_ACCOUNT: /HDFC\s+Bank\s+([X*]*\d+)/i,
+    AVL_BAL_INR: /Avl\s+bal:?\s*INR\s*([0-9,]+(?:\.\d{2})?)/i,
+    AVAILABLE_BAL_INR: /Available\s+Balance:?\s*INR\s*([0-9,]+(?:\.\d{2})?)/i,
+    BAL_RS: /Bal\s+Rs\.?\s*([0-9,]+(?:\.\d{2})?)/i,
+    FROM_VPA_CREDIT: /from\s+VPA\s*([^@\s]+)@[^\s]+\s*\(UPI\s+\d+\)/i,
   },
 
   Cleaning: {

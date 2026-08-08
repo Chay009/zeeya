@@ -84,9 +84,9 @@ export class JuspayParser extends BankParser {
     if (lowerMessage.includes('debited')) return 'EXPENSE';
     if (lowerMessage.includes('payment')) return 'EXPENSE';
     if (lowerMessage.includes('charged')) return 'EXPENSE';
-    if (lowerMessage.includes('credited')) return 'INCOME';
-    if (lowerMessage.includes('refunded')) return 'INCOME';
-    if (lowerMessage.includes('received')) return 'INCOME';
+    if (lowerMessage.includes('credited')) return 'CREDIT';
+    if (lowerMessage.includes('refunded')) return 'CREDIT';
+    if (lowerMessage.includes('received')) return 'CREDIT';
 
     return null;
   }

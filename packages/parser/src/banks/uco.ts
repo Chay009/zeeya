@@ -39,8 +39,8 @@ export class UCOBankParser extends BankParser {
 
   protected override extractTransactionType(message: string): TransactionType | null {
     const lower = message.toLowerCase();
-    if (lower.includes('credited')) return 'INCOME';
-    if (lower.includes('debited')) return 'EXPENSE';
+    if (lower.includes('debited with')) return 'EXPENSE';
+    if (lower.includes('credited with')) return 'INCOME';
     return super.extractTransactionType(message);
   }
 

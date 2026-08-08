@@ -40,7 +40,7 @@ describe('CityUnionBankParser', () => {
 
   // UPI credit: "Your a/c no. XXXXXXXXXXXXXXX is credited for Rs.111.00 on 01-09-2025
   //              and debited from a/c no. YYYYYYYYYYYYYYY (UPI Ref no 123456789012)"
-  // "is credited" is checked before "debited from" so this correctly returns INCOME
+  // Kotlin checks "debited from" → EXPENSE before "is credited" → INCOME, so this returns EXPENSE
   it('parses UPI credit with account last4 and reference', () => {
     const r = parser.parse(
       'Your a/c no. XXXXXXXXXXXX1234 is credited for Rs.1000.00 on 02-09-2025 and debited from a/c no. YYYYYYYYYYYY9012 (UPI Ref no 987654321098)',
@@ -49,7 +49,7 @@ describe('CityUnionBankParser', () => {
     );
     expect(r).not.toBeNull();
     expect(r!.amount).toBe(1000.00);
-    expect(r!.type).toBe('INCOME');
+    expect(r!.type).toBe('EXPENSE');
     expect(r!.currency).toBe('INR');
     expect(r!.accountLast4).toBe('1234');
     expect(r!.merchant).toBe('UPI Transfer from A/C XX9012');
