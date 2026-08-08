@@ -34,7 +34,7 @@ export class CanaraBankParser extends BankParser {
       if (this.isValidMerchantName(merchant)) return merchant;
     }
 
-    if (message.includes('DEBITED')) return 'Canara Bank Debit';
+    if (/DEBITED/i.test(message)) return 'Canara Bank Debit';
 
     return super.extractMerchant(message, sender);
   }

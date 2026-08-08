@@ -40,12 +40,13 @@ describe('JioPayParser', () => {
     expect(r!.type).toBe('CREDIT');
   });
 
-  it('marks payment-successful-to message as CREDIT', () => {
+  // Kotlin isTransactionMessage only checks "recharge successful"; "payment successful"
+  // alone is not recognised — base class also doesn't match it, so parse() returns null.
+  it('does not parse payment-successful-to message (not a recognised keyword in Kotlin)', () => {
     const msg =
       'Payment successful to Swiggy for Rs. 350.00. Transaction ID : BR000SWG001';
     const r = parser.parse(msg, 'JA-JIOPAY-S', 0);
-    expect(r).not.toBeNull();
-    expect(r!.type).toBe('CREDIT');
+    expect(r).toBeNull();
   });
 
   // ── amount: Plan Name pattern ─────────────────────────────────────────────
@@ -68,20 +69,18 @@ describe('JioPayParser', () => {
 
   // ── amount: Rs. pattern ───────────────────────────────────────────────────
 
-  it('extracts amount from Rs. pattern in payment-successful message', () => {
+  // "payment successful" is not a recognised transaction keyword in Kotlin JioPayParser;
+  // these messages return null from parse().
+  it('returns null for payment-successful message (not recognised by Kotlin parser)', () => {
     const msg =
       'Payment successful to Swiggy for Rs. 350.00. Transaction ID : BR000SWG001';
-    const r = parser.parse(msg, 'JA-JIOPAY-S', 0);
-    expect(r).not.toBeNull();
-    expect(r!.amount).toBe(350.0);
+    expect(parser.parse(msg, 'JA-JIOPAY-S', 0)).toBeNull();
   });
 
-  it('extracts comma-separated amount from Rs. pattern', () => {
+  it('returns null for comma-amount payment-successful message', () => {
     const msg =
       'Payment successful to Vendor for Rs. 1,200.00. Transaction ID : BR001TEST99';
-    const r = parser.parse(msg, 'JIOPAY', 0);
-    expect(r).not.toBeNull();
-    expect(r!.amount).toBe(1200.0);
+    expect(parser.parse(msg, 'JIOPAY', 0)).toBeNull();
   });
 
   // ── merchant: Jio recharge (with phone number) ────────────────────────────
@@ -104,52 +103,42 @@ describe('JioPayParser', () => {
 
   // ── merchant: bill payment ────────────────────────────────────────────────
 
-  it('returns "Electricity Bill" for electricity bill payment', () => {
+  // Kotlin isTransactionMessage only adds "recharge successful"; "bill payment successful"
+  // is not in Kotlin — all bill-payment messages below return null from parse().
+  it('returns null for electricity bill payment message (not recognised by Kotlin)', () => {
     const msg =
       'Electricity bill payment successful. Rs. 1500.00. Transaction ID : BR000ELEC01';
-    const r = parser.parse(msg, 'JA-JIOPAY-S', 0);
-    expect(r).not.toBeNull();
-    expect(r!.merchant).toBe('Electricity Bill');
+    expect(parser.parse(msg, 'JA-JIOPAY-S', 0)).toBeNull();
   });
 
-  it('returns "Water Bill" for water bill payment', () => {
+  it('returns null for water bill payment message', () => {
     const msg =
       'Water bill payment successful. Rs. 300.00. Transaction ID : BR000WATR01';
-    const r = parser.parse(msg, 'JA-JIOPAY-S', 0);
-    expect(r).not.toBeNull();
-    expect(r!.merchant).toBe('Water Bill');
+    expect(parser.parse(msg, 'JA-JIOPAY-S', 0)).toBeNull();
   });
 
-  it('returns "Gas Bill" for gas bill payment', () => {
+  it('returns null for gas bill payment message', () => {
     const msg =
       'Gas bill payment successful. Rs. 800.00. Transaction ID : BR000GAS001';
-    const r = parser.parse(msg, 'JA-JIOPAY-S', 0);
-    expect(r).not.toBeNull();
-    expect(r!.merchant).toBe('Gas Bill');
+    expect(parser.parse(msg, 'JA-JIOPAY-S', 0)).toBeNull();
   });
 
-  it('returns "Broadband Bill" for broadband bill payment', () => {
+  it('returns null for broadband bill payment message', () => {
     const msg =
       'Broadband bill payment successful. Rs. 999.00. Transaction ID : BR000BROAD1';
-    const r = parser.parse(msg, 'JIOPAY', 0);
-    expect(r).not.toBeNull();
-    expect(r!.merchant).toBe('Broadband Bill');
+    expect(parser.parse(msg, 'JIOPAY', 0)).toBeNull();
   });
 
-  it('returns "DTH Recharge" for DTH bill payment', () => {
+  it('returns null for DTH bill payment message', () => {
     const msg =
       'DTH bill payment successful. Rs. 450.00. Transaction ID : BR000DTH001';
-    const r = parser.parse(msg, 'JA-JIOPAY-S', 0);
-    expect(r).not.toBeNull();
-    expect(r!.merchant).toBe('DTH Recharge');
+    expect(parser.parse(msg, 'JA-JIOPAY-S', 0)).toBeNull();
   });
 
-  it('returns "Bill Payment" for generic bill payment', () => {
+  it('returns null for generic bill payment message', () => {
     const msg =
       'Bill payment successful. Rs. 500.00. Transaction ID : BR000BILL01';
-    const r = parser.parse(msg, 'JA-JIOPAY-S', 0);
-    expect(r).not.toBeNull();
-    expect(r!.merchant).toBe('Bill Payment');
+    expect(parser.parse(msg, 'JA-JIOPAY-S', 0)).toBeNull();
   });
 
   // ── merchant: recharge (non-Jio) ─────────────────────────────────────────
@@ -188,28 +177,23 @@ describe('JioPayParser', () => {
 
   // ── merchant: payment successful to ──────────────────────────────────────
 
-  it('extracts merchant name from "payment successful to" phrase', () => {
+  // "payment successful" is not recognised by Kotlin isTransactionMessage; parse() → null.
+  it('returns null for "payment successful to" message (not recognised by Kotlin)', () => {
     const msg =
       'Payment successful to Swiggy for Rs. 350.00. Transaction ID : BR000SWG001';
-    const r = parser.parse(msg, 'JA-JIOPAY-S', 0);
-    expect(r).not.toBeNull();
-    expect(r!.merchant).toBe('Swiggy');
+    expect(parser.parse(msg, 'JA-JIOPAY-S', 0)).toBeNull();
   });
 
-  it('extracts multi-word merchant from "payment successful to" phrase', () => {
+  it('returns null for multi-word merchant payment-successful message', () => {
     const msg =
       'Payment successful to Big Bazaar for Rs. 1500.00. Transaction ID : BR000BB0001';
-    const r = parser.parse(msg, 'JIOPAY', 0);
-    expect(r).not.toBeNull();
-    expect(r!.merchant).toBe('Big Bazaar');
+    expect(parser.parse(msg, 'JIOPAY', 0)).toBeNull();
   });
 
-  it('returns "JioPay Payment" when no name follows "payment successful to"', () => {
+  it('returns null for bare "payment successful to" message', () => {
     const msg =
       'Payment successful to. Rs. 100.00. Transaction ID : BR000PAY001';
-    const r = parser.parse(msg, 'JA-JIOPAY-S', 0);
-    expect(r).not.toBeNull();
-    expect(r!.merchant).toBe('JioPay Payment');
+    expect(parser.parse(msg, 'JA-JIOPAY-S', 0)).toBeNull();
   });
 
   // ── reference extraction ──────────────────────────────────────────────────
@@ -222,9 +206,10 @@ describe('JioPayParser', () => {
     expect(r!.reference).toBe('BR000CAUBYON');
   });
 
-  it('extracts numeric-only Transaction ID', () => {
+  // "payment successful" not recognised → null; use a recharge message to test numeric ref
+  it('extracts numeric-only Transaction ID from recharge message', () => {
     const msg =
-      'Payment successful to Vendor for Rs. 500.00. Transaction ID : 123456789';
+      'Recharge successful. Rs. 100.00. Transaction ID : 123456789';
     const r = parser.parse(msg, 'JIOPAY', 0);
     expect(r).not.toBeNull();
     expect(r!.reference).toBe('123456789');
@@ -247,10 +232,11 @@ describe('JioPayParser', () => {
     expect(parser.parse(msg, 'JA-JIOPAY-S', 0)).not.toBeNull();
   });
 
-  it('recognises "payment successful" as a transaction message', () => {
+  // Kotlin does NOT add "payment successful" to isTransactionMessage; parse() → null.
+  it('does not recognise bare "payment successful" as a transaction message', () => {
     const msg =
       'Payment successful to Amazon for Rs. 999.00. Transaction ID : BR000AMZ001';
-    expect(parser.parse(msg, 'JA-JIOPAY-S', 0)).not.toBeNull();
+    expect(parser.parse(msg, 'JA-JIOPAY-S', 0)).toBeNull();
   });
 
   it('does not parse OTP messages', () => {
@@ -275,7 +261,7 @@ describe('JioPayParser', () => {
 
   it('sets correct bankName and currency on parsed result', () => {
     const msg =
-      'Payment successful to Amazon for Rs. 999.00. Transaction ID : BR000AMZ001';
+      'Plan Name : 249.00 activated for Jio Number : 9876543210. Recharge successful. Transaction ID : BR000CAUBYON';
     const r = parser.parse(msg, 'JA-JIOPAY-S', 0);
     expect(r).not.toBeNull();
     expect(r!.bankName).toBe('JioPay');

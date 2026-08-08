@@ -90,8 +90,6 @@ export class JioPayParser extends BankParser {
   protected override isTransactionMessage(message: string): boolean {
     const lower = message.toLowerCase();
     if (lower.includes('recharge successful')) return true;
-    if (lower.includes('payment successful')) return true;
-    if (lower.includes('bill payment successful')) return true;
     return super.isTransactionMessage(message);
   }
 }
