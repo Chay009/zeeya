@@ -4,11 +4,11 @@ import type { Token } from './types';
 const PATTERNS: Array<{ type: string; re: RegExp }> = [
   {
     type: 'DATETIME',
-    re: /\b(?:(?:Sun|Mon|Tue|Wed|Thu|Fri|Sat)(?:urday|nesday|rsday|day)?[,\s]+)?(?:\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}|\d{1,2}\s(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*(?:[,\s]+\d{2,4})?)[,\s]+(?:[01]?\d|2[0-3]):[0-5]\d(?::[0-5]\d)?(?:\s?(?:AM|PM|HRS))?\b/gi,
+    re: /\b(?:(?:Sun|Mon|Tue|Wed|Thu|Fri|Sat)(?:urday|nesday|rsday|day)?[,\s]+)?(?:\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}|\d{1,2}[\s\-](?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*(?:[\s,\-]+\d{2,4})?)[,\s]+(?:[01]?\d|2[0-3]):[0-5]\d(?::[0-5]\d)?(?:\s?(?:AM|PM|HRS))?\b/gi,
   },
   {
     type: 'DATE',
-    re: /\b(?:(?:Sun|Mon|Tue|Wed|Thu|Fri|Sat)(?:urday|nesday|rsday|day)?[,\s]+)?(?:\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}|\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2}|\d{1,2}\s(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*(?:[,\s]+\d{2,4})?)\b/gi,
+    re: /\b(?:(?:Sun|Mon|Tue|Wed|Thu|Fri|Sat)(?:urday|nesday|rsday|day)?[,\s]+)?(?:\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}|\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2}|\d{1,2}[\s\-](?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*(?:[\s,\-]+\d{2,4})?)\b/gi,
   },
   {
     type: 'TIME',

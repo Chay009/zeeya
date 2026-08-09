@@ -8,19 +8,29 @@ interface TrieNode {
   attrs: Record<string, string>;
 }
 
+// Strip trailing digits from token type to get the BASE TYPE, matching ga3.baz.l() behavior:
+// ([^0-9]*)([0-9]+) extracts group(1) = base type (e.g. TRX2 → TRX, INS3 → INS)
+function baseType(t: string): string {
+  return t.replace(/\d+$/, '');
+}
+
 function parseTokenKey(key: string): { type: string; attrs: Record<string, string> } {
   const bracketIdx = key.indexOf('[');
-  if (bracketIdx === -1) return { type: key, attrs: {} };
-  const type = key.slice(0, bracketIdx);
+  if (bracketIdx === -1) return { type: baseType(key), attrs: {} };
+  const rawType = key.slice(0, bracketIdx);
   const attrStr = key.slice(bracketIdx + 1, key.length - 1);
   const attrs: Record<string, string> = {};
   for (const part of attrStr.split(',')) {
     if (part.startsWith('_')) {
       const eq = part.indexOf('=');
       if (eq !== -1) attrs[part.slice(1, eq)] = part.slice(eq + 1);
+    } else if (part.trim()) {
+      // Non-underscore attribute: store as _type or plain attribute
+      const eq = part.indexOf('=');
+      if (eq !== -1) attrs[part.slice(0, eq).trim()] = part.slice(eq + 1).trim();
     }
   }
-  return { type, attrs };
+  return { type: baseType(rawType), attrs };
 }
 
 function newNode(): TrieNode {

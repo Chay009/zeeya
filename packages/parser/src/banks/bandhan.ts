@@ -1,6 +1,5 @@
 // 1:1 port of BandhanBankParser.kt from Cashiro parser-core
 import { BankParser } from '../base-parser.js';
-import type { TransactionType } from '../types.js';
 
 export class BandhanBankParser extends BankParser {
   getBankName(): string {

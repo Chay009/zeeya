@@ -36,6 +36,34 @@ function mergeTokens(regexTokens: Token[], keywordTokens: Token[], message: stri
   return positioned.map(p => p.token);
 }
 
+// Choose the best representative value for a given tag type.
+// Tag names come from GRMR result entries like INTENT[trx], INSTR[acc], BAL[bal].
+function pickTagValue(tag: string, values: Record<string, string>): string {
+  switch (tag) {
+    case 'trx':
+    case 'bal':
+    case 'waladd':
+    case 'walsub':
+    case 'crdlmt':
+    case 'totcrdlmt':
+    case 'incrdlmt':
+    case 'chqamt':
+    case 'subsidy':
+      return values['amount'] || '';
+    case 'acc':
+    case 'beneacc':
+      return values['instrno'] || values['idval'] || '';
+    case 'ref':
+      return values['instrno'] || values['idval'] || '';
+    case 'trxcatg':
+    case 'bene':
+    case 'beneadd':
+      return values['idval'] || '';
+    default:
+      return values['amount'] || values['instrno'] || values['idval'] || '';
+  }
+}
+
 export class MalanaEngine {
   private keywordTokenizer: KeywordTokenizer;
   private seed: SeedData;
@@ -65,12 +93,14 @@ export class MalanaEngine {
       if (!token.matched) continue;
       const tag = token.values['_tag'];
       if (tag) {
-        tags[tag] = token.values['amount'] || token.raw;
+        // Pick the most meaningful value for this tag type
+        const tagValue = pickTagValue(tag, token.values);
+        if (tagValue) tags[tag] = tagValue;
         if (!detectedCategory) detectedCategory = category;
       }
-      // Preserve important structured values
+      // Propagate all non-internal structured values as top-level tags
       for (const [k, v] of Object.entries(token.values)) {
-        if (!k.startsWith('_')) tags[k] = v;
+        if (!k.startsWith('_') && v) tags[k] = v;
       }
     }
 

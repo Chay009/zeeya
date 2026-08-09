@@ -3,18 +3,19 @@ import type { CompiledLayer, GrammarEntry } from './grammar-compiler';
 
 // Implements na3.bar.a() — token pair FSA matching
 // For each adjacent pair of tokens (with optional skipped tokens between),
-// tries 4 HashMap key variants in order:
-//   1. raw1-raw2
-//   2. type1-type2
-//   3. type1-raw2
-//   4. raw1-type2
+// tries key variants combining raw value, exact type, and base type for each position.
 // On match: validate skip count & required middle types, then merge into result type.
 
-// Normalize token type for grammar matching: strip trailing digits so TRX2→TRX, INS3→INS, etc.
-// This allows grammar rules written against base types to match all numbered variants.
+// Normalize token type for grammar matching: strip trailing digits so TRX2→TRX, INS3→INS.
+// Confirmed from ga3.baz.l() Dalvik bytecode: ([^0-9]*)([0-9]+) extracts group(1)=base type.
+// Both keyword-tokenizer and grammar-runner use the same strip to ensure consistent matching.
 function baseType(t: string): string {
   return t.replace(/\d+$/, '');
 }
+
+// Payment method token types that override generic "debit" when merging attributes.
+// Confirmed from na3.bar.b() bytecode: special-cased values when raw == "neft"|"imps"|"upi"|"rtgs"|"aeps"
+const PAYMENT_METHODS = new Set(['neft', 'imps', 'upi', 'rtgs', 'aeps']);
 
 function findMatch(
   layer: CompiledLayer,
@@ -27,7 +28,7 @@ function findMatch(
   const pb = baseType(pt);
   const nb = baseType(nt);
 
-  // Try all combinations: raw, exact type, base type
+  // Try all combinations: raw, exact type, base type (de-duped)
   const prevVariants = [...new Set([prev.raw, pt, pb])];
   const nextVariants = [...new Set([next.raw, nt, nb])];
 
@@ -53,6 +54,58 @@ function findMatch(
   return null;
 }
 
+// Implements na3.bar.b() — merge xa3.d attribute maps from child tokens into parent.
+// Special handling confirmed from bytecode:
+//   - "type" attribute: if child has PAYMENT_METHOD value AND parent already has "debit",
+//     the more-specific payment method type wins.
+//   - "loc" attribute: fan out to both "from_loc" and "to_loc" on parent.
+//   - "airport" attribute: fan out to both "from_airport" and "to_airport" on parent.
+//   - "time" attribute: fan out to both "from_time" and "to_time" on parent.
+//   - all other attributes: child value wins only if parent doesn't already have that key.
+function mergeChildAttrs(parent: Token, children: Token[]) {
+  for (const child of children) {
+    for (const [k, v] of Object.entries(child.values)) {
+      if (k.startsWith('_')) continue; // internal metadata, don't propagate
+
+      if (k === 'type') {
+        const existing = parent.values['type'];
+        // If child carries a specific payment method and parent only has generic "debit", upgrade
+        if (PAYMENT_METHODS.has(v) && (!existing || existing === 'debit')) {
+          parent.values['type'] = v;
+        } else if (!existing) {
+          parent.values['type'] = v;
+        }
+        continue;
+      }
+
+      if (k === 'loc') {
+        if (!parent.values['from_loc']) parent.values['from_loc'] = v;
+        if (!parent.values['to_loc']) parent.values['to_loc'] = v;
+        continue;
+      }
+
+      if (k === 'airport') {
+        if (!parent.values['from_airport']) parent.values['from_airport'] = v;
+        if (!parent.values['to_airport']) parent.values['to_airport'] = v;
+        continue;
+      }
+
+      if (k === 'time') {
+        if (!parent.values['from_time']) parent.values['from_time'] = v;
+        if (!parent.values['to_time']) parent.values['to_time'] = v;
+        continue;
+      }
+
+      if (!parent.values[k]) parent.values[k] = v;
+    }
+
+    // Recurse into child's own children (na3.bar.b() processes entire child subtree)
+    if (child.children.length > 0) {
+      mergeChildAttrs(parent, child.children);
+    }
+  }
+}
+
 export function runLayer(tokens: Token[], layer: CompiledLayer): Token[] {
   if (tokens.length < 2) return tokens;
 
@@ -76,14 +129,14 @@ export function runLayer(tokens: Token[], layer: CompiledLayer): Token[] {
         const entry = findMatch(layer, prev, next, between);
         if (!entry) continue;
 
+        const childTokens = [prev, ...between, next] as Token[];
         const sliceText = result.slice(i, j + 1);
+
         const merged: Token = {
           type: entry.resultType,
           raw: entry.resultType,
           text: sliceText.map(t => t.text).join(' '),
           values: {
-            ...prev.values,
-            ...next.values,
             ...entry.resultAttrs,
             _prevType: prev.type,
             _prevRaw: prev.raw,
@@ -92,10 +145,14 @@ export function runLayer(tokens: Token[], layer: CompiledLayer): Token[] {
           },
           locked: false,
           matched: true,
-          children: [prev, ...between, next] as Token[],
+          children: childTokens,
         };
 
-        inheritLeafValues(merged, [prev, ...between, next] as Token[]);
+        // First: pull up leaf-level typed values (amounts, dates, etc.)
+        inheritLeafValues(merged, childTokens);
+
+        // Then: apply na3.bar.b() attribute inheritance from child token value maps
+        mergeChildAttrs(merged, childTokens);
 
         result.splice(i, j - i + 1, merged);
         changed = true;
@@ -107,7 +164,8 @@ export function runLayer(tokens: Token[], layer: CompiledLayer): Token[] {
   return result;
 }
 
-// Bubble up numeric/string values from leaf tokens into merged token
+// Pull up structured values from typed leaf tokens (AMT, DATE, INSTRNO, IDVAL).
+// These appear as first-class extraction targets in the Malana result.
 function inheritLeafValues(merged: Token, sources: Token[]) {
   for (const src of sources) {
     if (src.type === 'AMT' || src.type === 'NUM') {
@@ -121,6 +179,10 @@ function inheritLeafValues(merged: Token, sources: Token[]) {
     }
     if (src.type === 'DATE' || src.type === 'DATETIME') {
       if (!merged.values['date']) merged.values['date'] = src.raw;
+    }
+    // Recurse into children that may hold typed leaves
+    if (src.children.length > 0) {
+      inheritLeafValues(merged, src.children);
     }
   }
 }
