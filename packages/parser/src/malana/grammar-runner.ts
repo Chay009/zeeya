@@ -65,7 +65,15 @@ function findMatch(
 function mergeChildAttrs(parent: Token, children: Token[]) {
   for (const child of children) {
     for (const [k, v] of Object.entries(child.values)) {
-      if (k.startsWith('_')) continue; // internal metadata, don't propagate
+      if (k === '_norm') {
+        // _norm carries normalized direction for TRANS1/TRANS2/TRANS3 and SEND tokens
+        // that lack a [type,...] positional bracket — propagate as type when absent
+        if (!parent.values['type'] && (v === 'debit' || v === 'credit')) {
+          parent.values['type'] = v;
+        }
+        continue;
+      }
+      if (k.startsWith('_')) continue; // other internal metadata, don't propagate
 
       if (k === 'type') {
         const existing = parent.values['type'];
@@ -97,6 +105,11 @@ function mergeChildAttrs(parent: Token, children: Token[]) {
       }
 
       if (!parent.values[k]) parent.values[k] = v;
+    }
+
+    // SEND token carries implicit debit direction (grammar rule SEND+AMT → INTENT)
+    if (child.type === 'SEND' && !parent.values['type']) {
+      parent.values['type'] = 'debit';
     }
 
     // Recurse into child's own children (na3.bar.b() processes entire child subtree)

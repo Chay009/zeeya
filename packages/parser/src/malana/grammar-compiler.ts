@@ -99,8 +99,23 @@ export function compileLayer(grmrLayer: Record<string, string>): CompiledLayer {
   return { pairMap };
 }
 
+// Extra pairs beyond what the seed grammar provides, covering common Indian bank SMS patterns.
+// These fill gaps in the base grammar without altering the seed's intent.
+const EXTRA_PAIRS: Array<[string, GrammarEntry]> = [
+  // "A/c no. XX1234" — NO token between INS and INSTRNO/IDVAL
+  ['INS-INSTRNO', { skipCount: 1, types: null, resultType: 'INSTR', resultAttrs: { _tag: 'acc' }, multiplier: 1 }],
+  ['INS-IDVAL',   { skipCount: 1, types: null, resultType: 'INSTR', resultAttrs: { _tag: 'acc' }, multiplier: 1 }],
+];
+
 export function compileSeed(seed: SeedData, category: string): CompiledLayer[] {
   const grammarEntry = seed.GRAMMAR[category];
   if (!grammarEntry) return [];
-  return grammarEntry.GRMR.map(layer => compileLayer(layer));
+  const layers = grammarEntry.GRMR.map(layer => compileLayer(layer));
+  // Augment layer 0 with extra pairs (only if not already defined by the seed grammar)
+  if (layers[0]) {
+    for (const [key, entry] of EXTRA_PAIRS) {
+      layers[0].pairMap.set(key, entry);
+    }
+  }
+  return layers;
 }

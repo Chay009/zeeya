@@ -98,9 +98,72 @@ export class MalanaEngine {
         if (tagValue) tags[tag] = tagValue;
         if (!detectedCategory) detectedCategory = category;
       }
-      // Propagate all non-internal structured values as top-level tags
+      // Propagate all non-internal structured values as top-level tags.
+      // For 'amount': only update if we don't already have a transaction-tagged amount
+      // (prevents balance AMT from overwriting transaction AMT when both appear).
       for (const [k, v] of Object.entries(token.values)) {
-        if (!k.startsWith('_') && v) tags[k] = v;
+        if (k.startsWith('_') || !v) continue;
+        if (k === 'amount' && tags['trx']) continue; // trx tag already locked in the amount
+        if ((k === 'acc' || k === 'instrno') && tags[k]) continue; // keep first account seen
+        tags[k] = v;
+      }
+    }
+
+    // ── Fallbacks for common Indian bank SMS patterns not covered by grammar ──
+
+    // 1. Type direction from unmatched TRX/TRANS tokens (e.g. "debited FOR Rs.X" where
+    //    PREPV between TRX and AMT prevents the grammar TRX-AMT pair from firing).
+    if (!tags['type']) {
+      for (const token of processed) {
+        if (token.matched) continue;
+        const t = token.values['type'] || token.values['_norm'];
+        if (t === 'debit' || t === 'credit') {
+          tags['type'] = t;
+          if (!detectedCategory) detectedCategory = category;
+          break;
+        }
+      }
+    }
+
+    // 2. INCRDLMT spuriously fires from PREP+AMT pairs in Indian SMS like
+    //    "Debited WITH Rs.5000" or "debited WITH Rs.649 towards Netflix".
+    //    Prefer this over a stray unmatched AMT because it's closer to the TRX context.
+    if (!tags['trx'] && tags['incrdlmt'] && tags['type']) {
+      tags['trx'] = tags['incrdlmt'];
+      if (!detectedCategory) detectedCategory = category;
+    }
+
+    // 3. Transaction amount from first unmatched AMT (when direction is now known but
+    //    no INTENT fired and no incrdlmt — the AMT wasn't adjacent to the TRX token).
+    if (!tags['trx'] && tags['type']) {
+      for (const token of processed) {
+        if (!token.matched && token.type === 'AMT') {
+          tags['trx'] = token.raw;
+          if (!detectedCategory) detectedCategory = category;
+          break;
+        }
+      }
+    }
+
+    // 4. BAL token immediately before an unmatched TRX token holds the transaction
+    //    amount, not the balance (pattern: "Rs.500 has been DEBITED" → AMT AUX → BAL,
+    //    then TRX is left alone). Recover the amount from the BAL's child AMT.
+    if (!tags['trx']) {
+      for (let i = 0; i < processed.length - 1; i++) {
+        const tok = processed[i]!;
+        const nxt = processed[i + 1]!;
+        if (tok.matched && tok.type === 'BAL' && !nxt.matched) {
+          const dir = nxt.values['type'] || nxt.values['_norm'];
+          if (dir === 'debit' || dir === 'credit') {
+            const amt = tok.values['amount'];
+            if (amt) {
+              tags['trx'] = amt;
+              if (!tags['type']) tags['type'] = dir;
+              if (!detectedCategory) detectedCategory = category;
+              break;
+            }
+          }
+        }
       }
     }
 

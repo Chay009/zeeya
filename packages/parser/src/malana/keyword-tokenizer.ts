@@ -5,7 +5,11 @@ interface TrieNode {
   isEnd: boolean;
   tokenType: string;
   normalizedValue: string;
+  // Static attrs from bracket like _tense=past → {tense:'past'}
   attrs: Record<string, string>;
+  // Positional attr keys that should receive the normalized value at match time.
+  // e.g. TRX[type,...] → positionalKeys=['type'] so values['type']='debit'/'credit'
+  positionalKeys: string[];
 }
 
 // Strip trailing digits from token type to get the BASE TYPE, matching ga3.baz.l() behavior:
@@ -14,30 +18,61 @@ function baseType(t: string): string {
   return t.replace(/\d+$/, '');
 }
 
-function parseTokenKey(key: string): { type: string; attrs: Record<string, string> } {
+function parseTokenKey(key: string): {
+  type: string;
+  attrs: Record<string, string>;
+  positionalKeys: string[];
+} {
   const bracketIdx = key.indexOf('[');
-  if (bracketIdx === -1) return { type: baseType(key), attrs: {} };
+  if (bracketIdx === -1) return { type: baseType(key), attrs: {}, positionalKeys: [] };
   const rawType = key.slice(0, bracketIdx);
   const attrStr = key.slice(bracketIdx + 1, key.length - 1);
   const attrs: Record<string, string> = {};
-  for (const part of attrStr.split(',')) {
+  const positionalKeys: string[] = [];
+
+  for (const rawPart of attrStr.split(',')) {
+    const part = rawPart.trim();
+    if (!part) continue;
+
     if (part.startsWith('_')) {
+      // _key=value — strip leading underscore, store as named attr
       const eq = part.indexOf('=');
       if (eq !== -1) attrs[part.slice(1, eq)] = part.slice(eq + 1);
-    } else if (part.trim()) {
-      // Non-underscore attribute: store as _type or plain attribute
+    } else {
       const eq = part.indexOf('=');
-      if (eq !== -1) attrs[part.slice(0, eq).trim()] = part.slice(eq + 1).trim();
+      if (eq !== -1) {
+        // key=value — plain named attr (no underscore)
+        attrs[part.slice(0, eq).trim()] = part.slice(eq + 1).trim();
+      } else {
+        // Bare key like "type" — positional: at match time set values[key] = normalizedValue.
+        // Confirmed from ga3.baz.l() bytecode: these keys receive the pipe-right normalized value.
+        positionalKeys.push(part);
+      }
     }
   }
-  return { type: baseType(rawType), attrs };
+
+  return { type: baseType(rawType), attrs, positionalKeys };
 }
 
 function newNode(): TrieNode {
-  return { children: new Map(), isEnd: false, tokenType: '', normalizedValue: '', attrs: {} };
+  return {
+    children: new Map(),
+    isEnd: false,
+    tokenType: '',
+    normalizedValue: '',
+    attrs: {},
+    positionalKeys: [],
+  };
 }
 
-function insertTrie(root: TrieNode, phrase: string, type: string, normalized: string, attrs: Record<string, string>) {
+function insertTrie(
+  root: TrieNode,
+  phrase: string,
+  type: string,
+  normalized: string,
+  attrs: Record<string, string>,
+  positionalKeys: string[],
+) {
   let node = root;
   for (const ch of phrase) {
     if (!node.children.has(ch)) node.children.set(ch, newNode());
@@ -47,6 +82,7 @@ function insertTrie(root: TrieNode, phrase: string, type: string, normalized: st
   node.tokenType = type;
   node.normalizedValue = normalized || phrase;
   node.attrs = attrs;
+  node.positionalKeys = positionalKeys;
 }
 
 export class KeywordTokenizer {
@@ -54,14 +90,14 @@ export class KeywordTokenizer {
 
   constructor(tokensDict: Record<string, string>) {
     for (const [rawKey, rawValues] of Object.entries(tokensDict)) {
-      const { type, attrs } = parseTokenKey(rawKey);
+      const { type, attrs, positionalKeys } = parseTokenKey(rawKey);
       for (const entry of rawValues.split(',')) {
         const trimmed = entry.trim();
         if (!trimmed) continue;
         const pipeIdx = trimmed.indexOf('|');
         const keyword = pipeIdx !== -1 ? trimmed.slice(0, pipeIdx) : trimmed;
         const normalized = pipeIdx !== -1 ? trimmed.slice(pipeIdx + 1) : trimmed;
-        if (keyword) insertTrie(this.root, keyword.toLowerCase(), type, normalized, attrs);
+        if (keyword) insertTrie(this.root, keyword.toLowerCase(), type, normalized, attrs, positionalKeys);
       }
     }
   }
@@ -95,11 +131,19 @@ export class KeywordTokenizer {
 
       if (lastMatch) {
         const rawText = message.slice(i, lastMatch.end);
+        const norm = lastMatch.node.normalizedValue;
+
+        // Build values: static attrs + positional keys filled with normalized value
         const values: Record<string, string> = { ...lastMatch.node.attrs };
-        if (lastMatch.node.normalizedValue) values['_norm'] = lastMatch.node.normalizedValue;
+        if (norm) values['_norm'] = norm;
+        // Positional bracket attrs: TRX[type,...] → values['type'] = norm
+        for (const pk of lastMatch.node.positionalKeys) {
+          if (norm) values[pk] = norm;
+        }
+
         tokens.push({
           type: lastMatch.node.tokenType,
-          raw: lastMatch.node.normalizedValue || rawText,
+          raw: norm || rawText,
           text: rawText,
           values,
           locked: false,

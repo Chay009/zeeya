@@ -24,7 +24,7 @@ const PATTERNS: Array<{ type: string; re: RegExp }> = [
   },
   {
     type: 'INSTRNO',
-    re: /\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b|\b\d{12,22}\b|\b(?:[Xx*.\s-]{1,6}\d){1,4}\d{2,6}\b/g,
+    re: /\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b|\b\d{12,22}\b|\b[Xx*]{2,14}\d{3,10}\b|\b(?:[Xx*.\s-]{1,6}\d){1,4}\d{2,6}\b/g,
   },
   {
     type: 'USSD',
