@@ -130,25 +130,25 @@ const CASES: Case[] = [
 
   // ── Canara ───────────────────────────────────────────────────────────────
   {
-    bank: 'Canara', sender: 'CANBKM', amount: 1000, type: 'EXPENSE', acctLast4: undefined,
+    bank: 'Canara', sender: 'CANBNK', amount: 1000, type: 'EXPENSE', acctLast4: undefined,
     msg: 'Rs.1000.00 paid thru UPI to BMTC BUS, UPI Ref 123456789012. Total Avail.bal INR 9000.00',
   },
   {
-    bank: 'Canara', sender: 'CANBKM', amount: 500, type: 'EXPENSE', acctLast4: '1234',
+    bank: 'Canara', sender: 'CANBNK', amount: 500, type: 'EXPENSE', acctLast4: '1234',
     msg: 'INR 500.00 has been DEBITED from A/C XX1234. Total Avail.bal INR 4500.00',
   },
   {
-    bank: 'Canara', sender: 'CANBKM', amount: 2000, type: 'INCOME', acctLast4: undefined,
+    bank: 'Canara', sender: 'CANBNK', amount: 2000, type: 'INCOME', acctLast4: undefined,
     msg: 'INR 2000.00 has been CREDITED. Total Avail.bal INR 12000.00',
   },
 
   // ── BOB ──────────────────────────────────────────────────────────────────
   {
-    bank: 'BOB', sender: 'BOBIBD', amount: 1500, type: 'EXPENSE', acctLast4: '5678',
+    bank: 'BOB', sender: 'BOBSMS', amount: 1500, type: 'EXPENSE', acctLast4: '5678',
     msg: 'Your A/c no. XX5678 is debited with INR 1,500.00 on 10-Nov-25. Avl bal INR 8,500.00. -Bank of Baroda',
   },
   {
-    bank: 'BOB', sender: 'BOBIBD', amount: 3000, type: 'INCOME', acctLast4: '5678',
+    bank: 'BOB', sender: 'BOBSMS', amount: 3000, type: 'INCOME', acctLast4: '5678',
     msg: 'Your A/c no. XX5678 is credited with INR 3,000.00 on 10-Nov-25. Avl bal INR 11,500.00. -Bank of Baroda',
   },
 
@@ -170,17 +170,17 @@ const CASES: Case[] = [
 
   // ── YES Bank ─────────────────────────────────────────────────────────────
   {
-    bank: 'YES', sender: 'YESBKA', amount: 2500, type: 'EXPENSE', acctLast4: '3456',
+    bank: 'YES', sender: 'YESBNK', amount: 2500, type: 'EXPENSE', acctLast4: '3456',
     msg: 'Rs.2,500.00 debited from YES Bank A/c XX3456 on 01-Nov-25. Avail Bal Rs.7,500.00',
   },
 
   // ── Union Bank ───────────────────────────────────────────────────────────
   {
-    bank: 'Union', sender: 'UBISHA', amount: 1200, type: 'EXPENSE', acctLast4: undefined,
+    bank: 'Union', sender: 'UNIONB', amount: 1200, type: 'EXPENSE', acctLast4: undefined,
     msg: 'Your account is debited for Rs.1200.00 towards UPI on 05-Nov-25. Avl Bal Rs.8800.00 - Union Bank',
   },
   {
-    bank: 'Union', sender: 'UBISHA', amount: 4500, type: 'INCOME', acctLast4: '7890',
+    bank: 'Union', sender: 'UNIONB', amount: 4500, type: 'INCOME', acctLast4: '7890',
     msg: 'INR 4,500.00 credited to A/c XX7890 on 06-Nov-25. Avl Bal INR 14,500.00 - Union Bank of India',
   },
 
@@ -192,11 +192,11 @@ const CASES: Case[] = [
 
   // ── Bandhan ──────────────────────────────────────────────────────────────
   {
-    bank: 'Bandhan', sender: 'BNDHNB', amount: 300, type: 'EXPENSE', acctLast4: '6789',
+    bank: 'Bandhan', sender: 'BANDHAN', amount: 300, type: 'EXPENSE', acctLast4: '6789',
     msg: 'INR 300.00 debited from Bandhan Bank A/c XX6789 on 09-Nov-25. Available Bal INR 4700.00',
   },
   {
-    bank: 'Bandhan', sender: 'BNDHNB', amount: 1500, type: 'INCOME', acctLast4: '6789',
+    bank: 'Bandhan', sender: 'BANDHAN', amount: 1500, type: 'INCOME', acctLast4: '6789',
     msg: 'INR 1,500.00 credited to Bandhan Bank A/c XX6789 on 09-Nov-25. Available Bal INR 6200.00',
   },
 
