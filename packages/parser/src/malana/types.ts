@@ -31,7 +31,12 @@ export interface SeedData {
 }
 
 export interface MalanaResult {
-  category: string | null;
-  tags: Record<string, string>;
+  category: string | null;       // GRM_BANK | GRM_OTP | GRM_TRAVEL | GRM_BILL | GRM_DELIVERY | etc.
+  tags: Record<string, string>;  // raw grammar tags: trx, bal, acc, type, ref, bene, etc.
   tokens: Token[];
+
+  // Derived convenience fields
+  bankName: string | null;           // from vendor_banks sender match + message body fallback
+  merchantCategory: string | null;   // from vendor_seed: food, travel, fuel, medical, etc.
+  subcategory: string | null;        // upi | neft | imps | autdbt | cheque | withdraw | refund | etc.
 }

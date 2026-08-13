@@ -3,6 +3,7 @@ import { regexTokenize } from './regex-tokenizer';
 import { KeywordTokenizer } from './keyword-tokenizer';
 import { compileSeed } from './grammar-compiler';
 import { runGrammar } from './grammar-runner';
+import { detectBank, detectMerchantCategory, detectSubcategory } from './enrichment';
 
 // Merge regex-extracted tokens with keyword tokens, sorted by position in message.
 // Regex tokens take priority (they run first in the original engine);
@@ -73,7 +74,7 @@ export class MalanaEngine {
     this.keywordTokenizer = new KeywordTokenizer(seed.TOKENS);
   }
 
-  parse(message: string, category = 'GRM_BANK'): MalanaResult {
+  parse(message: string, sender = '', category = 'GRM_BANK'): MalanaResult {
     // Step 1: Tokenize
     const regexToks = regexTokenize(message);
     const kwToks = this.keywordTokenizer.tokenize(message);
@@ -167,7 +168,15 @@ export class MalanaEngine {
       }
     }
 
-    return { category: detectedCategory, tags, tokens: processed };
+    const merchant = tags['bene'] || tags['vendor'] || tags['merchant'] || '';
+    return {
+      category: detectedCategory,
+      tags,
+      tokens: processed,
+      bankName: detectBank(sender, message),
+      merchantCategory: detectMerchantCategory(merchant),
+      subcategory: detectSubcategory(tags),
+    };
   }
 }
 
