@@ -3,16 +3,35 @@ import { regexTokenize } from './regex-tokenizer';
 import { KeywordTokenizer } from './keyword-tokenizer';
 import { compileSeed } from './grammar-compiler';
 import { runGrammar } from './grammar-runner';
-import { detectBank, detectMerchantCategory, detectSubcategory } from './enrichment';
+import { compilePatterns, runPatterns } from './pattern-extractor';
+import { detectBank, detectMerchantCategory, detectSubcategory, detectBrand } from './enrichment';
 
+// ── Grammar auto-routing ───────────────────────────────────────────────────────
+// Token types produced by the keyword tokenizer that identify a specific grammar.
+// Priority order: earlier rows win (OTP before TRAVEL before DELIVERY, etc.)
+const GRAMMAR_ROUTING: Array<[readonly string[], string]> = [
+  [['OTP', 'PINCODE'], 'GRM_OTP'],
+  [['FLIGHT', 'PNR', 'TICKET', 'TICKETNO', 'TRIPCODE', 'BUSNO', 'BOOKINGID', 'MTICKET', 'FLTID'], 'GRM_TRAVEL'],
+  [['ORDERID', 'TRACKINGID', 'ORDER', 'TRACK'], 'GRM_DELIVERY'],
+  [['OFFER', 'OFFERSINTRX', 'OFFERCODE', 'USECODE', 'OFFERS'], 'GRM_OFFERS'],
+  [['STOCKEXCHNG', 'STOCKTRADE', 'STOCKUNITS'], 'GRM_STOCKUPDATES'],
+];
+
+function routeGrammar(tokens: Token[], defaultCategory: string): string {
+  const types = new Set(tokens.map(t => t.type));
+  for (const [markers, grammar] of GRAMMAR_ROUTING) {
+    if (markers.some(m => types.has(m))) return grammar;
+  }
+  return defaultCategory;
+}
+
+// ── Token merge ────────────────────────────────────────────────────────────────
 // Merge regex-extracted tokens with keyword tokens, sorted by position in message.
-// Regex tokens take priority (they run first in the original engine);
-// keyword tokens only fill uncovered positions.
+// Regex tokens take priority; keyword tokens only fill uncovered positions.
 function mergeTokens(regexTokens: Token[], keywordTokens: Token[], message: string): Token[] {
   const lower = message.toLowerCase();
   const positioned: Array<{ token: Token; pos: number; end: number }> = [];
 
-  // 1. Place regex tokens first — find their position by scanning message
   for (const t of regexTokens) {
     const idx = message.indexOf(t.text);
     if (idx !== -1) {
@@ -20,7 +39,6 @@ function mergeTokens(regexTokens: Token[], keywordTokens: Token[], message: stri
     }
   }
 
-  // 2. Place keyword tokens only where regex hasn't covered
   let searchFrom = 0;
   for (const t of keywordTokens) {
     const idx = lower.indexOf(t.text.toLowerCase(), searchFrom);
@@ -37,8 +55,8 @@ function mergeTokens(regexTokens: Token[], keywordTokens: Token[], message: stri
   return positioned.map(p => p.token);
 }
 
-// Choose the best representative value for a given tag type.
-// Tag names come from GRMR result entries like INTENT[trx], INSTR[acc], BAL[bal].
+// ── Tag value selection ────────────────────────────────────────────────────────
+// Pick the most meaningful value for a given tag type.
 function pickTagValue(tag: string, values: Record<string, string>): string {
   switch (tag) {
     case 'trx':
@@ -68,52 +86,65 @@ function pickTagValue(tag: string, values: Record<string, string>): string {
 export class MalanaEngine {
   private keywordTokenizer: KeywordTokenizer;
   private seed: SeedData;
+  // Pre-compiled patterns per grammar category; populated lazily
+  private patternCache = new Map<string, ReturnType<typeof compilePatterns>>();
 
   constructor(seed: SeedData) {
     this.seed = seed;
     this.keywordTokenizer = new KeywordTokenizer(seed.TOKENS);
   }
 
-  parse(message: string, sender = '', category = 'GRM_BANK'): MalanaResult {
+  private getPatternsFor(category: string) {
+    if (this.patternCache.has(category)) return this.patternCache.get(category)!;
+    const grammarEntry = this.seed.GRAMMAR[category];
+    const allPatterns = [
+      ...(grammarEntry?.PATTERN ?? []),
+      ...(grammarEntry?.STRUCT ?? []),
+    ];
+    const compiled = compilePatterns(allPatterns);
+    this.patternCache.set(category, compiled);
+    return compiled;
+  }
+
+  parse(message: string, sender = '', defaultCategory = 'GRM_BANK'): MalanaResult {
     // Step 1: Tokenize
     const regexToks = regexTokenize(message);
     const kwToks = this.keywordTokenizer.tokenize(message);
     const allTokens = mergeTokens(regexToks, kwToks, message);
 
-    // Step 2: Compile grammar layers for category
-    const layers = compileSeed(this.seed, category);
+    // Step 2: Auto-route to the correct grammar category
+    const category = routeGrammar(allTokens, defaultCategory);
 
-    // Step 3: Run grammar passes
+    // Step 3: Compile grammar layers for category
+    const layers = compileSeed(this.seed, category);
+    // Routing itself constitutes detection when we've moved away from the default
+    let detectedCategory: string | null = category !== defaultCategory ? category : null;
+
+    // Step 4: Run grammar FSA passes
     const processed = runGrammar(allTokens, layers);
 
-    // Step 4: Extract result tags
+    // Step 5: Extract result tags
     const tags: Record<string, string> = {};
-    let detectedCategory: string | null = null;
 
     for (const token of processed) {
       if (!token.matched) continue;
       const tag = token.values['_tag'];
       if (tag) {
-        // Pick the most meaningful value for this tag type
         const tagValue = pickTagValue(tag, token.values);
         if (tagValue) tags[tag] = tagValue;
         if (!detectedCategory) detectedCategory = category;
       }
-      // Propagate all non-internal structured values as top-level tags.
-      // For 'amount': only update if we don't already have a transaction-tagged amount
-      // (prevents balance AMT from overwriting transaction AMT when both appear).
       for (const [k, v] of Object.entries(token.values)) {
         if (k.startsWith('_') || !v) continue;
-        if (k === 'amount' && tags['trx']) continue; // trx tag already locked in the amount
-        if ((k === 'acc' || k === 'instrno') && tags[k]) continue; // keep first account seen
+        if (k === 'amount' && tags['trx']) continue;
+        if ((k === 'acc' || k === 'instrno') && tags[k]) continue;
         tags[k] = v;
       }
     }
 
-    // ── Fallbacks for common Indian bank SMS patterns not covered by grammar ──
+    // ── Fallbacks for common Indian bank SMS patterns ──────────────────────────
 
-    // 1. Type direction from unmatched TRX/TRANS tokens (e.g. "debited FOR Rs.X" where
-    //    PREPV between TRX and AMT prevents the grammar TRX-AMT pair from firing).
+    // 1. Direction from unmatched TRX/TRANS tokens (e.g. "debited FOR Rs.X")
     if (!tags['type']) {
       for (const token of processed) {
         if (token.matched) continue;
@@ -126,16 +157,13 @@ export class MalanaEngine {
       }
     }
 
-    // 2. INCRDLMT spuriously fires from PREP+AMT pairs in Indian SMS like
-    //    "Debited WITH Rs.5000" or "debited WITH Rs.649 towards Netflix".
-    //    Prefer this over a stray unmatched AMT because it's closer to the TRX context.
+    // 2. INCRDLMT from PREP+AMT pairs (e.g. "debited WITH Rs.5000")
     if (!tags['trx'] && tags['incrdlmt'] && tags['type']) {
       tags['trx'] = tags['incrdlmt'];
       if (!detectedCategory) detectedCategory = category;
     }
 
-    // 3. Transaction amount from first unmatched AMT (when direction is now known but
-    //    no INTENT fired and no incrdlmt — the AMT wasn't adjacent to the TRX token).
+    // 3. Transaction amount from first unmatched AMT when direction is known
     if (!tags['trx'] && tags['type']) {
       for (const token of processed) {
         if (!token.matched && token.type === 'AMT') {
@@ -146,9 +174,7 @@ export class MalanaEngine {
       }
     }
 
-    // 4. BAL token immediately before an unmatched TRX token holds the transaction
-    //    amount, not the balance (pattern: "Rs.500 has been DEBITED" → AMT AUX → BAL,
-    //    then TRX is left alone). Recover the amount from the BAL's child AMT.
+    // 4. BAL immediately before unmatched TRX holds the transaction amount
     if (!tags['trx']) {
       for (let i = 0; i < processed.length - 1; i++) {
         const tok = processed[i]!;
@@ -168,15 +194,85 @@ export class MalanaEngine {
       }
     }
 
-    const merchant = tags['bene'] || tags['vendor'] || tags['merchant'] || '';
-    return {
+    // Step 6: PATTERN/STRUCT extraction — extract named captures (#vendor, #item, etc.)
+    const patternCaptures = runPatterns(this.getPatternsFor(category), processed);
+    // Merge into tags (don't overwrite grammar-derived values)
+    for (const [k, v] of Object.entries(patternCaptures)) {
+      if (v && !tags[k]) tags[k] = v;
+    }
+
+    // Step 7: Brand enrichment — check extracted merchant text first, then fall back to raw message
+    const merchantText = tags['bene'] || tags['vendor'] || tags['billvendor'] || tags['merchant'] || tags['item'] || '';
+    const brandMatch = detectBrand(merchantText) ?? detectBrand(message);
+
+    // Build typed result
+    const result: MalanaResult = {
       category: detectedCategory,
       tags,
       tokens: processed,
+
       bankName: detectBank(sender, message),
-      merchantCategory: detectMerchantCategory(merchant),
+      merchantCategory: brandMatch?.category ?? detectMerchantCategory(merchantText),
       subcategory: detectSubcategory(tags),
+
+      // Bank fields
+      trx: tags['trx'] || null,
+      bal: tags['bal'] || null,
+      acc: tags['acc'] || tags['instrno'] || null,
+      trxType: tags['type'] || null,
+      ref: tags['ref'] || null,
+      bene: tags['bene'] || null,
+      beneAcc: tags['beneacc'] || null,
+      vendor: tags['vendor'] || tags['billvendor'] || tags['merchant'] || null,
+      location: tags['location'] || null,
+
+      // OTP fields
+      otp: tags['otp'] || tags['pin'] || tags['code'] || null,
+      otpExpiry: tags['expire'] || null,
+
+      // Travel fields
+      pnr: tags['pnr'] || null,
+      flight: tags['flt'] || tags['flight_name'] || null,
+      departure: tags['dept'] || null,
+      arrival: tags['arrv'] || null,
+      fare: tags['fare'] || null,
+      trainBusNo: tags['train'] || tags['bus'] || null,
+      boardingGate: tags['boardgate'] || null,
+
+      // Delivery fields
+      orderNo: tags['order'] || null,
+      trackingId: tags['tracking'] || null,
+      deliveryStatus: tags['delivery'] || tags['ordstatus'] || null,
+      item: tags['item'] || null,
+
+      // Bill fields
+      billAmount: tags['bill'] || null,
+      emiAmount: tags['emi'] || null,
+      dueDate: tags['due'] || null,
+      policyNo: tags['policy'] || null,
+      rechargeAmount: tags['rechrg'] || tags['rechrgsucc'] || null,
+      mandateAmount: tags['mandate'] || null,
+
+      // Offer fields
+      cashback: tags['cashback'] || null,
+      discount: tags['discount'] || null,
+      offerCode: tags['code'] || null,
+
+      // Telecom fields
+      dataLeft: tags['left'] || null,
+      packBalance: tags['packbal'] || null,
+
+      // Stocks fields
+      navValue: tags['navval'] || null,
+      folio: tags['folio'] || null,
+      marginAmount: tags['margin'] || null,
+
+      // Brand fields
+      brandName: brandMatch?.brand ?? null,
+      isOnlineBrand: brandMatch?.isOnline ?? false,
     };
+
+    return result;
   }
 }
 

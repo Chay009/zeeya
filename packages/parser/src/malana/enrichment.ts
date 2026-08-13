@@ -1,25 +1,28 @@
-// Bank name detection: vendor_banks.json sender patterns + message body fallback
-// Merchant category: vendor_seed.json keyword matching against merchant name in tags
+// Bank name detection, merchant category, brand enrichment, subcategory derivation.
+// All data loaded from the original Truecaller APK JSON assets.
+
+import vendorBanksRaw from './data/vendor_banks.json';
+import vendorSeedRaw from './data/vendor_seed.json';
+import vendorBrandsRaw from './data/vendor_brands.json';
 
 // ── Bank name ─────────────────────────────────────────────────────────────────
-// From vendor_banks.json (Truecaller APK asset)
-const VENDOR_BANKS: Array<[string, string[]]> = [
-  ['State Bank of India', ['sbi', 'sbipg', 'state bank', 'sbh', 'oksbi']],
-  ['ICICI Bank',          ['ici', 'icici', 'icicibank', 'okicici']],
-  ['HDFC Bank',           ['hdf', 'hdfcltd', 'hdfc', 'okhdfc', 'hdfcbank']],
-  ['Axis Bank',           ['axmob', 'axs', 'axis', 'okaxis']],
-  ['YES Bank',            ['ybl', 'yesbank', 'yes']],
-  ['Bank of India',       ['boi']],
-  ['Paytm',               ['ptm', 'paytm']],
-  ['IDBI Bank',           ['idbi', 'idb']],
-  ['Bank of Baroda',      ['bob', 'baroda']],
-  ['PNB',                 ['pnb']],
-  ['RBI',                 ['rbi']],
-  ['IDFC First Bank',     ['idfc']],
-  ['IndusInd Bank',       ['iib']],
-];
 
-// Body fallback for banks not in vendor_banks.json
+// vendor_banks.json: "bank name" → ["sender-substr", ...]
+const VENDOR_BANKS: Array<[string, string[]]> = Object.entries(
+  vendorBanksRaw as Record<string, string[]>
+).map(([name, patterns]) => [
+  // Normalize bank display names
+  name === 'hdfc' ? 'HDFC Bank'
+  : name === 'idbi' ? 'IDBI Bank'
+  : name === 'rbi'  ? 'RBI'
+  : name === 'idfc' ? 'IDFC First Bank'
+  : name === 'indusind' ? 'IndusInd Bank'
+  : name === 'paytm' ? 'Paytm'
+  : name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+  patterns,
+]);
+
+// Additional banks not in vendor_banks.json, matched from message body
 const BODY_BANK_PATTERNS: Array<[RegExp, string]> = [
   [/kotak/i,                   'Kotak Bank'],
   [/canara/i,                  'Canara Bank'],
@@ -44,21 +47,19 @@ const BODY_BANK_PATTERNS: Array<[RegExp, string]> = [
   [/nsdl/i,                    'NSDL Payments Bank'],
   [/dhanlaxmi/i,               'Dhanlaxmi Bank'],
   [/jupiter/i,                 'Jupiter'],
-  [/slice/i,                   'Slice'],
-  [/cred\b/i,                  'CRED'],
+  [/\bslice\b/i,               'Slice'],
+  [/\bcred\b/i,                'CRED'],
   [/amex|american express/i,   'American Express'],
+  [/\bsbi\b/i,                 'State Bank of India'],
 ];
 
 export function detectBank(sender: string, message: string): string | null {
   const s = sender.toLowerCase();
 
-  // Layer 1: sender substring match (vendor_banks.json)
-  // Real Indian SMS senders: "VM-HDFCBK", "AD-SBIINB" — substring is enough
   for (const [name, patterns] of VENDOR_BANKS) {
     if (patterns.some(p => s.includes(p))) return name;
   }
 
-  // Layer 2: message body keyword match
   const haystack = sender + ' ' + message;
   for (const [re, name] of BODY_BANK_PATTERNS) {
     if (re.test(haystack)) return name;
@@ -68,56 +69,66 @@ export function detectBank(sender: string, message: string): string | null {
 }
 
 // ── Merchant category ─────────────────────────────────────────────────────────
-// From vendor_seed.json (Truecaller APK asset), keyword → category
-// Built as a flat lookup: lowercase keyword → category name
-const MERCHANT_CATEGORY_MAP = new Map<string, string>([
-  // entertainment
-  ...['cinemas','fun','hotstar','leisure','movies','multiplex','one97','pvr','sports','entertainment'].map(k => [k,'entertainment'] as [string,string]),
-  // food
-  ...['khhao','aahara','refreshment','food','kfc','mcd','mcdonalds','dominos','pizza','zomato','swiggy','cafe','restaurant','dhaba','biryani','burger','bakery','canteen','eatery','diner','kitchen'].map(k => [k,'food'] as [string,string]),
-  // travel
-  ...['airport','cleartrip','goibibo','ibibo','makemytrip','irctc','ola','uber','rapido','bus','train','flight','cab','taxi','redbus'].map(k => [k,'travel'] as [string,string]),
-  // fuel
-  ...['bpcl','hpcl','iocl','essar','petrol','diesel','fuel','filling','coco','shell'].map(k => [k,'fuel'] as [string,string]),
-  // medical
-  ...['medi','care','chemist','clinic','dental','hospital','pharma','pharmacy','health','apollo','fortis','medplus','netmeds'].map(k => [k,'medical'] as [string,string]),
-  // shopping
-  ...['shop','bazaar','dmart','amazon','flipkart','myntra','meesho','nykaa','ajio','reliance','tata','bigbasket','grofers','blinkit','zepto','instamart'].map(k => [k,'shopping'] as [string,string]),
-  // e-commerce
-  ...['ecommerce','ecom','snapdeal','shopclues','paytmmall'].map(k => [k,'e-commerce'] as [string,string]),
-  // fashion
-  ...['apparels','fashion','garments','dress','shoes','clothes','boutique','khadi','handloom'].map(k => [k,'fashion'] as [string,string]),
-  // monetary / investments
-  ...['mutual','insurance','sip','stock','cams','nsdl','zerodha','groww','upstox','kuvera'].map(k => [k,'monetary'] as [string,string]),
-  // utilities / payments
-  ...['electricity','water','gas','broadband','dth','recharge','postpaid','bill','utility','bescom','tpddl','msedcl'].map(k => [k,'payments'] as [string,string]),
-  // communication
-  ...['vodafone','airtel','idea','bsnl','jio','vi'].map(k => [k,'communication'] as [string,string]),
-  // transfer
-  ...['neft','upi','imps','rtgs','transfer','remit'].map(k => [k,'transfer'] as [string,string]),
-  // withdrawal
-  ...['atm','wdl','withdraw','cash'].map(k => [k,'withdrawal'] as [string,string]),
-  // hospitality
-  ...['hotel','resort','oyo','marriott','taj','inn','lodge','homestay'].map(k => [k,'hospitality'] as [string,string]),
-  // fitness
-  ...['gym','spa','fitness','decathlon','cult'].map(k => [k,'fitness'] as [string,string]),
-  // automobile
-  ...['automobile','motors','car','service','garage'].map(k => [k,'automobile'] as [string,string]),
-]);
+
+// vendor_seed.json: "category" → ["keyword", ...]
+// Build flat keyword → category lookup (all lowercase)
+const MERCHANT_CATEGORY_MAP = new Map<string, string>();
+
+for (const [category, keywords] of Object.entries(vendorSeedRaw as Record<string, string[]>)) {
+  for (const kw of keywords) {
+    if (kw && !MERCHANT_CATEGORY_MAP.has(kw.toLowerCase())) {
+      MERCHANT_CATEGORY_MAP.set(kw.toLowerCase(), category);
+    }
+  }
+}
 
 export function detectMerchantCategory(merchant: string): string | null {
   if (!merchant) return null;
   const lower = merchant.toLowerCase();
-  // Try exact token match first
   for (const [keyword, category] of MERCHANT_CATEGORY_MAP) {
     if (lower.includes(keyword)) return category;
   }
   return null;
 }
 
+// ── Brand enrichment ──────────────────────────────────────────────────────────
+
+// vendor_brands.json: "brand" → { tokens: [...], tags: [...] }
+// "online" in tags means it's an e-commerce/online brand
+interface BrandEntry {
+  tokens: string[];
+  tags: string[];
+}
+
+const VENDOR_BRANDS = new Map<string, BrandEntry>(
+  Object.entries(vendorBrandsRaw as Record<string, BrandEntry>)
+);
+
+export interface BrandMatch {
+  brand: string;
+  category: string | null;
+  isOnline: boolean;
+}
+
+export function detectBrand(merchant: string): BrandMatch | null {
+  if (!merchant) return null;
+  const lower = merchant.toLowerCase();
+
+  for (const [brand, entry] of VENDOR_BRANDS) {
+    // Match if any of the brand's token patterns appear in the merchant string
+    const matched = entry.tokens.some(t => lower.includes(t.toLowerCase()));
+    if (!matched) continue;
+
+    const isOnline = entry.tags.includes('online');
+    const category = entry.tags.find(t => t !== 'online' && t !== 'network_provider') ?? null;
+
+    return { brand, category, isOnline };
+  }
+  return null;
+}
+
 // ── Subcategory ───────────────────────────────────────────────────────────────
-// Derived from grammar tags already in the result
-// Maps tag names → subcategory strings matching Categories$TrxSubCategory
+
 export function detectSubcategory(tags: Record<string, string>): string | null {
   const type = (tags['type'] || '').toLowerCase();
   if (type === 'upi')   return 'upi';
@@ -130,5 +141,18 @@ export function detectSubcategory(tags: Record<string, string>): string | null {
   if (tags['waladd'] || tags['walsub']) return 'wallet';
   if (tags['incrdlmt']) return 'incrdlmt';
   if (tags['subsidy'])  return 'deposit';
+  if (tags['otp'] || tags['pin'] || tags['code']) return 'otp';
+  // ATM/withdrawal — type field contains 'atm' when ATM token fires
+  if (type === 'atm' || tags['wdl']) return 'atm';
+  // Transfer patterns
+  if (tags['beneacc'] || tags['beneadd']) return 'transfer';
+  // Decline notifications
+  if (tags['decline'] || tags['autpaydecline'] || tags['trxfailed']) return 'decline';
+  // EMI
+  if (tags['emi']) return 'emi';
+  // Cashback
+  if (tags['cashback']) return 'cashback';
+  // Refund patterns (positive credit with ref)
+  if (tags['ref'] && tags['type'] === 'credit') return 'refund';
   return null;
 }

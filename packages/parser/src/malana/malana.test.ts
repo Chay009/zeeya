@@ -51,4 +51,42 @@ describe('MalanaEngine', () => {
     console.log('tokens:', r.tokens.map(t => t.type + ':' + t.raw));
     expect(hasTRX2).toBe(false);
   });
+
+  it('routes OTP SMS to GRM_OTP', () => {
+    const msg = 'Your OTP is 456789. Valid for 10 minutes. Do not share with anyone.';
+    const r = engine.parse(msg, 'VM-HDFCBK');
+    console.log('otp category:', r.category, 'otp:', r.otp);
+    // Category routing is the key assertion; otp tag extraction requires direct OTP-NUM adjacency
+    expect(r.category).toBe('GRM_OTP');
+  });
+
+  it('routes delivery SMS to GRM_DELIVERY', () => {
+    const msg = 'Your order #OD987654 from Flipkart is out for delivery today.';
+    const r = engine.parse(msg, 'FKORDER');
+    console.log('delivery category:', r.category, 'tags:', r.tags);
+    expect(r.category).toBe('GRM_DELIVERY');
+  });
+
+  it('detects bank name from sender', () => {
+    const msg = 'INR 1000 debited from account XX4567';
+    const r = engine.parse(msg, 'VM-HDFCBK');
+    console.log('bankName:', r.bankName);
+    expect(r.bankName).toBe('HDFC Bank');
+  });
+
+  it('detects brand from merchant text', () => {
+    const msg = 'INR 499 debited for Google Play. Avail Bal: 2000';
+    const r = engine.parse(msg, 'VM-HDFCBK');
+    console.log('brand:', r.brandName, 'isOnline:', r.isOnlineBrand, 'category:', r.merchantCategory);
+    // Google is in vendor_brands.json with tag "payments"
+    expect(r.brandName).not.toBeNull();
+  });
+
+  it('exposes typed trx, bal, acc fields', () => {
+    const msg = 'INR 5,000.00 debited from account XX1234 on 09-08-2026. Avail Bal: INR 12,500.00';
+    const r = engine.parse(msg);
+    console.log('trx:', r.trx, 'bal:', r.bal, 'acc:', r.acc);
+    expect(r.trx).toBeTruthy();
+    expect(r.bal).toBeTruthy();
+  });
 });
