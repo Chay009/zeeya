@@ -13,6 +13,11 @@
 
 import type { Token } from './types';
 
+// Patterns that should never be captured as a merchant/vendor name
+const DATE_RE     = /^\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2,4}$/;
+const PURE_NUM_RE = /^\d+$/;
+const URL_RE      = /^https?:\/\//i;
+
 type MatchEl =
   | { kind: 'tok';     type: string; literal?: string }
   | { kind: 'capture'; name: string }
@@ -113,12 +118,19 @@ function tryMatchAt(
           if (nextAnchor.kind === 'skip' && nextAnchor.stopType && tok.type === nextAnchor.stopType) break;
         }
 
-        // Only capture unmatched / free-text tokens; skip already-matched grammar tokens
-        // whose type signals a structural boundary (AMT, INS, BAL, INSTR, etc.)
+        // Only capture unmatched / free-text tokens; stop at structural token types
         const structural = ['AMT', 'BAL', 'INS', 'INSTR', 'TRX', 'TRANS', 'INTENT',
                             'PREPV', 'PREPL', 'PREP', 'DET', 'AUX', 'AVBL', 'TRANSFER',
                             'WALLET', 'LOCATION', 'FAVRG', 'INFO'];
         if (structural.includes(tok.type)) break;
+
+        // Skip tokens whose raw text looks like a date, pure number, or URL —
+        // these are never merchant names
+        const raw = tok.text.trim();
+        if (DATE_RE.test(raw) || PURE_NUM_RE.test(raw) || URL_RE.test(raw)) {
+          pos++;
+          continue;
+        }
 
         parts.push(tok.text);
         pos++;

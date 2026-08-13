@@ -11,10 +11,20 @@ import upiSeedRaw      from './data/upi.json';      // malanaSeed — 111 UPI ha
 // ── Sender → grammar category (addr.json) ─────────────────────────────────────
 // "GRM_BANK" → ["ICICIB", "HDFCBK", ...]
 // Inverted to senderFragment → grammar for fast lookup.
+// Priority order: GRM_BANK > GRM_TRAVEL > GRM_DELIVERY > GRM_OFFERS > GRM_EVENT > GRM_BILL > others
+// Many bank senders appear in both GRM_BANK and GRM_BILL; GRM_BANK must win.
+const GRAMMAR_PRIORITY: Record<string, number> = {
+  GRM_BANK: 100, GRM_TRAVEL: 80, GRM_DELIVERY: 70,
+  GRM_OFFERS: 60, GRM_EVENT: 50, GRM_BILL: 40,
+};
 const SENDER_GRAMMAR_MAP = new Map<string, string>();
 for (const [grammar, senders] of Object.entries(addrSeedRaw as Record<string, string[]>)) {
+  const newPri = GRAMMAR_PRIORITY[grammar] ?? 0;
   for (const s of senders) {
-    SENDER_GRAMMAR_MAP.set(s.toLowerCase(), grammar);
+    const key = s.toLowerCase();
+    const existing = SENDER_GRAMMAR_MAP.get(key);
+    const existingPri = existing ? (GRAMMAR_PRIORITY[existing] ?? 0) : -1;
+    if (newPri > existingPri) SENDER_GRAMMAR_MAP.set(key, grammar);
   }
 }
 
