@@ -33,9 +33,9 @@ function mergeTokens(regexTokens: Token[], keywordTokens: Token[], message: stri
   const positioned: Array<{ token: Token; pos: number; end: number }> = [];
 
   for (const t of regexTokens) {
-    const idx = message.indexOf(t.text);
+    const idx = message.indexOf(t.raw);
     if (idx !== -1) {
-      positioned.push({ token: t, pos: idx, end: idx + t.text.length });
+      positioned.push({ token: t, pos: idx, end: idx + t.raw.length });
     }
   }
 
@@ -171,7 +171,7 @@ export class MalanaEngine {
     if (!tags['trx'] && tags['type']) {
       for (const token of processed) {
         if (!token.matched && token.type === 'AMT') {
-          tags['trx'] = token.raw;
+          tags['trx'] = token.text || token.raw;
           if (!detectedCategory) detectedCategory = category;
           break;
         }

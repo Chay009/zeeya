@@ -182,16 +182,16 @@ export function runLayer(tokens: Token[], layer: CompiledLayer): Token[] {
 function inheritLeafValues(merged: Token, sources: Token[]) {
   for (const src of sources) {
     if (src.type === 'AMT' || src.type === 'NUM') {
-      if (!merged.values['amount']) merged.values['amount'] = src.raw;
+      if (!merged.values['amount']) merged.values['amount'] = src.text || src.raw;
     }
     if (src.type === 'INSTRNO') {
-      if (!merged.values['instrno']) merged.values['instrno'] = src.raw;
+      if (!merged.values['instrno']) merged.values['instrno'] = src.text || src.raw;
     }
     if (src.type === 'IDVAL') {
-      if (!merged.values['idval']) merged.values['idval'] = src.raw;
+      if (!merged.values['idval']) merged.values['idval'] = src.text || src.raw;
     }
     if (src.type === 'DATE' || src.type === 'DATETIME') {
-      if (!merged.values['date']) merged.values['date'] = src.raw;
+      if (!merged.values['date']) merged.values['date'] = src.text || src.raw;
     }
     // Recurse into children that may hold typed leaves
     if (src.children.length > 0) {
