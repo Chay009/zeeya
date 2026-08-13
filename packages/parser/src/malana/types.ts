@@ -95,4 +95,7 @@ export interface MalanaResult {
   // ── Brand enrichment ──────────────────────────────────────────────────────
   brandName: string | null;          // detected brand from vendor_brands.json
   isOnlineBrand: boolean;            // true if brand is tagged "online"
+
+  // ── UPI ───────────────────────────────────────────────────────────────────────
+  upiHandle: string | null;          // UPI handle from bene VPA (e.g. "airtel", "paytm")
 }

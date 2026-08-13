@@ -1,0 +1,63 @@
+{
+  "version": "1.0.1",
+  "countries":[
+    {
+      "country_code": "IN",
+      "shingles": "2",
+      "ngrams": "2",
+      "use_shingles": "true",
+      "min_sim_score": "0.4",
+      "patterns": [
+        {
+          "id": 1,
+          "type": "spam",
+          "subtype": "rummy",
+          "threshold": 1,
+          "pattern_id": "ydh64rewt6sg",
+          "shingles": "2",
+          "ngrams": "2",
+          "use_shingles": "true",
+          "min_sim_score": "0.4",
+          "sub-patterns": [
+            "appointment for Meeting new female partner our excutive",
+            "Chat with locals Date on Evermatch",
+            "Sirmadam Your resume is reviewed in our company"
+          ]
+        },
+        {
+          "id": 2,
+          "type": "spam",
+          "subtype": "rummy",
+          "threshold": 1,
+          "pattern_id": "kjn4rewt6sg",
+          "min_sim_score": "0.5",
+          "skip_fuzzy": "false",
+          "sub-patterns": [
+            "update your previous month electricity bill",
+            "Account has been SUSPENDED Today please Update"
+          ]
+        },
+        {
+          "id": 3,
+          "type": "spam",
+          "subtype": "rummy",
+          "threshold": 2,
+          "pattern_id": "wef3ewt6sg",
+          "skip_fuzzy": "false",
+          "sub-patterns": [
+            "Deposited!",
+            "Player",
+            "Download app",
+            "enjoy gaming",
+            "WELCOME",
+            "on deposit",
+            "deposit & claim",
+            "RummyPassion",
+            "rummypassion",
+            "deposit to claim"
+          ]
+        }
+      ]
+    }
+  ]
+}

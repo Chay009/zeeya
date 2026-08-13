@@ -4,7 +4,7 @@ import { KeywordTokenizer } from './keyword-tokenizer';
 import { compileSeed } from './grammar-compiler';
 import { runGrammar } from './grammar-runner';
 import { compilePatterns, runPatterns } from './pattern-extractor';
-import { detectBank, detectMerchantCategory, detectSubcategory, detectBrand } from './enrichment';
+import { detectBank, detectMerchantCategory, detectSubcategory, detectBrand, grammarForSender, detectUpiHandle } from './enrichment';
 
 // ── Grammar auto-routing ───────────────────────────────────────────────────────
 // Token types produced by the keyword tokenizer that identify a specific grammar.
@@ -112,8 +112,12 @@ export class MalanaEngine {
     const kwToks = this.keywordTokenizer.tokenize(message);
     const allTokens = mergeTokens(regexToks, kwToks, message);
 
-    // Step 2: Auto-route to the correct grammar category
-    const category = routeGrammar(allTokens, defaultCategory);
+    // Step 2: Auto-route to the correct grammar category.
+    // Token-type routing wins (OTP/PNR/ORDER tokens are strongest signal — banks also send OTPs).
+    // Sender addr.json lookup is the fallback when no specific token type is detected.
+    const tokenCategory = routeGrammar(allTokens, '');
+    const senderGrammar = grammarForSender(sender);
+    const category = tokenCategory || senderGrammar || defaultCategory;
 
     // Step 3: Compile grammar layers for category
     const layers = compileSeed(this.seed, category);
@@ -205,6 +209,10 @@ export class MalanaEngine {
     const merchantText = tags['bene'] || tags['vendor'] || tags['billvendor'] || tags['merchant'] || tags['item'] || '';
     const brandMatch = detectBrand(merchantText) ?? detectBrand(message);
 
+    // Step 8: UPI handle detection — if bene/vendor looks like a VPA, confirm handle
+    const vpaText = tags['bene'] || tags['vendor'] || '';
+    const upiHandle = detectUpiHandle(vpaText);
+
     // Build typed result
     const result: MalanaResult = {
       category: detectedCategory,
@@ -270,6 +278,9 @@ export class MalanaEngine {
       // Brand fields
       brandName: brandMatch?.brand ?? null,
       isOnlineBrand: brandMatch?.isOnline ?? false,
+
+      // UPI
+      upiHandle: upiHandle,
     };
 
     return result;
