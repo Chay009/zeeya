@@ -1157,12 +1157,24 @@ function parseInternal(str: string, config: Map<string, string>): [number, FsaCo
         i = k + 3;
       }
     }
-    const numVal = map.get(TY_NUM);
-    if (numVal) {
-      if (numVal.length === 10 && '6789'.includes(numVal[0]))
-        map.setVal('num_class', TY_PHN);
-      else if (numVal.length === 12 && numVal.startsWith('91'))
-        map.setVal('num_class', TY_PHN);
+    // Java post-processing: NUM immediately followed by alphabetic (no space) → STR
+    // e.g. "1xBrains" → STR (suppressed), not NUM=1
+    const sc = config.get(YUGA_SOURCE_CONTEXT);
+    if (i > 0 && i < str.length && str[i - 1] !== ' ' &&
+        /[a-zA-Z]/.test(str[i]) &&
+        sc !== YUGA_SC_CURR && sc !== YUGA_SC_TRANSID) {
+      let j = i;
+      while (j < str.length && str[j] !== ' ') j++;
+      map.setType(TY_STR, TY_STR);
+      i = j;
+    } else {
+      const numVal = map.get(TY_NUM);
+      if (numVal) {
+        if (numVal.length === 10 && '6789'.includes(numVal[0]))
+          map.setVal('num_class', TY_PHN);
+        else if (numVal.length === 12 && numVal.startsWith('91'))
+          map.setVal('num_class', TY_PHN);
+      }
     }
   } else if (map.getType() === TY_PHN) {
     map.setType(TY_NUM, TY_NUM);
