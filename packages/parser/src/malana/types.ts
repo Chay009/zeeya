@@ -80,6 +80,8 @@ export interface MalanaResult {
   fare: string | null;               // ticket fare amount
   trainBusNo: string | null;         // train or bus number
   boardingGate: string | null;
+  departureCode: string | null;      // IATA code resolved from departure city (airport.json)
+  arrivalCode: string | null;        // IATA code resolved from arrival city (airport.json)
 
   // ── Delivery (GRM_DELIVERY) ───────────────────────────────────────────────
   orderNo: string | null;
@@ -99,6 +101,7 @@ export interface MalanaResult {
   cashback: string | null;
   discount: string | null;
   offerCode: string | null;
+  offerCategory: string | null;      // sender-code category from offers.json (fashion, travel, etc.)
 
   // ── Telecom (GRM_TELECOM) ─────────────────────────────────────────────────
   dataLeft: string | null;

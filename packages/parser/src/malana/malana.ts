@@ -4,7 +4,7 @@ import { KeywordTokenizer } from './keyword-tokenizer';
 import { compileSeed } from './grammar-compiler';
 import { runGrammar } from './grammar-runner';
 import { compilePatterns, runPatterns } from './pattern-extractor';
-import { detectBank, detectMerchantCategory, detectSubcategory, detectBrand, grammarForSender, detectUpiHandle, detectSpam } from './enrichment';
+import { detectBank, detectMerchantCategory, detectSubcategory, detectBrand, grammarForSender, detectUpiHandle, detectSpam, detectAirports, detectLocation, detectOfferCategory } from './enrichment';
 
 // ── Grammar auto-routing ───────────────────────────────────────────────────────
 // Token types produced by the keyword tokenizer that identify a specific grammar.
@@ -351,7 +351,7 @@ export class MalanaEngine {
       bene: tags['bene'] || null,
       beneAcc: tags['beneacc'] || null,
       vendor: tags['vendor'] || tags['billvendor'] || tags['merchant'] || null,
-      location: tags['location'] || null,
+      location: tags['location'] || detectLocation(message),
 
       // OTP fields
       otp: tags['otp'] || tags['pin'] || tags['code'] || null,
@@ -365,6 +365,8 @@ export class MalanaEngine {
       fare: tags['fare'] || null,
       trainBusNo: tags['train'] || tags['bus'] || null,
       boardingGate: tags['boardgate'] || null,
+      departureCode: detectAirports(tags['dept'] || '')[0]?.code ?? null,
+      arrivalCode: detectAirports(tags['arrv'] || '')[0]?.code ?? null,
 
       // Delivery fields
       orderNo: tags['order'] || null,
@@ -384,6 +386,7 @@ export class MalanaEngine {
       cashback: tags['cashback'] || null,
       discount: tags['discount'] || null,
       offerCode: tags['code'] || null,
+      offerCategory: detectOfferCategory(sender),
 
       // Telecom fields
       dataLeft: tags['left'] || null,

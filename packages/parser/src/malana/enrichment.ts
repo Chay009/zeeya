@@ -7,6 +7,9 @@ import bankSeedRaw     from './data/bank.json';       // malanaSeed — 32 banks
 import addrSeedRaw     from './data/addr.json';       // malanaSeed — 424 sender IDs → grammar category
 import upiSeedRaw      from './data/upi.json';        // malanaSeed — 111 UPI handles
 import categorizerRaw  from './data/categorizer.json'; // Naive Bayes binary classifier (3708 words)
+import airportSeedRaw  from './data/airport.json';    // malanaSeed — 101 Indian/regional city → IATA code
+import locationSeedRaw from './data/location.json';   // malanaSeed — 4,829-place Indian gazetteer
+import offersSeedRaw   from './data/offers.json';      // malanaSeed — 251 promo sender-codes → 8 categories
 import { matchVendor } from './vendor-category-matcher';
 
 // ── Sender → grammar category (addr.json) ─────────────────────────────────────
@@ -245,5 +248,91 @@ export function detectSubcategory(tags: Record<string, string>): string | null {
   if (tags['emi']) return 'emi';
   if (tags['cashback']) return 'cashback';
   if (tags['ref'] && tags['type'] === 'credit') return 'refund';
+  return null;
+}
+
+// ── Airport / location / offer-sender enrichment ────────────────────────────
+//
+// Unlike the vendor-category matcher (vendor-category-matcher.ts), the real
+// consumer classes for airport.json, location.json, and offers.json could
+// NOT be pinned down the same way: grepping the disassembled APK for their
+// asset paths only ever surfaces a generic `getAsJSONObject(path)` cache
+// dispatcher (class `Ld61/baz`) shared by many unrelated assets — the actual
+// per-feature caller (if any, in this build) references it through a
+// runtime-constructed key rather than the literal path string, which defeats
+// a string-literal search short of tracing every call site by hand. So,
+// unlike the vendor matcher, what follows is a straightforward, honestly
+// JSON-shape-driven implementation (not a byte-for-byte bytecode port):
+//   - airport.json is a flat {city: IATA-code} map — used here to resolve
+//     IATA codes for city names mentioned in travel messages.
+//   - location.json is a 4,829-entry Indian place-name gazetteer — used as a
+//     fallback fill for the `location` field when the grammar's own
+//     PATTERN capture (tags.location) comes up empty.
+//   - offers.json is {category: [senderCode, ...]} (8 categories, 251
+//     6-char DLT-style codes such as "ADIDAS", "PVRCIN", "UBERNE") — these
+//     match the shape of Indian bulk-SMS sender-header fragments, so they
+//     are matched the same way addr.json's sender → grammar lookup works:
+//     against fragments of the SMS sender ID, not the message body.
+
+const AIRPORT_MAP = new Map<string, string>(
+  Object.entries(airportSeedRaw as Record<string, string>).map(([city, code]) => [city.toLowerCase(), code]),
+);
+
+export interface AirportMatch { city: string; code: string }
+
+// Scans free text (e.g. a departure/arrival capture, or the whole message)
+// for known city names and returns every IATA code found.
+export function detectAirports(text: string): AirportMatch[] {
+  if (!text) return [];
+  const words = text.toLowerCase().split(/[^a-z]+/).filter(Boolean);
+  const seen = new Set<string>();
+  const matches: AirportMatch[] = [];
+  for (const word of words) {
+    const code = AIRPORT_MAP.get(word);
+    if (code && !seen.has(word)) {
+      seen.add(word);
+      matches.push({ city: word, code });
+    }
+  }
+  return matches;
+}
+
+const LOCATION_SET = new Set<string>((locationSeedRaw as string[]).map(l => l.toLowerCase()));
+const LOCATION_MULTIWORD = [...LOCATION_SET].filter(l => l.includes(' '));
+
+// Gazetteer fallback: only called when the grammar's own PATTERN-based
+// `location` tag came up empty, so this fills a gap rather than overriding
+// a real capture.
+export function detectLocation(text: string): string | null {
+  if (!text) return null;
+  const lower = text.toLowerCase();
+  for (const phrase of LOCATION_MULTIWORD) {
+    if (lower.includes(phrase)) return phrase;
+  }
+  const words = lower.split(/[^a-z]+/).filter(Boolean);
+  for (const word of words) {
+    if (LOCATION_SET.has(word)) return word;
+  }
+  return null;
+}
+
+const OFFER_SENDER_MAP = new Map<string, string>();
+for (const [category, codes] of Object.entries(offersSeedRaw as Record<string, string[]>)) {
+  for (const code of codes) {
+    OFFER_SENDER_MAP.set(code.toLowerCase().replace(/[^a-z0-9]/g, ''), category);
+  }
+}
+
+// Matches Indian bulk-SMS sender ID fragments (e.g. "AD-ADIDAS", "VM-PVRCIN")
+// against offers.json's promo sender-codes to classify a GRM_OFFERS message
+// into one of 8 categories (fashion, ecommerce, entertainment, travel,
+// general, bank_offers, food_beverages, utility).
+export function detectOfferCategory(sender: string): string | null {
+  if (!sender) return null;
+  const fragments = sender.toLowerCase().replace(/[^a-z0-9-_]/g, '').split(/[-_]/);
+  for (const frag of fragments) {
+    const cat = OFFER_SENDER_MAP.get(frag);
+    if (cat) return cat;
+  }
   return null;
 }
