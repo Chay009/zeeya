@@ -217,7 +217,11 @@ class FsaContextMap {
       }
 
       if (this._map.has(DT_D)) day = parseInt(this._map.get(DT_D)!);
-      else if (this._map.has(DT_DD)) day = parseInt(this._map.get(DT_DD)!);
+      else if (this._map.has(DT_DD)) {
+        // DT_DD may hold a weekday name (e.g. "monday") from FSA_DAYS match — parseInt gives NaN; skip it
+        const parsed = parseInt(this._map.get(DT_DD)!);
+        if (!isNaN(parsed)) day = parsed;
+      }
 
       if (this._map.has(DT_HH)) { hour = parseInt(this._map.get(DT_HH)!); hasTime = true; }
       if (this._map.has(DT_mm)) { min = parseInt(this._map.get(DT_mm)!); hasTime = true; }
@@ -229,6 +233,10 @@ class FsaContextMap {
       if (day == null && confDate) day = parseInt(confDate.split('-')[2]);
 
       if (year == null || month == null || day == null) return null;
+      // Month-swap: if month > 12 but day <= 12 and year is present, try DD/MM order (US-format dates)
+      if (month > 12 && day != null && day <= 12 && (this._map.has(DT_YY) || this._map.has(DT_YYYY))) {
+        const tmp = month; month = day; day = tmp;
+      }
       if (month < 1 || month > 12 || day < 1 || day > 31) return null;
       if (year < 1970 || year > 2099) return null;
 
@@ -347,6 +355,20 @@ function possibleTimeAhead(str: string, i: number): boolean {
 function isInstrNumStart(c: string) {
   const n = c.charCodeAt(0);
   return n === 42 || n === 88 || n === 120; // * X x
+}
+
+const ISD_CODES = new Set(['+91', '+1', '+254', '+46', '+234']);
+function hasISDCodePrefix(str: string, i: number): boolean {
+  if (i >= str.length) return false;
+  const prefix = str.substring(0, i);
+  return ISD_CODES.has(prefix) || ISD_CODES.has('+' + prefix);
+}
+
+function checkForTimeRange(val: string): boolean {
+  if (!val || !isNumStr(val) || val.length < 7) return false;
+  const fromH = parseInt(val.substring(0, 2));
+  const toH = parseInt(val.substring(4, 6));
+  return fromH < 24 && toH < 24;
 }
 
 function lookAheadForInstr(str: string, index: number): number {
@@ -644,6 +666,7 @@ function parseInternal(str: string, config: Map<string, string>): [number, FsaCo
 
       case 3:
         if (isNum(c)) { map.append(c); state = 8; }
+        else if (cn === CH_SPACE && hasISDCodePrefix(str, i)) { /* stay 3 */ }
         else if (cn === CH_SPACE && i === str.length - 1) { state = -1; }
         else if (isTimeOp(c)) { delimiterStack.push(c); map.setType(TY_DTE, DT_HH); state = 4; }
         else if ((isDateOp(c) && !configContextIsCURR(config)) || cn === CH_COMA) {
@@ -957,7 +980,17 @@ function parseInternal(str: string, config: Map<string, string>): [number, FsaCo
         else if (isNum(c)) {
           if (map.getType() === TY_DTE) map.setType(TY_NUM, TY_NUM);
           map.append(c);
-          state = 12;
+          const prevDelim = delimiterStack.pop();
+          const checkTimeRange = checkForTimeRange(map.get(TY_NUM) ?? '');
+          if ((prevDelim === '/' || prevDelim === '-') && i + 1 < str.length && isNum(str[i + 1]) &&
+              (i + 2 === str.length || (i + 2 < str.length && (isDelimiter(str[i + 2]) || str[i + 2] === '/'))) &&
+              checkTimeRange) {
+            map.setType(TY_TMS, TY_TMS); map.append(str[i + 1]); i++; state = -1;
+          } else if (prevDelim === ' ') {
+            state = 41;
+          } else {
+            state = 12;
+          }
         } else if (cn === 42 || cn === 88 || cn === 120) {
           map.setType(TY_ACC, TY_ACC); map.append('X'); state = 11;
         } else { map.setType(TY_STR, TY_STR); i = i - 1; state = -1; }
@@ -1030,6 +1063,7 @@ function parseInternal(str: string, config: Map<string, string>): [number, FsaCo
         if (isNum(c)) { map.append(c); counter++; }
         else if (cn === CH_FSTP && i + 1 < str.length && isNum(str[i + 1])) { map.append(c); state = 10; }
         else if (cn === CH_HYPH && i + 1 < str.length && isNum(str[i + 1])) { delimiterStack.push(c); map.append(c); state = 16; }
+        else if (cn === CH_SPACE && hasISDCodePrefix(str, i)) { map.setType(TY_PHN, TY_PHN); state = 46; }
         else {
           if (counter === 12 || isNumStr(str.substring(1, i))) map.setType(TY_NUM, TY_NUM);
           else return null;
@@ -1144,6 +1178,16 @@ function parseInternal(str: string, config: Map<string, string>): [number, FsaCo
 
   setIfNumRange(str, i, map);
 
+  // NUMRANGE fallback: no suffix matched → collapse to concatenated NUM
+  if (map.getType() === TY_NUMRANGE) {
+    const fromNum = map.getValMap().get('from_num') ?? '';
+    const toNum = map.getValMap().get('to_num') ?? '';
+    map.getValMap().delete('from_num');
+    map.getValMap().delete('to_num');
+    map.setType(TY_NUM, TY_NUM);
+    map.setVal('num', fromNum + toNum);
+  }
+
   // NUM post-processing
   if (map.getType() === TY_NUM) {
     const k = i < str.length ? i + skip(str.substring(i)) : i;
@@ -1167,12 +1211,18 @@ function parseInternal(str: string, config: Map<string, string>): [number, FsaCo
       while (j < str.length && str[j] !== ' ') j++;
       map.setType(TY_STR, TY_STR);
       i = j;
+    } else if (i + 1 < str.length && str[i] === '/' && str[i + 1] === '-') {
+      map.setType(TY_AMT, TY_AMT);
     } else {
       const numVal = map.get(TY_NUM);
       if (numVal) {
         if (numVal.length === 10 && '6789'.includes(numVal[0]))
           map.setVal('num_class', TY_PHN);
         else if (numVal.length === 12 && numVal.startsWith('91'))
+          map.setVal('num_class', TY_PHN);
+        else if (numVal.length === 11 && numVal.startsWith('18'))
+          map.setVal('num_class', TY_PHN);
+        else if (numVal.length === 11 && numVal[0] === '0')
           map.setVal('num_class', TY_PHN);
       }
     }
