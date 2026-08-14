@@ -1347,6 +1347,24 @@ export function regexTokenize(message: string): Token[] {
     const sub = lc.substring(i);
     const origSub = message.substring(i);
 
+    // Detect dot-masked account numbers: "...5494" or "X...X3456" → INSTRNO
+    // Dots used as mask characters are not recognized by the FSA, so handle them here.
+    const dotMaskMatch = sub.match(/^\.{2,}(\d+)/);
+    if (dotMaskMatch && dotMaskMatch[1]) {
+      const digits = dotMaskMatch[1]!;
+      tokens.push({
+        type: 'INSTRNO',
+        raw: origSub.substring(0, dotMaskMatch[0].length),
+        text: 'X' + digits,
+        values: { instrno: 'X' + digits },
+        locked: false,
+        matched: false,
+        children: [],
+      });
+      i += dotMaskMatch[0].length;
+      continue;
+    }
+
     // Check for currency prefix — call FSA with CURR context on the number part
     const currMatch = sub.match(CURR_PREFIX_RE);
     if (currMatch) {

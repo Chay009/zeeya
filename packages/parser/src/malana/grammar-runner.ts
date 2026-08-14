@@ -187,6 +187,11 @@ function inheritLeafValues(merged: Token, sources: Token[]) {
     if (src.type === 'INSTRNO') {
       if (!merged.values['instrno']) merged.values['instrno'] = src.text || src.raw;
     }
+    // When an INSTR result absorbs a NUM child (e.g. INS + NUM → INSTR[acc]), treat the
+    // number as the account/instrument number, not a financial amount.
+    if (merged.type === 'INSTR' && src.type === 'NUM') {
+      if (!merged.values['instrno']) merged.values['instrno'] = src.text || src.raw;
+    }
     if (src.type === 'IDVAL') {
       if (!merged.values['idval']) merged.values['idval'] = src.text || src.raw;
     }
