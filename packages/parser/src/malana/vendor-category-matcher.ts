@@ -45,14 +45,20 @@ import vendorOperatorsRaw from './data/vendor_operators.json';
 // Root node holds char '*' (0x2a), matching the real constructor
 // `new Laa3.bar('*')`. Each inserted operator string walks/creates one child
 // per character; the terminal node of a full operator gets `isEnd = true`.
+//
+// Children are keyed by char in a Map rather than the ArrayList the original
+// bytecode uses — that's an implementation detail of Java's `Laa3.bar`, not
+// part of the ported control flow, and a Map turns every child lookup below
+// (multiple per character of every merchant string tokenized) from a linear
+// scan into O(1).
 interface TrieNode {
   char: string;
-  children: TrieNode[];
+  children: Map<string, TrieNode>;
   isEnd: boolean;
 }
 
 function newTrieNode(char: string): TrieNode {
-  return { char, children: [], isEnd: false };
+  return { char, children: new Map(), isEnd: false };
 }
 
 function buildOperatorTrie(operators: string[]): TrieNode {
@@ -60,10 +66,10 @@ function buildOperatorTrie(operators: string[]): TrieNode {
   for (const op of operators) {
     let node = root;
     for (const ch of op) {
-      let next = node.children.find(c => c.char === ch);
+      let next = node.children.get(ch);
       if (!next) {
         next = newTrieNode(ch);
-        node.children.push(next);
+        node.children.set(ch, next);
       }
       node = next;
     }
@@ -72,17 +78,18 @@ function buildOperatorTrie(operators: string[]): TrieNode {
   return root;
 }
 
-// `Ljp2/qux.f(Laa3/bar): ArrayList<Character>` — child chars of a trie node.
-function childChars(node: TrieNode): string[] {
-  return node.children.map(c => c.char);
-}
-
 // `Ljp2/qux.g(Laa3/bar, Character): Laa3/bar` — descend into a child by char.
+// Real bytecode only calls this after confirming containment (the `f().
+// contains(c)` check the caller does inline via `node.children.has(c)`), so
+// a missing child means the trie was built or walked inconsistently — that's
+// an invariant violation worth failing loudly on rather than silently
+// returning the wrong node and mis-tokenizing.
 function descend(node: TrieNode, ch: string): TrieNode {
-  const next = node.children.find(c => c.char === ch);
-  // Real bytecode only calls g() after confirming containment via f(), so
-  // this is always found for valid input; the fallback keeps TS happy.
-  return next ?? node;
+  const next = node.children.get(ch);
+  if (!next) {
+    throw new Error(`vendor-category-matcher: operator trie has no child '${ch}' from node '${node.char}'`);
+  }
+  return next;
 }
 
 const OPERATOR_TRIE = buildOperatorTrie((vendorOperatorsRaw as string[]).filter(Boolean));
@@ -110,16 +117,15 @@ export function tokenizeByOperators(rawText: string): string[] {
 
   for (let i = 0; i < text.length; i++) {
     const c = text[i] as string;
-    const children = childChars(node);
 
-    if (children.length === 0 && node.isEnd) {
+    if (node.children.size === 0 && node.isEnd) {
       // Operator fully matched with no further extension possible — consume
       // it as a separator and flush the word accumulated before it.
       if (currentWord.length > 0) words.push(currentWord);
       currentWord = '';
       operatorBuf = '';
 
-      if (childChars(OPERATOR_TRIE).includes(c)) {
+      if (OPERATOR_TRIE.children.has(c)) {
         operatorBuf = c;
         node = descend(OPERATOR_TRIE, c);
       } else {
@@ -130,7 +136,7 @@ export function tokenizeByOperators(rawText: string): string[] {
       continue;
     }
 
-    if (children.includes(c)) {
+    if (node.children.has(c)) {
       // Continue walking down the trie.
       node = descend(node, c);
       operatorBuf += c;
@@ -156,7 +162,7 @@ export function tokenizeByOperators(rawText: string): string[] {
     }
     operatorBuf = '';
 
-    if (childChars(OPERATOR_TRIE).includes(c)) {
+    if (OPERATOR_TRIE.children.has(c)) {
       operatorBuf = c;
       node = descend(OPERATOR_TRIE, c);
     } else {
@@ -245,16 +251,23 @@ function jaroWinkler(a: string, b: string): number {
 // Classic diagonal-reset DP: dp[i][j] = dp[i-1][j-1]+1 on a char match, else
 // 0; track the running max. Used only for the short-token (<=4 char)
 // acceptance path.
+//
+// Only the previous row is ever read, so this keeps a single rolling row
+// instead of a full 2D table — same result, less memory, and (with
+// noUncheckedIndexedAccess on) no non-null assertions needed to read it.
 function longestCommonSubstringLength(a: string, b: string): number {
-  const dp: number[][] = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
+  let prevRow = new Array<number>(b.length + 1).fill(0);
   let max = 0;
   for (let i = 1; i <= a.length; i++) {
+    const currRow = new Array<number>(b.length + 1).fill(0);
     for (let j = 1; j <= b.length; j++) {
       if (a[i - 1] === b[j - 1]) {
-        dp[i]![j] = (dp[i - 1]?.[j - 1] ?? 0) + 1;
-        if (dp[i]![j]! > max) max = dp[i]![j]!;
+        const val = (prevRow[j - 1] ?? 0) + 1;
+        currRow[j] = val;
+        if (val > max) max = val;
       }
     }
+    prevRow = currRow;
   }
   return max;
 }
