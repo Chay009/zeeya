@@ -365,8 +365,8 @@ export class MalanaEngine {
       fare: tags['fare'] || null,
       trainBusNo: tags['train'] || tags['bus'] || null,
       boardingGate: tags['boardgate'] || null,
-      departureCode: detectAirports(tags['dept'] || '')[0]?.code ?? null,
-      arrivalCode: detectAirports(tags['arrv'] || '')[0]?.code ?? null,
+      departureCode: detectAirports(tags['from_loc'] || '')[0]?.code ?? null,
+      arrivalCode: detectAirports(tags['to_loc'] || '')[0]?.code ?? null,
 
       // Delivery fields
       orderNo: tags['order'] || null,

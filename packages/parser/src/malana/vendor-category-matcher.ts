@@ -335,17 +335,31 @@ export interface VendorMatch {
 // banks, and brands, then fold each matched brand's own extra tags in too
 // (e.g. matching brand "google" also contributes its "payments"/"online"
 // tags from vendor_brands.json).
+//
+// `banks` is computed lazily (only on first access) since the fuzzy match is
+// an O(tokens x keywords) Jaro-Winkler + longest-common-substring pass —
+// `tags` and `brands` are always needed together (brand tags fold into
+// `tags`), but most callers (e.g. detectMerchantCategory) only ever read
+// `tags`, so paying for a bank-name fuzzy match on every call is wasted work
+// on this per-message hot path.
 export function matchVendor(merchantText: string): VendorMatch {
   if (!merchantText) return { tags: [], banks: [], brands: [] };
 
   const tokens = tokenizeByOperators(merchantText);
   const tags = fuzzyMatchTags(tokens, CATEGORY_TAG_MAP);
-  const banks = fuzzyMatchTags(tokens, BANK_TAG_MAP);
   const brands = fuzzyMatchTags(tokens, BRAND_TOKEN_MAP);
 
   for (const brand of brands) {
     for (const tag of BRAND_TAGS[brand] ?? []) tags.add(tag);
   }
 
-  return { tags: [...tags], banks: [...banks], brands: [...brands] };
+  let cachedBanks: string[] | null = null;
+  return {
+    tags: [...tags],
+    brands: [...brands],
+    get banks(): string[] {
+      if (cachedBanks === null) cachedBanks = [...fuzzyMatchTags(tokens, BANK_TAG_MAP)];
+      return cachedBanks;
+    },
+  };
 }
