@@ -1,4 +1,4 @@
-import type { Token, SeedData, MalanaResult } from './types';
+import type { Token, SeedData, MalanaResult, TrxTypeRich } from './types';
 import { regexTokenize } from './regex-tokenizer';
 import { KeywordTokenizer } from './keyword-tokenizer';
 import { compileSeed } from './grammar-compiler';
@@ -81,6 +81,49 @@ function pickTagValue(tag: string, values: Record<string, string>): string {
     default:
       return values['amount'] || values['instrno'] || values['idval'] || '';
   }
+}
+
+// ── Rich type derivation ───────────────────────────────────────────────────────
+// Transfer methods: these override 'debit' direction in the grammar (grammar-runner PAYMENT_METHODS).
+// When trxType is one of these, money definitely left the account → TRANSFER.
+const TRANSFER_METHODS = new Set(['neft', 'imps', 'rtgs', 'aeps']);
+
+function deriveRichType(tags: Record<string, string>, kwToks: Token[]): TrxTypeRich | null {
+  if (tags['navval'] || tags['folio']) return 'INVESTMENT';
+  if (tags['bal'] && !tags['trx']) return 'BALANCE_UPDATE';
+  const t = (tags['type'] ?? '').toLowerCase();
+  if (TRANSFER_METHODS.has(t)) return 'TRANSFER';
+  if (t === 'debit' || t === 'upi' || t === '') {
+    // TRANSFER keyword (_norm=neft/imps/rtgs/aeps) present alongside a debit direction → TRANSFER
+    // The keyword token carries _norm but NOT a 'type' key, so tags['type'] stays 'debit'.
+    // We check kwToks here to avoid mutating the raw tags that the benchmark reads.
+    const hasTransferMethod = kwToks.some(
+      tok => tok.type === 'TRANSFER' && TRANSFER_METHODS.has(tok.values['_norm'] ?? '')
+    );
+    if (hasTransferMethod && (t === 'debit' || t === '')) return 'TRANSFER';
+    if (t === 'debit' || t === 'upi') return 'EXPENSE';
+  }
+  if (t === 'credit') return 'INCOME';
+  return null;
+}
+
+// ── Currency detection ─────────────────────────────────────────────────────────
+// Matches the same currency prefixes as CURR_PREFIX_RE in regex-tokenizer.
+const CURR_PREFIX_RE = /^(rs\.?\s*|inr\s*|₹\s*|\$\s*|€\s*|£\s*|usd\s*|eur\s*|gbp\s*|aed\s*|sgd\s*)/i;
+
+function detectCurrencyFromTokens(regexToks: Token[]): string {
+  for (const t of regexToks) {
+    if (t.type !== 'AMT') continue;
+    const m = t.raw.match(CURR_PREFIX_RE);
+    if (!m) continue;
+    const p = m[1].trim().toLowerCase().replace(/\s+/g, '');
+    if (p === 'usd' || p === '$') return 'USD';
+    if (p === 'eur' || p === '€') return 'EUR';
+    if (p === 'gbp' || p === '£') return 'GBP';
+    if (p === 'aed') return 'AED';
+    if (p === 'sgd') return 'SGD';
+  }
+  return 'INR';
 }
 
 export class MalanaEngine {
@@ -198,6 +241,20 @@ export class MalanaEngine {
       }
     }
 
+    // 5. Balance-only message: BLNC keyword present but no bal/trx — grab first unmatched AMT as bal
+    if (!tags['bal'] && !tags['trx']) {
+      const hasBlnc = kwToks.some(t => t.type === 'BLNC');
+      if (hasBlnc) {
+        for (const token of processed) {
+          if (!token.matched && token.type === 'AMT') {
+            tags['bal'] = token.text || token.raw;
+            if (!detectedCategory) detectedCategory = category;
+            break;
+          }
+        }
+      }
+    }
+
     // Step 6: PATTERN/STRUCT extraction — extract named captures (#vendor, #item, etc.)
     const patternCaptures = runPatterns(this.getPatternsFor(category), processed);
     // Merge into tags (don't overwrite grammar-derived values)
@@ -212,6 +269,13 @@ export class MalanaEngine {
     // Step 8: UPI handle detection — if bene/vendor looks like a VPA, confirm handle
     const vpaText = tags['bene'] || tags['vendor'] || '';
     const upiHandle = detectUpiHandle(vpaText);
+
+    // Step 9: Derived rich fields
+    const trxTypeRich = deriveRichType(tags, kwToks);
+    const currency = detectCurrencyFromTokens(regexToks);
+    const isFromCard = kwToks.some(t =>
+      t.type === 'INS' && ['card', 'creditcard', 'debitcard'].includes(t.values['_norm'] ?? '')
+    );
 
     // Build typed result
     const result: MalanaResult = {
@@ -228,6 +292,10 @@ export class MalanaEngine {
       bal: tags['bal'] || null,
       acc: tags['acc'] || tags['instrno'] || null,
       trxType: tags['type'] || null,
+      trxTypeRich,
+      currency,
+      isFromCard,
+      creditLimit: tags['crdlmt'] || null,
       ref: tags['ref'] || null,
       bene: tags['bene'] || null,
       beneAcc: tags['beneacc'] || null,

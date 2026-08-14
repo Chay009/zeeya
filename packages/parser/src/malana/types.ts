@@ -30,6 +30,13 @@ export interface SeedData {
   CLASSIFIER: Record<string, string[]>;
 }
 
+export type TrxTypeRich =
+  | 'EXPENSE'         // money leaving the account (debit, UPI pay)
+  | 'INCOME'          // money arriving (credit, salary, refund)
+  | 'TRANSFER'        // inter-bank move: NEFT / IMPS / RTGS / AEPS
+  | 'INVESTMENT'      // MF / SIP / stocks
+  | 'BALANCE_UPDATE'; // balance notification with no transaction amount
+
 export interface MalanaResult {
   category: string | null;       // GRM_BANK | GRM_OTP | GRM_TRAVEL | GRM_BILL | GRM_DELIVERY | etc.
   tags: Record<string, string>;  // all grammar tags: trx, bal, acc, type, ref, bene, etc.
@@ -44,7 +51,11 @@ export interface MalanaResult {
   trx: string | null;                // transaction amount
   bal: string | null;                // balance
   acc: string | null;                // account (last4 or masked)
-  trxType: string | null;            // debit | credit | upi | neft | imps | rtgs | etc.
+  trxType: string | null;            // raw seed type: debit | credit | upi | neft | imps | rtgs | etc.
+  trxTypeRich: TrxTypeRich | null;   // enriched type derived from trxType + tag presence
+  currency: string | null;           // ISO 4217: INR | USD | EUR | GBP | AED | SGD …
+  isFromCard: boolean;               // true when the INS token was creditcard or debitcard
+  creditLimit: string | null;        // available credit limit (from crdlmt tag)
   ref: string | null;                // reference number
   bene: string | null;               // beneficiary name
   beneAcc: string | null;            // beneficiary account
