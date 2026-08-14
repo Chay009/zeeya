@@ -1195,7 +1195,8 @@ function parseInternal(str: string, config: Map<string, string>): [number, FsaCo
       const kc = str[k];
       if ((kc === 'k' || kc === 'm' || kc === 'g') && k + 1 < str.length && str[k + 1] === 'b') {
         checkIfData(str, k, map); i = k + 2;
-      } else if (!configContextIsCURR(config) && isCurrencyAhead(str.substring(k))) {
+      } else if (!configContextIsCURR(config) && isCurrencyAhead(str.substring(k)) &&
+                 !str.substring(i, k).includes('{') && !str.substring(i, k).includes('[') && !str.substring(i, k).includes('(')) {
         map.setType(TY_AMT, TY_AMT);
         map.getValMap().set('currency', getPotentialCurrString(str.substring(k)));
         i = k + 3;
@@ -1244,7 +1245,7 @@ function parseInternal(str: string, config: Map<string, string>): [number, FsaCo
         const pTime = checkTypes(ROOT, 'FSA_TIMEPRFX', sub);
         if (pTime) {
           const iTime = ind + pTime[0] + 1 + skip(str.substring(ind + pTime[0] + 1));
-          if (iTime < str.length && isNum(str[iTime])) {
+          if (iTime < str.length && (isNum(str[iTime]) || checkTypes(ROOT, 'FSA_DAYS', str.substring(iTime)) !== null)) {
             const p_ = parseInternal(str.substring(iTime), config);
             if (p_ && p_[1].getType() === TY_DTE) {
               map.putAll(p_[1]); i = iTime + p_[0];
@@ -1288,6 +1289,8 @@ function prepareResult(
       map.setVal('time', (map.get(DT_HH) ?? '00') + ':' + (map.get(DT_mm) ?? '00'));
       return { type: TY_TME, value: str.substring(0, index), hasTime: false };
     }
+    const hasExplicitYear = map.contains(DT_YY) || map.contains(DT_YYYY);
+    map.setVal('hasYear', hasExplicitYear ? 'true' : 'false');
     const d = map.getDate(config);
     const hasTime = map.contains(DT_HH);
     if (d != null) {
