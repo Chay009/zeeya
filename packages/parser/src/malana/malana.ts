@@ -4,7 +4,7 @@ import { KeywordTokenizer } from './keyword-tokenizer';
 import { compileSeed } from './grammar-compiler';
 import { runGrammar } from './grammar-runner';
 import { compilePatterns, runPatterns } from './pattern-extractor';
-import { detectBank, detectMerchantCategory, detectSubcategory, detectBrand, grammarForSender, detectUpiHandle } from './enrichment';
+import { detectBank, detectMerchantCategory, detectSubcategory, detectBrand, grammarForSender, detectUpiHandle, detectSpam } from './enrichment';
 
 // ── Grammar auto-routing ───────────────────────────────────────────────────────
 // Token types produced by the keyword tokenizer that identify a specific grammar.
@@ -89,8 +89,31 @@ function pickTagValue(tag: string, values: Record<string, string>): string {
 const TRANSFER_METHODS = new Set(['neft', 'imps', 'rtgs', 'aeps']);
 
 function deriveRichType(tags: Record<string, string>, kwToks: Token[]): TrxTypeRich | null {
-  if (tags['navval'] || tags['folio']) return 'INVESTMENT';
+  // Investment (MF, SIP, equity, stocks)
+  if (tags['navval'] || tags['folio'] || tags['equity']) return 'INVESTMENT';
+
+  // Wallet operations — checked BEFORE balance-only because wallet SMS often also show balance
+  if (tags['waladd']) return 'WALLET_CREDIT';
+  if (tags['walsub']) return 'WALLET_DEBIT';
+
+  // Balance-only: balance present but no transaction amount and no other specific type detected
   if (tags['bal'] && !tags['trx']) return 'BALANCE_UPDATE';
+
+  // Recharge (rechrgsucc = confirmed recharge amount tag)
+  if (tags['rechrgsucc'] || (tags['rechrg'] && tags['trx'])) return 'RECHARGE';
+
+  // Salary / wages — check keyword token since 'salary' is not a grammar tag
+  const hasSalaryKw = kwToks.some(t => t.type === 'SALARY');
+  if (hasSalaryKw && (tags['trx'] || (tags['type'] ?? '').toLowerCase() === 'credit')) return 'SALARY';
+
+  // Auto-debit / autopay keyword + active transaction
+  const hasAutDbtKw = kwToks.some(t => t.type === 'AUTDBT');
+  if (hasAutDbtKw && tags['trx']) return 'AUTO_DEBIT';
+
+  // ATM withdrawal — ATM/ATMWDL keyword token + active transaction
+  const hasAtmKw = kwToks.some(t => t.type === 'ATM' || t.type === 'ATMWDL');
+  if (hasAtmKw && tags['trx']) return 'ATM_WITHDRAWAL';
+
   const t = (tags['type'] ?? '').toLowerCase();
   if (TRANSFER_METHODS.has(t)) return 'TRANSFER';
   if (t === 'debit' || t === 'upi' || t === '') {
@@ -108,20 +131,47 @@ function deriveRichType(tags: Record<string, string>, kwToks: Token[]): TrxTypeR
 }
 
 // ── Currency detection ─────────────────────────────────────────────────────────
-// Matches the same currency prefixes as CURR_PREFIX_RE in regex-tokenizer.
-const CURR_PREFIX_RE = /^(rs\.?\s*|inr\s*|₹\s*|\$\s*|€\s*|£\s*|usd\s*|eur\s*|gbp\s*|aed\s*|sgd\s*)/i;
+// Uses the CRNCY keyword token which covers 18+ currencies from the seed TOKENS definition.
+// CRNCY[crncy] → normalised value (e.g. 'usd', 'eur', 's$', 'lkr', 'ksh', 'cny', …)
+// kwToks (pre-merge) retains CRNCY tokens even when they overlap with AMT regex tokens.
+const CRNCY_TO_ISO: Record<string, string> = {
+  rs: 'INR', inr: 'INR',
+  usd: 'USD', '$': 'USD',
+  cad: 'CAD',
+  eur: 'EUR',
+  gbp: 'GBP',
+  aed: 'AED',
+  jpy: 'JPY',
+  aud: 'AUD',
+  's$': 'SGD',
+  lkr: 'LKR',
+  ksh: 'KES',
+  kr: 'SEK',   // Scandinavian kr family (SEK / NOK / DKK) — SEK as default
+  cny: 'CNY',
+  egp: 'EGP',
+  ghc: 'GHS',  // Ghana Cedi (seed normalises both ghc and ghs → ghc)
+};
 
-function detectCurrencyFromTokens(regexToks: Token[]): string {
-  for (const t of regexToks) {
-    if (t.type !== 'AMT') continue;
-    const m = t.raw.match(CURR_PREFIX_RE);
-    if (!m) continue;
-    const p = m[1].trim().toLowerCase().replace(/\s+/g, '');
-    if (p === 'usd' || p === '$') return 'USD';
-    if (p === 'eur' || p === '€') return 'EUR';
-    if (p === 'gbp' || p === '£') return 'GBP';
-    if (p === 'aed') return 'AED';
-    if (p === 'sgd') return 'SGD';
+// Fallback for currency prefixes attached directly to digits (e.g. "S$50", "A$100").
+// The keyword tokenizer requires a word boundary after the prefix, so "S$50" is missed.
+const ATTACHED_CURR_RE = /\b(S\$|A\$|C\$|HK\$|NZ\$|€|£|\$|¥|₹)\d/;
+const ATTACHED_CURR_MAP: Record<string, string> = {
+  'S$': 'SGD', 'A$': 'AUD', 'C$': 'CAD', 'HK$': 'HKD', 'NZ$': 'NZD',
+  '€': 'EUR', '£': 'GBP', '$': 'USD', '¥': 'JPY', '₹': 'INR',
+};
+
+function detectCurrency(kwToks: Token[], message: string): string {
+  for (const t of kwToks) {
+    if (t.type !== 'CRNCY') continue;
+    const norm = t.values['crncy'] ?? '';
+    const iso = CRNCY_TO_ISO[norm];
+    if (iso) return iso;
+  }
+  // Fallback: currency symbol directly attached to digit (no word boundary)
+  const m = message.match(ATTACHED_CURR_RE);
+  if (m) {
+    const iso = ATTACHED_CURR_MAP[m[1] ?? ''];
+    if (iso) return iso;
   }
   return 'INR';
 }
@@ -272,10 +322,11 @@ export class MalanaEngine {
 
     // Step 9: Derived rich fields
     const trxTypeRich = deriveRichType(tags, kwToks);
-    const currency = detectCurrencyFromTokens(regexToks);
+    const currency = detectCurrency(kwToks, message);
     const isFromCard = kwToks.some(t =>
       t.type === 'INS' && ['card', 'creditcard', 'debitcard'].includes(t.values['_norm'] ?? '')
     );
+    const spam = detectSpam(message);
 
     // Build typed result
     const result: MalanaResult = {
@@ -349,6 +400,10 @@ export class MalanaEngine {
 
       // UPI
       upiHandle: upiHandle,
+
+      // Spam detection
+      isSpam: spam.isSpam,
+      spamScore: spam.score,
     };
 
     return result;

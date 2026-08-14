@@ -31,11 +31,17 @@ export interface SeedData {
 }
 
 export type TrxTypeRich =
-  | 'EXPENSE'         // money leaving the account (debit, UPI pay)
-  | 'INCOME'          // money arriving (credit, salary, refund)
-  | 'TRANSFER'        // inter-bank move: NEFT / IMPS / RTGS / AEPS
-  | 'INVESTMENT'      // MF / SIP / stocks
-  | 'BALANCE_UPDATE'; // balance notification with no transaction amount
+  | 'EXPENSE'          // money leaving the account (debit, UPI pay, card spend)
+  | 'INCOME'           // money arriving (credit, refund)
+  | 'TRANSFER'         // inter-bank move: NEFT / IMPS / RTGS / AEPS
+  | 'INVESTMENT'       // MF / SIP / stocks / equity
+  | 'BALANCE_UPDATE'   // balance notification with no transaction amount
+  | 'SALARY'           // salary / wage credit
+  | 'AUTO_DEBIT'       // autopay / standing instruction debit
+  | 'RECHARGE'         // mobile / DTH / utility recharge
+  | 'WALLET_CREDIT'    // wallet top-up or load
+  | 'WALLET_DEBIT'     // wallet spend or deduction
+  | 'ATM_WITHDRAWAL';  // ATM cash withdrawal
 
 export interface MalanaResult {
   category: string | null;       // GRM_BANK | GRM_OTP | GRM_TRAVEL | GRM_BILL | GRM_DELIVERY | etc.
@@ -109,4 +115,8 @@ export interface MalanaResult {
 
   // ── UPI ───────────────────────────────────────────────────────────────────────
   upiHandle: string | null;          // UPI handle from bene VPA (e.g. "airtel", "paytm")
+
+  // ── Spam detection (Naive Bayes classifier) ───────────────────────────────────
+  isSpam: boolean;                   // true when message scores as promotional/spam
+  spamScore: number;                 // log-likelihood ratio: positive = transactional, negative = spam
 }

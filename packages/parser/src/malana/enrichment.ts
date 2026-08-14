@@ -4,9 +4,10 @@
 import vendorBanksRaw  from './data/vendor_banks.json';
 import vendorSeedRaw   from './data/vendor_seed.json';
 import vendorBrandsRaw from './data/vendor_brands.json';
-import bankSeedRaw     from './data/bank.json';     // malanaSeed — 32 banks, complete sender IDs
-import addrSeedRaw     from './data/addr.json';     // malanaSeed — 424 sender IDs → grammar category
-import upiSeedRaw      from './data/upi.json';      // malanaSeed — 111 UPI handles
+import bankSeedRaw     from './data/bank.json';       // malanaSeed — 32 banks, complete sender IDs
+import addrSeedRaw     from './data/addr.json';       // malanaSeed — 424 sender IDs → grammar category
+import upiSeedRaw      from './data/upi.json';        // malanaSeed — 111 UPI handles
+import categorizerRaw  from './data/categorizer.json'; // Naive Bayes binary classifier (3708 words)
 
 // ── Sender → grammar category (addr.json) ─────────────────────────────────────
 // "GRM_BANK" → ["ICICIB", "HDFCBK", ...]
@@ -171,6 +172,64 @@ export function detectBrand(text: string): BrandMatch | null {
     return { brand, category, isOnline };
   }
   return null;
+}
+
+// ── Spam detection ────────────────────────────────────────────────────────────
+// Naive Bayes binary classifier trained on Indian SMS data.
+// class0 = transactional (banking, OTP, delivery), class1 = spam/promotional.
+// Each word entry: [P(w|class0), P(w|class1), count0, count1, logRatio, logRatio]
+// Meta: [prior0, prior1, totalWords0, totalWords1, uniqueWords0, uniqueWords1, ...]
+
+interface CategorizerEntry {
+  word: string;
+  probability: [number, number, number, number, number, number];
+}
+
+interface CategorizerData {
+  probabilities: CategorizerEntry[];
+  meta: number[];
+}
+
+const catData = categorizerRaw as unknown as CategorizerData;
+const CAT_WORD_MAP = new Map<string, [number, number]>();
+for (const entry of catData.probabilities) {
+  CAT_WORD_MAP.set(entry.word, [entry.probability[0], entry.probability[1]]);
+}
+// log(P(class0) / P(class1)) — positive favours transactional
+const CAT_LOG_PRIOR = Math.log(catData.meta[0]! / catData.meta[1]!);
+
+// Replace amount-like patterns with the placeholder token "AMT" (matches categorizer training format).
+const AMT_NORM_RE = /(?:Rs\.?\s*|INR\s*|₹\s*|\$\s*|[A-Z]{2,3}\s*)[\d,]+(?:\.\d+)?|[\d]{4,}(?:[.,]\d+)*/gi;
+
+function buildNgrams(words: string[], n: number): string[] {
+  const out: string[] = [];
+  for (let i = 0; i <= words.length - n; i++) {
+    out.push(words.slice(i, i + n).join(' '));
+  }
+  return out;
+}
+
+export function detectSpam(message: string): { isSpam: boolean; score: number } {
+  const normalized = message.replace(AMT_NORM_RE, 'AMT');
+  const words = normalized.split(/\s+/).filter(Boolean);
+
+  let logScore = CAT_LOG_PRIOR;
+  for (const ngrams of [buildNgrams(words, 1), buildNgrams(words, 2), buildNgrams(words, 3)]) {
+    for (const ng of ngrams) {
+      const probs = CAT_WORD_MAP.get(ng);
+      if (!probs) continue;
+      const [p0, p1] = probs;
+      if (p0 > 0 && p1 > 0) {
+        logScore += Math.log(p0 / p1);
+      } else if (p0 > 0) {
+        logScore += 5;  // exclusive class0 evidence
+      } else {
+        logScore -= 5;  // exclusive class1 (spam) evidence
+      }
+    }
+  }
+
+  return { isSpam: logScore < 0, score: logScore };
 }
 
 // ── Subcategory ───────────────────────────────────────────────────────────────

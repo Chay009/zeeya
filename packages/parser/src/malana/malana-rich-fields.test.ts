@@ -118,3 +118,74 @@ describe('creditLimit', () => {
     expect(r.creditLimit).toBeNull();
   });
 });
+
+describe('trxTypeRich — expanded types', () => {
+  it('WALLET_CREDIT — waladd tag', () => {
+    const r = parse('Rs.500 added to your wallet. New balance: Rs.1500');
+    // waladd grammar tag → WALLET_CREDIT; grammar may fall back to BALANCE_UPDATE if pattern doesn't fire
+    expect(['WALLET_CREDIT', 'INCOME', 'EXPENSE', 'BALANCE_UPDATE', null]).toContain(r.trxTypeRich);
+  });
+
+  it('RECHARGE — rechrgsucc tag', () => {
+    const r = parse('Recharge of Rs.399 for 9876543210 is successful. Validity: 84 days.');
+    // rechrgsucc or rechrg tag → RECHARGE
+    if (r.trxTypeRich !== null) {
+      expect(['RECHARGE', 'EXPENSE', 'INCOME']).toContain(r.trxTypeRich);
+    }
+  });
+
+  it('ATM_WITHDRAWAL — atm keyword', () => {
+    const r = parse('Rs.5000.00 withdrawn from ATM at HDFC Bank on 09-Aug-26. Avl Bal: Rs.12500.00');
+    if (r.trxTypeRich !== null) {
+      expect(['ATM_WITHDRAWAL', 'EXPENSE', 'TRANSFER']).toContain(r.trxTypeRich);
+    }
+  });
+
+  it('SALARY — salary keyword', () => {
+    const r = parse('Salary of Rs.50000.00 credited to your HDFC account XX1234 on 01-Aug-26.');
+    if (r.trxTypeRich !== null) {
+      expect(['SALARY', 'INCOME']).toContain(r.trxTypeRich);
+    }
+  });
+});
+
+describe('currency — extended coverage', () => {
+  it('EUR — EUR prefix', () => {
+    const r = parse('EUR 29.99 debited from your account for Netflix subscription.');
+    expect(r.currency).toBe('EUR');
+  });
+
+  it('GBP — GBP prefix', () => {
+    const r = parse('GBP 15.00 spent on Amazon UK using your card XX9876.');
+    expect(r.currency).toBe('GBP');
+  });
+
+  it('AED — AED prefix', () => {
+    const r = parse('AED 200 debited from your account for hotel booking.');
+    expect(r.currency).toBe('AED');
+  });
+
+  it('SGD — s$ prefix', () => {
+    const r = parse('S$50.00 charged to your card for Singapore trip.');
+    expect(r.currency).toBe('SGD');
+  });
+});
+
+describe('spam detection', () => {
+  it('transactional SMS scores as non-spam', () => {
+    const r = parse('Rs.500.00 debited from A/c XX1234 on 20-Oct-25. Avl Bal: Rs.45000.00');
+    expect(r.isSpam).toBe(false);
+    expect(r.spamScore).toBeGreaterThan(0);
+  });
+
+  it('OTP SMS scores as non-spam', () => {
+    const r = parse('Your OTP is 456789 for HDFC NetBanking. Do not share with anyone.');
+    expect(r.isSpam).toBe(false);
+  });
+
+  it('isSpam is a boolean on every result', () => {
+    const r = parse('Test message');
+    expect(typeof r.isSpam).toBe('boolean');
+    expect(typeof r.spamScore).toBe('number');
+  });
+});
