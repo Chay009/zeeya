@@ -1,9 +1,10 @@
 // Bank name detection, merchant category, brand enrichment, subcategory derivation.
 // All data loaded from the original Truecaller APK JSON assets.
 
-import vendorBanksRaw  from './data/vendor_banks.json';
-import vendorSeedRaw   from './data/vendor_seed.json';
-import vendorBrandsRaw from './data/vendor_brands.json';
+import vendorBanksRaw     from './data/vendor_banks.json';
+import vendorSeedRaw      from './data/vendor_seed.json';
+import vendorBrandsRaw    from './data/vendor_brands.json';
+import vendorOperatorsRaw from './data/vendor_operators.json';
 import bankSeedRaw     from './data/bank.json';       // malanaSeed — 32 banks, complete sender IDs
 import addrSeedRaw     from './data/addr.json';       // malanaSeed — 424 sender IDs → grammar category
 import upiSeedRaw      from './data/upi.json';        // malanaSeed — 111 UPI handles
@@ -126,22 +127,51 @@ export function detectUpiHandle(vpa: string): string | null {
 }
 
 // ── Merchant category ─────────────────────────────────────────────────────────
+//
+// vendor_seed.json: "category" → ["keyword", ...] (31 categories, 368 keywords).
+// vendor_operators.json: 79 punctuation/junk substrings ("/", "-", "::", "---***",
+// "@@@@@...", etc.) found in raw bank/payment-gateway merchant descriptors
+// (e.g. "SBIMF-SIP", "FUN-CITY", "OIL-INDIA---***0021").
+//
+// Confirmed from the actual asset files pulled from the Truecaller APK
+// (resources/assets/vendorSeed/): the operators list contains NO plain
+// whitespace character, and vendor_seed keywords are short generic words
+// ("car", "bar", "fun", "oil", "station") that are only safe as category
+// signals when matched against a WHOLE token from a descriptor split on
+// these operators — never as a substring of an arbitrary word. That is why
+// "flipkart" (contains "art"), "fund" (contains "fun"), "baroda" (contains
+// "bar"), "card" (contains "car") must NOT match: they are single tokens
+// with no operator-delimited boundary around the keyword.
+//
+// Algorithm: split the merchant string on the operator substrings (longest
+// first, so multi-char operators like "---***" aren't partially consumed by
+// a single "-") plus whitespace, then match each resulting token exactly
+// (case-insensitive) against the keyword table. First-defined category wins
+// for keywords that appear under more than one category (e.g. "car" is both
+// "automobile" and "travel" — "automobile" is defined first in the seed).
+const VENDOR_OPERATORS: string[] = (vendorOperatorsRaw as string[])
+  .filter(op => op && op !== '')
+  .sort((a, b) => b.length - a.length);
 
-// vendor_seed.json: "category" → ["keyword", ...]  (31 categories)
-const MERCHANT_CATEGORY_MAP = new Map<string, string>();
+const OPERATOR_SPLIT_RE = new RegExp(
+  '[\\s]+|' + VENDOR_OPERATORS.map(op => op.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'),
+);
+
+const MERCHANT_KEYWORD_MAP = new Map<string, string>();
 for (const [category, keywords] of Object.entries(vendorSeedRaw as Record<string, string[]>)) {
   for (const kw of keywords) {
-    if (kw && !MERCHANT_CATEGORY_MAP.has(kw.toLowerCase())) {
-      MERCHANT_CATEGORY_MAP.set(kw.toLowerCase(), category);
-    }
+    if (!kw) continue;
+    const lower = kw.toLowerCase();
+    if (!MERCHANT_KEYWORD_MAP.has(lower)) MERCHANT_KEYWORD_MAP.set(lower, category);
   }
 }
 
 export function detectMerchantCategory(merchant: string): string | null {
   if (!merchant) return null;
-  const lower = merchant.toLowerCase();
-  for (const [keyword, category] of MERCHANT_CATEGORY_MAP) {
-    if (lower.includes(keyword)) return category;
+  const tokens = merchant.toLowerCase().split(OPERATOR_SPLIT_RE).filter(Boolean);
+  for (const token of tokens) {
+    const cat = MERCHANT_KEYWORD_MAP.get(token);
+    if (cat) return cat;
   }
   return null;
 }
