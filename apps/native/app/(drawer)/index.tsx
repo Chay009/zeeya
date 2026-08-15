@@ -31,7 +31,14 @@ function formatMoney(amount: number, currency: string): string {
 }
 
 function formatDate(ms: number): string {
-  return new Date(ms).toLocaleDateString("en-IN", { month: "short", day: "numeric" });
+  const d = new Date(ms);
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString(
+    "en-IN",
+    sameYear
+      ? { month: "short", day: "numeric" }
+      : { month: "short", day: "numeric", year: "numeric" },
+  );
 }
 
 export default function Home() {
