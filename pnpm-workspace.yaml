@@ -6,22 +6,24 @@ allowBuilds:
   sharp: true
   workerd: true
 catalog:
-  dotenv: ^17.4.2
-  zod: ^4.4.3
+  "@better-auth/expo": 1.6.23
   "@cloudflare/workers-types": ^4.20260702.1
-  hono: ^4.12.27
-  "@trpc/server": ^11.18.0
-  better-auth: 1.6.23
-  alchemy: ^0.93.12
-  wrangler: ^4.107.0
+  "@tanstack/react-form": ^1.33.0
   "@tanstack/react-query": ^5.101.2
+  "@trpc/client": ^11.18.0
+  "@trpc/server": ^11.18.0
+  "@trpc/tanstack-react-query": ^11.18.0
+  "@types/react-dom": ^19.2.3
+  alchemy: ^0.93.12
+  better-auth: 1.6.23
+  dotenv: ^17.4.2
+  hono: ^4.12.27
   lucide-react: ^1.23.0
   next-themes: ^0.4.6
   sonner: ^2.0.7
-  tailwindcss: ^4.3.2
-  "@trpc/tanstack-react-query": ^11.18.0
-  "@trpc/client": ^11.18.0
-  "@tanstack/react-form": ^1.33.0
-  "@types/react-dom": ^19.2.3
   tailwind-merge: ^3.6.0
-  "@better-auth/expo": 1.6.23
+  tailwindcss: ^4.3.2
+  wrangler: ^4.107.0
+  zod: ^4.4.3
+patchedDependencies:
+  react-native-get-sms-android: patches/react-native-get-sms-android.patch

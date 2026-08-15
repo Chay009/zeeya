@@ -1,0 +1,29 @@
+diff --git a/android/build.gradle b/android/build.gradle
+index 0de40fc7b6baf2dc1cfa016c6cd3fe176fe61f7b..3022e470e6a4ae4276ea1e74ff9eb5951e4446e0 100644
+--- a/android/build.gradle
++++ b/android/build.gradle
+@@ -1,15 +1,4 @@
+ 
+-buildscript {
+-    repositories {
+-        google()
+-        jcenter()
+-    }
+-
+-    dependencies {
+-        classpath 'com.android.tools.build:gradle:3.3.1'
+-    }
+-}
+-
+ apply plugin: 'com.android.library'
+ 
+ def safeExtGet(prop, fallback) {
+@@ -36,7 +25,7 @@ repositories {
+         // All of React Native (JS, Obj-C sources, Android binaries) is installed from npm
+         url "$rootDir/../node_modules/react-native/android"
+     }
+-    jcenter()
++    mavenCentral()
+ }
+ 
+ dependencies {
