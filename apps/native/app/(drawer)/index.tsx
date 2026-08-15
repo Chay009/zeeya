@@ -41,6 +41,19 @@ function formatDate(ms: number): string {
   );
 }
 
+// Full precision (date + time + year, always) — used where telling two
+// readings apart matters, since day/month alone can hide same-day-different-
+// time orderings or make cross-year mixups look ambiguous.
+function formatDateTimeFull(ms: number): string {
+  return new Date(ms).toLocaleString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export default function Home() {
   const [status, setStatus] = useState<Status>("checking");
   const [error, setError] = useState<string | null>(null);
@@ -319,7 +332,7 @@ function AccountCard({ account }: { account: AccountBalance }) {
         {formatMoney(account.balance, account.currency)}
       </Text>
       <Text style={{ color: t.textMuted, fontSize: 12, marginTop: 2 }}>
-        As of {formatDate(account.asOf)}
+        As of {formatDateTimeFull(account.asOf)}
       </Text>
       {older.length > 0 && (
         <View style={{ marginTop: 10, gap: 4 }}>
@@ -328,7 +341,7 @@ function AccountCard({ account }: { account: AccountBalance }) {
               key={r.asOf}
               style={{ flexDirection: "row", justifyContent: "space-between" }}
             >
-              <Text style={{ color: t.textMuted, fontSize: 11 }}>{formatDate(r.asOf)}</Text>
+              <Text style={{ color: t.textMuted, fontSize: 11 }}>{formatDateTimeFull(r.asOf)}</Text>
               <Text style={{ color: t.textMuted, fontSize: 11 }}>
                 {formatMoney(r.balance, account.currency)}
               </Text>
