@@ -1,95 +1,337 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useQuery } from "@tanstack/react-query";
-import { Card, Chip, useThemeColor } from "heroui-native";
-import { Text, View, Pressable } from "react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  FlatList,
+  PermissionsAndroid,
+  Pressable,
+  RefreshControl,
+  StatusBar,
+  Text,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from "react-native";
 
-import { Container } from "@/components/container";
-import { SignIn } from "@/components/sign-in";
-import { SignUp } from "@/components/sign-up";
-import { authClient } from "@/lib/auth-client";
-import { queryClient, trpc } from "@/utils/trpc";
+import { TransactionAvatar } from "@/components/transaction-avatar";
+import { dashboardTheme as t } from "@/constants/dashboard-theme";
+import { deriveDashboard, type AccountBalance } from "@/lib/dashboard";
+import {
+  isSmsReadSupported,
+  type ParsedSms,
+  parseInboxMessages,
+  readSmsInbox,
+  requestSmsReadPermission,
+} from "@/lib/sms";
+
+type Status = "checking" | "needs-permission" | "loading" | "ready" | "unsupported" | "error";
+
+function formatMoney(amount: number, currency: string): string {
+  const symbol = currency === "INR" ? "₹" : currency + " ";
+  return `${symbol}${amount.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+}
+
+function formatDate(ms: number): string {
+  return new Date(ms).toLocaleDateString("en-IN", { month: "short", day: "numeric" });
+}
 
 export default function Home() {
-  const healthCheck = useQuery(trpc.healthCheck.queryOptions());
-  const privateData = useQuery(trpc.privateData.queryOptions());
-  const isConnected = healthCheck?.data === "OK";
-  const isLoading = healthCheck?.isLoading;
-  const { data: session } = authClient.useSession();
+  const [status, setStatus] = useState<Status>("checking");
+  const [error, setError] = useState<string | null>(null);
+  const [messages, setMessages] = useState<ParsedSms[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const mutedColor = useThemeColor("muted");
-  const successColor = useThemeColor("success");
-  const dangerColor = useThemeColor("danger");
-  const foregroundColor = useThemeColor("foreground");
+  const load = useCallback(async () => {
+    if (!isSmsReadSupported()) {
+      setStatus("unsupported");
+      return;
+    }
+    try {
+      const raw = await readSmsInbox();
+      setMessages(parseInboxMessages(raw));
+      setStatus("ready");
+    } catch (e) {
+      setStatus("error");
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isSmsReadSupported()) {
+      setStatus("unsupported");
+      return;
+    }
+    PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_SMS).then((granted) => {
+      if (granted) void load();
+      else setStatus("needs-permission");
+    });
+  }, [load]);
+
+  const connect = useCallback(async () => {
+    setStatus("loading");
+    const granted = await requestSmsReadPermission();
+    if (!granted) {
+      setStatus("needs-permission");
+      return;
+    }
+    await load();
+  }, [load]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  }, [load]);
+
+  const dashboard = useMemo(() => deriveDashboard(messages), [messages]);
 
   return (
-    <Container className="p-6">
-      <View className="py-4 mb-6">
-        <Text className="text-4xl font-bold text-foreground mb-2">BETTER T STACK</Text>
-      </View>
-
-      {session?.user ? (
-        <Card variant="secondary" className="mb-6 p-4">
-          <Text className="text-foreground text-base mb-2">
-            Welcome, <Text className="font-medium">{session.user.name}</Text>
-          </Text>
-          <Text className="text-muted text-sm mb-4">{session.user.email}</Text>
-          <Pressable
-            className="bg-danger py-3 px-4 rounded-lg self-start active:opacity-70"
-            onPress={() => {
-              authClient.signOut();
-              queryClient.invalidateQueries();
-            }}
-          >
-            <Text className="text-foreground font-medium">Sign Out</Text>
-          </Pressable>
-        </Card>
-      ) : null}
-
-      <Card variant="secondary" className="p-6">
-        <View className="flex-row items-center justify-between mb-4">
-          <Card.Title>System Status</Card.Title>
-          <Chip variant="secondary" color={isConnected ? "success" : "danger"} size="sm">
-            <Chip.Label>{isConnected ? "LIVE" : "OFFLINE"}</Chip.Label>
-          </Chip>
-        </View>
-
-        <Card className="p-4">
-          <View className="flex-row items-center">
+    <View style={{ flex: 1, backgroundColor: t.background }}>
+      <StatusBar barStyle="light-content" />
+      <FlatList
+        contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
+        data={status === "ready" ? dashboard.recent.slice(0, 25) : []}
+        keyExtractor={(item) => item.id}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={t.accent} />
+        }
+        ListHeaderComponent={
+          <View>
             <View
-              className={`w-3 h-3 rounded-full mr-3 ${isConnected ? "bg-success" : "bg-muted"}`}
-            />
-            <View className="flex-1">
-              <Text className="text-foreground font-medium mb-1">TRPC Backend</Text>
-              <Card.Description>
-                {isLoading
-                  ? "Checking connection..."
-                  : isConnected
-                    ? "Connected to API"
-                    : "API Disconnected"}
-              </Card.Description>
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 24,
+              }}
+            >
+              <Text style={{ color: t.textPrimary, fontSize: 24, fontWeight: "800" }}>zeeya</Text>
+              <Ionicons name="ellipsis-horizontal-circle-outline" size={26} color={t.textMuted} />
             </View>
-            {isLoading && <Ionicons name="hourglass-outline" size={20} color={mutedColor} />}
-            {!isLoading && isConnected && (
-              <Ionicons name="checkmark-circle" size={20} color={successColor} />
+
+            {status === "checking" && (
+              <Text style={{ color: t.textMuted }}>Checking permissions…</Text>
             )}
-            {!isLoading && !isConnected && (
-              <Ionicons name="close-circle" size={20} color={dangerColor} />
+
+            {status === "unsupported" && (
+              <Card>
+                <Text style={{ color: t.textPrimary, fontWeight: "600", marginBottom: 4 }}>
+                  Android only
+                </Text>
+                <Text style={{ color: t.textMuted, fontSize: 13 }}>
+                  Reading the SMS inbox isn't possible on iOS — Apple blocks third-party apps from
+                  accessing it entirely.
+                </Text>
+              </Card>
+            )}
+
+            {status === "needs-permission" && (
+              <Card>
+                <Text style={{ color: t.textPrimary, fontWeight: "600", marginBottom: 4 }}>
+                  Connect your SMS inbox
+                </Text>
+                <Text style={{ color: t.textMuted, fontSize: 13, marginBottom: 14 }}>
+                  zeeya reads your bank and transaction messages on-device to build this
+                  dashboard. Nothing ever leaves your phone.
+                </Text>
+                <Pressable
+                  onPress={connect}
+                  style={{
+                    backgroundColor: t.accent,
+                    paddingVertical: 12,
+                    borderRadius: 12,
+                    alignItems: "center",
+                  }}
+                >
+                  <Text style={{ color: t.background, fontWeight: "700" }}>Allow SMS Access</Text>
+                </Pressable>
+              </Card>
+            )}
+
+            {status === "error" && (
+              <Card>
+                <Text style={{ color: t.negative, fontWeight: "600", marginBottom: 4 }}>
+                  Couldn't read inbox
+                </Text>
+                <Text style={{ color: t.textMuted, fontSize: 13 }}>{error}</Text>
+              </Card>
+            )}
+
+            {status === "loading" && (
+              <Text style={{ color: t.textMuted }}>Reading and parsing your inbox…</Text>
+            )}
+
+            {status === "ready" && (
+              <>
+                <StatRow income={dashboard.monthIncome} expense={dashboard.monthExpense} />
+
+                {dashboard.accounts.map((acc) => (
+                  <AccountCard key={`${acc.bankName}-${acc.last4 ?? ""}`} account={acc} />
+                ))}
+
+                {dashboard.subscriptions.length > 0 && (
+                  <Card style={{ marginBottom: 16 }}>
+                    <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                      <Text style={{ color: t.textPrimary, fontWeight: "700", fontSize: 16 }}>
+                        {dashboard.subscriptions.length} Subscription
+                        {dashboard.subscriptions.length === 1 ? "" : "s"}
+                      </Text>
+                      <Text style={{ color: t.textMuted, fontSize: 13 }}>
+                        {formatMoney(
+                          dashboard.subscriptions.reduce((s, x) => s + x.amount, 0),
+                          "INR",
+                        )}{" "}
+                        / month
+                      </Text>
+                    </View>
+                  </Card>
+                )}
+
+                <Text
+                  style={{
+                    color: t.accent,
+                    fontWeight: "700",
+                    fontSize: 15,
+                    marginBottom: 12,
+                    marginTop: 4,
+                  }}
+                >
+                  Recent
+                </Text>
+
+                {dashboard.recent.length === 0 && (
+                  <Text style={{ color: t.textMuted, fontSize: 13 }}>
+                    No bank or transaction messages recognized yet.
+                  </Text>
+                )}
+              </>
             )}
           </View>
-        </Card>
-      </Card>
+        }
+        renderItem={({ item }) => <TransactionRow item={item} />}
+      />
+    </View>
+  );
+}
 
-      <Card variant="secondary" className="mt-6 p-4">
-        <Card.Title className="mb-3">Private Data</Card.Title>
-        {privateData && <Card.Description>{privateData.data?.message}</Card.Description>}
-      </Card>
+function Card({
+  children,
+  style,
+}: {
+  children: React.ReactNode;
+  style?: StyleProp<ViewStyle>;
+}) {
+  return (
+    <View
+      style={[
+        {
+          backgroundColor: t.surface,
+          borderRadius: 20,
+          padding: 18,
+          borderWidth: 1,
+          borderColor: t.border,
+        },
+        style,
+      ]}
+    >
+      {children}
+    </View>
+  );
+}
 
-      {!session?.user && (
-        <>
-          <SignIn />
-          <SignUp />
-        </>
+function StatRow({ income, expense }: { income: number; expense: number }) {
+  const net = income - expense;
+  return (
+    <Card style={{ marginBottom: 16, flexDirection: "row", gap: 16 }}>
+      <Stat label="Income" value={formatMoney(income, "INR")} color={t.positive} icon="trending-up" />
+      <Stat label="Expenses" value={formatMoney(expense, "INR")} color={t.negative} icon="trending-down" />
+      <Stat
+        label="Net"
+        value={formatMoney(net, "INR")}
+        color={net >= 0 ? t.positive : t.negative}
+        icon="swap-horizontal"
+      />
+    </Card>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  color,
+  icon,
+}: {
+  label: string;
+  value: string;
+  color: string;
+  icon: keyof typeof Ionicons.glyphMap;
+}) {
+  return (
+    <View style={{ flex: 1 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 4 }}>
+        <Ionicons name={icon} size={13} color={color} />
+        <Text style={{ color: t.textMuted, fontSize: 12 }}>{label}</Text>
+      </View>
+      <Text style={{ color, fontWeight: "700", fontSize: 15 }}>{value}</Text>
+    </View>
+  );
+}
+
+function AccountCard({ account }: { account: AccountBalance }) {
+  return (
+    <Card style={{ marginBottom: 16 }}>
+      <Text style={{ color: t.textMuted, fontSize: 12, letterSpacing: 0.5, marginBottom: 8 }}>
+        {account.bankName.toUpperCase()}
+        {account.last4 ? ` ••${account.last4}` : ""}
+      </Text>
+      <Text style={{ color: t.textPrimary, fontSize: 32, fontWeight: "800" }}>
+        {formatMoney(account.balance, account.currency)}
+      </Text>
+      <Text style={{ color: t.textMuted, fontSize: 12, marginTop: 2 }}>
+        As of {formatDate(account.asOf)}
+      </Text>
+    </Card>
+  );
+}
+
+function TransactionRow({ item }: { item: ParsedSms }) {
+  const { result } = item;
+  const label = result.brandName ?? result.vendor ?? result.bankName ?? item.sender;
+  const isExpense = result.trxTypeRich
+    ? ["EXPENSE", "AUTO_DEBIT", "WALLET_DEBIT", "ATM_WITHDRAWAL"].includes(result.trxTypeRich)
+    : false;
+  const amount = result.trx ? Number.parseFloat(result.trx.replace(/,/g, "")) : null;
+
+  return (
+    <View
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        backgroundColor: t.surfaceMuted,
+        borderRadius: 16,
+        padding: 12,
+        marginBottom: 10,
+      }}
+    >
+      <TransactionAvatar label={label} category={result.merchantCategory} />
+      <View style={{ flex: 1, marginLeft: 12 }}>
+        <Text style={{ color: t.textPrimary, fontWeight: "600", fontSize: 15 }}>{label}</Text>
+        <Text style={{ color: t.textMuted, fontSize: 12 }}>
+          {formatDate(item.date)}
+          {result.subcategory === "recurring" ? " · Recurring" : ""}
+        </Text>
+      </View>
+      {amount !== null && (
+        <Text
+          style={{
+            color: isExpense ? t.negative : t.positive,
+            fontWeight: "700",
+            fontSize: 15,
+          }}
+        >
+          {isExpense ? "-" : "+"}
+          {formatMoney(amount, result.currency ?? "INR")}
+        </Text>
       )}
-    </Container>
+    </View>
   );
 }

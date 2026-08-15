@@ -29,29 +29,13 @@ function DrawerLayout() {
       <Drawer.Screen
         name="index"
         options={{
-          headerTitle: "Home",
+          headerShown: false,
           drawerLabel: ({ color, focused }) => (
             <Text style={{ color: focused ? color : themeColorForeground }}>Home</Text>
           ),
           drawerIcon: ({ size, color, focused }) => (
             <Ionicons
               name="home-outline"
-              size={size}
-              color={focused ? color : themeColorForeground}
-            />
-          ),
-        }}
-      />
-      <Drawer.Screen
-        name="sms-test"
-        options={{
-          headerTitle: "SMS Parse Test",
-          drawerLabel: ({ color, focused }) => (
-            <Text style={{ color: focused ? color : themeColorForeground }}>SMS Parse Test</Text>
-          ),
-          drawerIcon: ({ size, color, focused }) => (
-            <Ionicons
-              name="chatbubble-outline"
               size={size}
               color={focused ? color : themeColorForeground}
             />
