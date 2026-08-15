@@ -1,11 +1,20 @@
 import type { ParsedSms } from "@/lib/sms";
 
+export interface BalanceReading {
+  balance: number;
+  asOf: number;
+}
+
 export interface AccountBalance {
   bankName: string;
   last4: string | null;
   balance: number;
   currency: string;
   asOf: number;
+  // Every balance reading seen for this account, newest first, including
+  // ones older than the current `balance` — nothing the parser extracted is
+  // dropped, it's just not all shown as the headline figure.
+  history: BalanceReading[];
 }
 
 export interface Subscription {
@@ -67,15 +76,26 @@ export function deriveDashboard(messages: ParsedSms[]): Dashboard {
     if (result.bal && result.bankName) {
       const key = `${result.bankName}|${normalizeAcc(result.acc)}`;
       const balance = parseAmount(result.bal);
-      const existing = accountsByKey.get(key);
-      if (balance !== null && (!existing || m.date > existing.asOf)) {
-        accountsByKey.set(key, {
-          bankName: result.bankName,
-          last4: normalizeAcc(result.acc) || result.acc,
-          balance,
-          currency: result.currency ?? "INR",
-          asOf: m.date,
-        });
+      if (balance !== null) {
+        const reading: BalanceReading = { balance, asOf: m.date };
+        const existing = accountsByKey.get(key);
+        if (!existing) {
+          accountsByKey.set(key, {
+            bankName: result.bankName,
+            last4: normalizeAcc(result.acc) || result.acc,
+            balance,
+            currency: result.currency ?? "INR",
+            asOf: m.date,
+            history: [reading],
+          });
+        } else {
+          existing.history.push(reading);
+          if (m.date > existing.asOf) {
+            existing.balance = balance;
+            existing.asOf = m.date;
+            existing.currency = result.currency ?? existing.currency;
+          }
+        }
       }
     }
 
@@ -125,8 +145,11 @@ export function deriveDashboard(messages: ParsedSms[]): Dashboard {
 
   recognized.sort((a, b) => b.date - a.date);
 
+  const accounts = [...accountsByKey.values()];
+  for (const acc of accounts) acc.history.sort((a, b) => b.asOf - a.asOf);
+
   return {
-    accounts: [...accountsByKey.values()],
+    accounts,
     monthIncome,
     monthExpense,
     subscriptions,

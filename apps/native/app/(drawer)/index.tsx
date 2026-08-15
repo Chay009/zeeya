@@ -301,6 +301,7 @@ function Stat({
 }
 
 function AccountCard({ account }: { account: AccountBalance }) {
+  const older = account.history.filter((r) => r.asOf !== account.asOf);
   return (
     <Card style={{ marginBottom: 16 }}>
       <Text style={{ color: t.textMuted, fontSize: 12, letterSpacing: 0.5, marginBottom: 8 }}>
@@ -313,6 +314,21 @@ function AccountCard({ account }: { account: AccountBalance }) {
       <Text style={{ color: t.textMuted, fontSize: 12, marginTop: 2 }}>
         As of {formatDate(account.asOf)}
       </Text>
+      {older.length > 0 && (
+        <View style={{ marginTop: 10, gap: 4 }}>
+          {older.map((r) => (
+            <View
+              key={r.asOf}
+              style={{ flexDirection: "row", justifyContent: "space-between" }}
+            >
+              <Text style={{ color: t.textMuted, fontSize: 11 }}>{formatDate(r.asOf)}</Text>
+              <Text style={{ color: t.textMuted, fontSize: 11 }}>
+                {formatMoney(r.balance, account.currency)}
+              </Text>
+            </View>
+          ))}
+        </View>
+      )}
     </Card>
   );
 }
