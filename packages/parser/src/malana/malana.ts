@@ -83,6 +83,26 @@ function pickTagValue(tag: string, values: Record<string, string>): string {
   }
 }
 
+// Every literal (non-generic) token type that appears in a BAL[bal] grammar
+// rule across the seed (GRM_BANK: "BLNC AMT,AVBL BAL,CURR {0}BAL,TOTAL BAL,
+// BLNC NUM,CLRNC BAL,AMT AUX BLNC,AVBL {2}AMT"; GRM_BILL is a subset). AMT/NUM
+// are excluded — they're the generic amount side of every rule, not evidence
+// of a balance statement on their own.
+const BALANCE_INDICATOR_TYPES = new Set(['BLNC', 'AVBL', 'BAL', 'CURR', 'TOTAL', 'CLRNC']);
+
+function baseType(t: string): string {
+  return t.replace(/\d+$/, '');
+}
+
+function isBalanceIndicatorPair(values: Record<string, string>): boolean {
+  const prev = values['_prevType'];
+  const next = values['_nextType'];
+  return (
+    (!!prev && BALANCE_INDICATOR_TYPES.has(baseType(prev))) ||
+    (!!next && BALANCE_INDICATOR_TYPES.has(baseType(next)))
+  );
+}
+
 // ── Rich type derivation ───────────────────────────────────────────────────────
 // Transfer methods: these override 'debit' direction in the grammar (grammar-runner PAYMENT_METHODS).
 // When trxType is one of these, money definitely left the account → TRANSFER.
@@ -236,9 +256,23 @@ export class MalanaEngine {
       if (!token.matched) continue;
       const tag = token.values['_tag'];
       if (tag) {
-        const tagValue = pickTagValue(tag, token.values);
-        if (tagValue) tags[tag] = tagValue;
-        if (!detectedCategory) detectedCategory = category;
+        // BAL[bal]'s grammar rules (BLNC AMT, AVBL BAL, AMT AUX BLNC, ...) all
+        // require a real balance-indicating word — but the compiler reduces
+        // multi-token chains pairwise, and each pair independently satisfies
+        // the rule (a compiler limitation, not something safe to change here
+        // without risking other rules — see the "AMT AUX BLNC" chain, where
+        // the FIRST pair alone is "AMT-AUX", with no balance word at all).
+        // For "bal" specifically, cross-check that the matched pair actually
+        // touches one of the rule's own balance-indicating token types before
+        // trusting it, so e.g. "Rs.1999.00 is successfully created..." (an
+        // amount followed by any auxiliary verb) can't masquerade as a
+        // balance statement.
+        const trustworthy = tag !== 'bal' || isBalanceIndicatorPair(token.values);
+        if (trustworthy) {
+          const tagValue = pickTagValue(tag, token.values);
+          if (tagValue) tags[tag] = tagValue;
+          if (!detectedCategory) detectedCategory = category;
+        }
       }
       for (const [k, v] of Object.entries(token.values)) {
         if (k.startsWith('_') || !v) continue;
