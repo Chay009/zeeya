@@ -8,10 +8,16 @@
     },
     "name": "zeeya",
     "slug": "zeeya",
-    "plugins": ["expo-font"],
+    "plugins": [
+      "expo-font",
+      "./plugins/withReadSmsPermission.js"
+    ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "android": {
+      "package": "com.anonymous.zeeya"
     }
   }
 }

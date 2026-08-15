@@ -43,6 +43,22 @@ function DrawerLayout() {
         }}
       />
       <Drawer.Screen
+        name="sms-test"
+        options={{
+          headerTitle: "SMS Parse Test",
+          drawerLabel: ({ color, focused }) => (
+            <Text style={{ color: focused ? color : themeColorForeground }}>SMS Parse Test</Text>
+          ),
+          drawerIcon: ({ size, color, focused }) => (
+            <Ionicons
+              name="chatbubble-outline"
+              size={size}
+              color={focused ? color : themeColorForeground}
+            />
+          ),
+        }}
+      />
+      <Drawer.Screen
         name="(tabs)"
         options={{
           headerTitle: "Tabs",

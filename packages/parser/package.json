@@ -5,6 +5,9 @@
   "exports": {
     ".": {
       "default": "./src/index.ts"
+    },
+    "./malana": {
+      "default": "./src/malana/index.ts"
     }
   },
   "scripts": {
