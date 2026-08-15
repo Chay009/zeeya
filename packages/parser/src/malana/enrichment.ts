@@ -54,19 +54,36 @@ const BANK_SEED: Array<[string, string[]]> = Object.entries(
 );
 
 // vendor_banks.json (vendorSeed) — covers a few extra UPI handles (okhdfc, okaxis, etc.)
-// used as supplementary match layer.
+// used as supplementary match layer. Its keys ("hdfc", "state bank of india", ...)
+// are lowercase shorthand for the same real banks bank.json already names in full
+// ("HDFC Bank", "State Bank of India"), so resolve through bank.json's own name list
+// instead of hand-listing each bank again here — that list is the single source of
+// truth and the only thing that needs updating when a new bank is added.
+const BANK_SEED_NAMES: string[] = BANK_SEED.map(([name]) => name);
+
+function toTitleCase(key: string): string {
+  return key.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+// Resolves a vendor_banks.json key to bank.json's canonical name for the same
+// bank, when one exists. Exact match first; then "key" as a leading word of a
+// canonical name (never a plain substring — "bank of india" is a substring of
+// "state bank of india" but they're two different real banks, so a bare
+// `.includes()` would wrongly merge them). No bank.json match at all (e.g.
+// "rbi", "idfc" — not present under any spelling) falls back to a plain
+// title-cased version of the key.
+function resolveBankName(key: string): string {
+  const lower = key.toLowerCase();
+  const exact = BANK_SEED_NAMES.find(name => name.toLowerCase() === lower);
+  if (exact) return exact;
+  const prefixMatches = BANK_SEED_NAMES.filter(name => name.toLowerCase().startsWith(lower + ' '));
+  if (prefixMatches.length === 1) return prefixMatches[0]!;
+  return toTitleCase(key);
+}
+
 const VENDOR_BANKS: Array<[string, string[]]> = Object.entries(
   vendorBanksRaw as Record<string, string[]>
-).map(([name, patterns]) => [
-  name === 'hdfc'     ? 'HDFC Bank'
-  : name === 'idbi'   ? 'IDBI Bank'
-  : name === 'rbi'    ? 'RBI'
-  : name === 'idfc'   ? 'IDFC First Bank'
-  : name === 'indusind' ? 'IndusInd Bank'
-  : name === 'paytm'  ? 'Paytm'
-  : name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
-  patterns,
-] as [string, string[]]);
+).map(([name, patterns]) => [resolveBankName(name), patterns] as [string, string[]]);
 
 // Message-body fallback for banks without sender-based detection.
 const BODY_BANK_PATTERNS: Array<[RegExp, string]> = [
