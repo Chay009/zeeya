@@ -89,6 +89,15 @@ function pickTagValue(tag: string, values: Record<string, string>): string {
 const TRANSFER_METHODS = new Set(['neft', 'imps', 'rtgs', 'aeps']);
 
 function deriveRichType(tags: Record<string, string>, kwToks: Token[]): TrxTypeRich | null {
+  // Plan validity/expiry notice (rechrgnumexp — "plan expires on X" / "validity ends"). This
+  // is Truecaller's own dedicated grammar tag for an expiry notice, distinct from rechrgsucc
+  // (a confirmed recharge). It must win even when another tag also matched on the same
+  // message — e.g. a "recharge before it expires" call-to-action can trip rechrgsucc's
+  // `INTENT{2}RECHRG` sub-pattern purely from the word "recharge" appearing near an
+  // intent-shaped word, with no actual recharge having happened. An expiry notice is never
+  // itself a completed transaction, so it's checked first and overrides everything below.
+  if (tags['rechrgnumexp']) return null;
+
   // Investment (MF, SIP, equity, stocks)
   if (tags['navval'] || tags['folio'] || tags['equity']) return 'INVESTMENT';
 
