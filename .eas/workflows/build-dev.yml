@@ -1,0 +1,10 @@
+name: Build Android development client
+
+jobs:
+  android_development_build:
+    name: Build Android (development)
+    type: build
+    params:
+      platform: android
+      profile: development
+      working_directory: apps/native
