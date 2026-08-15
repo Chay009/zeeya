@@ -170,7 +170,13 @@ export default function Home() {
 
                 {dashboard.subscriptions.length > 0 && (
                   <Card style={{ marginBottom: 16 }}>
-                    <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        justifyContent: "space-between",
+                        marginBottom: 10,
+                      }}
+                    >
                       <Text style={{ color: t.textPrimary, fontWeight: "700", fontSize: 16 }}>
                         {dashboard.subscriptions.length} Subscription
                         {dashboard.subscriptions.length === 1 ? "" : "s"}
@@ -183,6 +189,24 @@ export default function Home() {
                         / month
                       </Text>
                     </View>
+                    {dashboard.subscriptions.map((sub) => (
+                      <View
+                        key={`${sub.merchant}-${sub.amount}`}
+                        style={{
+                          flexDirection: "row",
+                          justifyContent: "space-between",
+                          paddingVertical: 6,
+                        }}
+                      >
+                        <Text style={{ color: t.textPrimary, fontSize: 13 }}>
+                          {sub.merchant}{" "}
+                          <Text style={{ color: t.textMuted }}>· seen {sub.count}x</Text>
+                        </Text>
+                        <Text style={{ color: t.textMuted, fontSize: 13 }}>
+                          {formatMoney(sub.amount, sub.currency)}
+                        </Text>
+                      </View>
+                    ))}
                   </Card>
                 )}
 

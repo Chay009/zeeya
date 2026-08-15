@@ -37,6 +37,15 @@ function isSameMonth(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
 }
 
+// Different SMS from the same bank mask the account number differently
+// ("1234", "XX1234", "*1234", or missing entirely) — normalize to just the
+// trailing digits so the same real account doesn't produce multiple cards.
+function normalizeAcc(acc: string | null): string {
+  if (!acc) return "";
+  const digits = acc.replace(/\D/g, "");
+  return digits.slice(-4);
+}
+
 // Latest known balance per bank account, income/expense totals for the
 // current month, a simple recurring-charge heuristic (same merchant + same
 // amount seen 2+ times), and the most recent recognized transactions —
@@ -56,13 +65,13 @@ export function deriveDashboard(messages: ParsedSms[]): Dashboard {
     if (result.category === null) continue;
 
     if (result.bal && result.bankName) {
-      const key = `${result.bankName}|${result.acc ?? ""}`;
+      const key = `${result.bankName}|${normalizeAcc(result.acc)}`;
       const balance = parseAmount(result.bal);
       const existing = accountsByKey.get(key);
       if (balance !== null && (!existing || m.date > existing.asOf)) {
         accountsByKey.set(key, {
           bankName: result.bankName,
-          last4: result.acc,
+          last4: normalizeAcc(result.acc) || result.acc,
           balance,
           currency: result.currency ?? "INR",
           asOf: m.date,
@@ -93,7 +102,11 @@ export function deriveDashboard(messages: ParsedSms[]): Dashboard {
       }
     }
 
-    if (result.trxTypeRich) recognized.push(m);
+    // A trxTypeRich tag alone isn't proof of an actual transaction — e.g. a
+    // telecom "your plan is valid till..." notice can trigger the RECHARGE
+    // tag without being a real recharge purchase. Require a real parsed
+    // amount too, so informational notices don't show up as transactions.
+    if (result.trxTypeRich && parseAmount(result.trx) !== null) recognized.push(m);
   }
 
   const subscriptions: Subscription[] = [];
