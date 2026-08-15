@@ -332,7 +332,7 @@ function AccountCard({ account }: { account: AccountBalance }) {
         {formatMoney(account.balance, account.currency)}
       </Text>
       <Text style={{ color: t.textMuted, fontSize: 12, marginTop: 2 }}>
-        As of {formatDateTimeFull(account.asOf)}
+        As of {formatDateTimeFull(account.asOf)} · {account.sender}
       </Text>
       {older.length > 0 && (
         <View style={{ marginTop: 10, gap: 4 }}>
@@ -341,7 +341,9 @@ function AccountCard({ account }: { account: AccountBalance }) {
               key={r.asOf}
               style={{ flexDirection: "row", justifyContent: "space-between" }}
             >
-              <Text style={{ color: t.textMuted, fontSize: 11 }}>{formatDateTimeFull(r.asOf)}</Text>
+              <Text style={{ color: t.textMuted, fontSize: 11 }}>
+                {formatDateTimeFull(r.asOf)} · {r.sender}
+              </Text>
               <Text style={{ color: t.textMuted, fontSize: 11 }}>
                 {formatMoney(r.balance, account.currency)}
               </Text>

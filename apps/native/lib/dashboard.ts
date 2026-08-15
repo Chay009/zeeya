@@ -3,6 +3,9 @@ import type { ParsedSms } from "@/lib/sms";
 export interface BalanceReading {
   balance: number;
   asOf: number;
+  // The raw SMS sender ID this reading came from (e.g. "VM-SBIINB") — lets
+  // a reading be traced back to the actual message that produced it.
+  sender: string;
 }
 
 export interface AccountBalance {
@@ -11,6 +14,7 @@ export interface AccountBalance {
   balance: number;
   currency: string;
   asOf: number;
+  sender: string;
   // Every balance reading seen for this account, newest first, including
   // ones older than the current `balance` — nothing the parser extracted is
   // dropped, it's just not all shown as the headline figure.
@@ -77,7 +81,7 @@ export function deriveDashboard(messages: ParsedSms[]): Dashboard {
       const key = `${result.bankName}|${normalizeAcc(result.acc)}`;
       const balance = parseAmount(result.bal);
       if (balance !== null) {
-        const reading: BalanceReading = { balance, asOf: m.date };
+        const reading: BalanceReading = { balance, asOf: m.date, sender: m.sender };
         const existing = accountsByKey.get(key);
         if (!existing) {
           accountsByKey.set(key, {
@@ -86,6 +90,7 @@ export function deriveDashboard(messages: ParsedSms[]): Dashboard {
             balance,
             currency: result.currency ?? "INR",
             asOf: m.date,
+            sender: m.sender,
             history: [reading],
           });
         } else {
@@ -93,6 +98,7 @@ export function deriveDashboard(messages: ParsedSms[]): Dashboard {
           if (m.date > existing.asOf) {
             existing.balance = balance;
             existing.asOf = m.date;
+            existing.sender = m.sender;
             existing.currency = result.currency ?? existing.currency;
           }
         }
