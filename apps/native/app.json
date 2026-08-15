@@ -18,6 +18,11 @@
     },
     "android": {
       "package": "com.anonymous.zeeya"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "eda40d60-d791-4e4a-bbf4-3f58d941a4eb"
+      }
     }
   }
 }
