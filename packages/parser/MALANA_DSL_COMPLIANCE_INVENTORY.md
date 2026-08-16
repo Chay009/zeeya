@@ -1,15 +1,39 @@
 # Malana JSON DSL — Static Compliance Inventory
 
 Read-only audit. No production code was changed to produce this document. All
-figures below were computed directly against `src/malana/data/seeddata.json`
-and the current `src/malana/*.ts` implementation, with the analysis scripts
-faithfully re-implementing the relevant parsing logic from
-`grammar-compiler.ts` and `keyword-tokenizer.ts` in Python (not assumed).
+figures below were computed directly against every JSON asset in
+`src/malana/data/` (not just `seeddata.json`) and the current
+`src/malana/*.ts` implementation, with the analysis scripts faithfully
+re-implementing the relevant parsing logic from `grammar-compiler.ts`,
+`keyword-tokenizer.ts`, and `pattern-extractor.ts` in Python (not assumed).
+The three scripts that produce these numbers are committed at
+`packages/parser/scripts/dsl-audit/` — see §10.
 
 Scope, per the staged plan: complete the static inventory; do **not** merge
 grammar categories or touch `subscriptions.ts`/`enrichment.ts` behavior yet.
-Every "architecture" statement below is flagged as a hypothesis requiring
-Java bytecode or Yuga-equivalent verification, not a conclusion.
+
+**What this document does and does not claim, stated precisely:**
+
+> Every JSON field and syntax form across all 13 files in
+> `src/malana/data/` has been mechanically inventoried and mapped to its
+> current TS consumer (or lack of one).
+
+That is what's established here, and it's a factual claim about the TS
+codebase, checkable by re-running the committed scripts. It does **not**
+mean:
+
+> Every instruction's real Java runtime semantics are proven.
+
+Multiplier meaning, category composition/resolution order, `CLASSIFIER.
+CLS_ID`'s actual mechanism, `PATTERN`/`STRUCT` execution against the real
+Malana engine, and some token-level metadata (`_pos`/`_tense`/`_negation`/
+`_chunk`/`_context`) still require Java bytecode or behavioral
+verification (a Yuga-equivalent Malana Java path, or a golden real-message
+corpus) before any "this is what Java does" claim can be made — the Yuga
+JAR itself only covers numeric/date/currency tokenization, not the grammar
+or pattern engine, so it cannot answer these questions. Every
+"architecture" statement below is flagged as a hypothesis requiring that
+verification, not a conclusion.
 
 > **Revision note:** §1 and §4 of the first version of this document had two
 > modeling bugs, both caught in review and corrected here: (1) the
@@ -308,6 +332,151 @@ typed `"for"` regardless of how the graph is built.
 Full 37-symbol list with each one's specific blocking dependency is in the
 appendix at the bottom of this document.
 
+## 4b. `PATTERN` / `STRUCT` compliance (91 + 20 = 111 entries)
+
+This section did not exist in earlier passes of this document — `PATTERN`
+and `STRUCT` were spot-checked (2-3 individual entries) but never
+mechanically inventoried the way `TOKENS`/`GRMR` were. That gap is closed
+here: all 111 entries, every space-separated element, classified and
+cross-checked against `pattern-extractor.ts`.
+
+### What `PATTERN`/`STRUCT` actually are, read directly from the engine
+
+`malana.ts` calls `runPatterns(getPatternsFor(category), processed)` where
+`processed` is the token stream **after** `runGrammar` has already run —
+so patterns match against already-merged/synthesized grammar tokens, not
+just raw keyword/regex tokens. `getPatternsFor` concatenates
+`PATTERN` and `STRUCT` into one array and compiles both identically —
+**there is no functional distinction between the two sections in the TS
+engine**; the JSON's separation into two arrays doesn't correspond to any
+different code path.
+
+`runPatterns`' matching is a straightforward brute-force scan, confirmed
+directly from `pattern-extractor.ts`:
+- For each compiled pattern, try every start position `0..tokens.length`
+  in order; take the **first** position where every element matches.
+  This is a **search** (tries all N starting positions), not a blind skip
+  — but once a start position is chosen, matching proceeds strictly
+  left-to-right with **no backtracking**: if an element fails, that whole
+  start position is abandoned and the next one is tried from scratch, not
+  retried with a different skip amount.
+- `{N}` skip clauses **blindly consume up to N tokens** (or fewer if a
+  `stopType` match or end-of-stream is hit first) — there's no attempt to
+  try skip=0, skip=1, ... skip=N and see which lets the rest of the
+  pattern match; it always greedily consumes as much as the stop
+  condition allows.
+- Base token types are matched by plain equality (`tok.type === el.type`).
+- Literal alternatives (`TOKEN|(a,b,c)`) are matched case-insensitively
+  against both the token's normalized value and its raw text.
+- Captures preserve free text (joined raw `tok.text`), explicitly
+  filtering out date-shaped, pure-numeric, and URL-shaped raw text so
+  those never get captured as a merchant/vendor name.
+- Across multiple patterns, resolution is **strict first-registered-wins**
+  per captured field name (`if (v && !result[k])`) — the first pattern in
+  the JSON array to produce a real value for a field name (e.g. `vendor`)
+  wins; later patterns can never override it, even if they'd have matched
+  "better" by some other measure. There is no scoring, confidence, or
+  competing-match resolution beyond array order.
+
+### Element shape inventory (all 111 entries, every element)
+
+| Shape | Count |
+|---|---|
+| bare token (`TOKEN`) | 189 |
+| capture (`#name`) | 100 |
+| skip-with-stop (`{N}\|TOKEN`) | 71 |
+| token-or-literal (`TOKEN\|(literal)`) | 31 |
+| **skip-with-swallowed-capture (`{N}\|#name`, no space)** | **26** |
+| token-or-literal-alternatives (`TOKEN\|(a,b,c)`) | 3 |
+| literal-only (`(literal)`, standalone) | 0 — never occurs in practice, despite being documented syntax |
+
+### The headline finding: 24 of 111 entries (21.6%) can never produce a capture, ever
+
+This is the single most consequential thing this audit has found, and it
+doesn't need bytecode tracing — it's directly provable by tracing the TS
+code.
+
+The doc comment in `pattern-extractor.ts` describes `{N}|TOKEN` ("skip up
+to N tokens, stop if TOKEN is found"). The seed data contains a related
+but different shape: `{N}|#name` — e.g. `"AMT {2}|#vendor"`. Because
+`parsePatternString` splits on whitespace *first*, and there is no space
+between `|` and `#vendor`, the entire substring `{2}|#vendor` is one
+whitespace token. It gets parsed as a single **skip** element whose
+`stopType` is the literal string `"#vendor"` (hash included) — **not** as
+a skip element followed by a separate capture element. Since no real
+token ever has `type === "#vendor"`, the stop condition can never fire,
+and — critically — **no capture element for `vendor` gets created at
+all**. `compilePatterns` then derives that pattern's `name` as `"unknown"`
+(no capture element to name it from), and `tryMatchAt`'s final check
+(`Object.keys(captures).length > 0 ? captures : null`) always returns
+`null` for these, because there is no way for `captures` to ever gain a
+key. The pattern still runs (wastes a full start-position scan on every
+parse) but can **never** contribute a field to the result.
+
+Confirmed by direct execution of the actual parsing logic (ported
+faithfully, not assumed), not just static reading of the string:
+
+```
+GRM_BANK:PATTERN[8]   INS {3}|PREPV|(at) {3}|#vendor
+GRM_BANK:PATTERN[11]  TRX {5}|INS {5}|PREPV|(at) {5}|#vendor
+GRM_BANK:PATTERN[12]  FAVRG {4}|#vendor
+GRM_BANK:PATTERN[14]  AMT {8}|INSTRNO {9}|#vendor
+GRM_BANK:PATTERN[15]  INSTRNO {8}|AMT {8}|#vendor
+GRM_BANK:PATTERN[17]  AMT {2}|#vendor
+GRM_OTP:PATTERN[1]    AMT {2}|#vendor
+GRM_OTP:PATTERN[2]    AMT {8}|INSTRNO {5}|#vendor
+GRM_TRAVEL:PATTERN[4] DEPART GATE {2}|#boardgate
+GRM_TRAVEL:PATTERN[5] FLIGHT {4}|#from_loc {2}|PREP|(to) {2}|#to_loc
+GRM_TRAVEL:PATTERN[6] PREPV {2}|#from_loc {2}|PREP|(to) {2}|#to_loc
+GRM_BILL:PATTERN[3]   SAL {1}|#billvendor {1}|CUST TRANS
+GRM_BILL:PATTERN[7]   RECHRG {2}|PREP|(of) {2}|#billvendor
+GRM_BILL:PATTERN[12]  BILL PREP|(of) {4}|AMT PREPV|(for,towards) {1}|#billvendor
+GRM_BILL:PATTERN[18]  DET {1}|#billvendor {2}|INS
+GRM_BILL:PATTERN[19]  INSTRNO {2}|#billvendor {2}|AUX {2}|DUE
+GRM_OFFERS:PATTERN[0] TRX AMT PREP {2}|#vendor
+GRM_STOCKUPDATES:PATTERN[0] STOCKEXCHNG {0}|IDVAL {1}|#vendor AMT
+GRM_DELIVERY:PATTERN[8]  ORDSTATUS PREPV|(for) {2}|#item
+GRM_DELIVERY:PATTERN[9]  ORDSTATUS PREP|(with) {2}|#item
+GRM_DELIVERY:PATTERN[13] PICKUP {3}|DET {1}|#item
+GRM_DELIVERY:PATTERN[21] SAL {1}|PREPV|(for) USE {2}|#item
+GRM_DELIVERY:PATTERN[22] BOOK {1}|PREP|(with) {2}|#item
+GRM_DELIVERY:PATTERN[23] ORDSTATUS {2}|DET {1}|NUM {0}|#item
+```
+
+**Every single one of these is trying to capture `vendor`, `billvendor`,
+`item`, `boardgate`, `from_loc`, or `to_loc`** — exactly the fields the
+dashboard uses for merchant/vendor labels (`enrichment.ts`'s
+`extractMandateMerchant` and the `#vendor`-derived `vendor` field feed
+directly into `apps/native`'s transaction labels and subscription
+grouping). GRM_BANK alone has 6 of its 24 PATTERN entries (25%) silently
+dead this way. **This is very likely a real, or the primary, root cause of
+the pre-existing "garbled vendor/merchant labels in Recent transactions
+and Subscriptions" issue already tracked as unfixed local work** — not a
+new problem, but a concrete explanation for one that was already known and
+previously unexplained. Vendor extraction isn't *entirely* broken (other,
+correctly-spaced `#vendor` patterns in the same categories do work — e.g.
+`GRM_BANK:PATTERN[1]`: `"TRX|(deposit) AMT #vendor AUX {2}|AVBL"` has a
+real, functioning capture), but a quarter or more of the intended coverage
+for the most commonly-used capture fields never fires.
+
+### Other confirmed observations
+
+- **11 entries have more than one capture**, **45 entries end in a capture
+  with no trailing anchor to bound it** (the capture logic handles this —
+  it just consumes to the end of the token stream, filtered by the
+  structural-token-type stoplist — but it does mean no anchor tests
+  whether the capture over-consumed unrelated trailing text).
+- **Zero adjacent capture pairs** (`#a #b` with nothing between) occur in
+  the actual data, despite the parser having no special handling for that
+  shape (worth knowing it's untested, not that it's broken).
+- **2 entries have a `{0}` skip clause** (`GRM_STOCKUPDATES:PATTERN[0]`,
+  `GRM_DELIVERY:PATTERN[23]`) — by the code's own logic (`skipped < el.max`
+  with `max=0`), these are permanent no-ops; harmless, but dead syntax
+  wherever they appear.
+- **`(literal)` as a standalone element (no preceding `TOKEN|`) never
+  occurs** in the actual 111 entries, despite being valid, implemented
+  syntax per the doc comment — untested code path, not necessarily broken.
+
 ## 5. `<N>` multiplier inventory
 
 140 of 533 `GRMR` result-keys (26%) carry a `<N>` multiplier:
@@ -412,6 +581,73 @@ halves of a matched pair (`negater` finds a `negatable`) exist in the seed;
 the TS engine parses both `_negation` values into token `values` (per §7's
 opening) but nothing anywhere combines them.
 
+## 9. Other JSON assets (12 files, non-`seeddata.json`)
+
+Every JSON file in `src/malana/data/` besides `seeddata.json`, mechanically
+inventoried by `scripts/dsl-audit/other_assets_inventory.py` — shape,
+size, and TS consumer confirmed by grep (not assumed):
+
+| File | Shape | Consumer(s) |
+|---|---|---|
+| `categorizer.json` (502.5KB) | `{probabilities: [3708 x {word, probability:[6]}], meta:[...], version}` | `enrichment.ts` — Naive Bayes spam classifier. `probability[2..5]`/`meta[2..9]` are training-corpus stats not used for inference (documented in-code, verified earlier this session) |
+| `addr.json` (5.9KB) | `{category: [sender IDs]}` × 6 categories | `enrichment.ts` `grammarForSender` |
+| `airport.json` (2.0KB) | `{city: IATA code}` × 101 | `enrichment.ts` city→IATA lookup |
+| `bank.json` (1.6KB) | `{bank name: [sender IDs]}` × 32 | `enrichment.ts` `detectBank` |
+| **`blacklist.json` (1.6KB)** | `{version, countries: [{country_code, shingles, ngrams, min_sim_score, patterns: [{type, subtype, threshold, sub-patterns: [...]}]}]}` | **NONE — confirmed via repo-wide grep across `packages/parser` and `apps/native`, zero references anywhere** |
+| `location.json` (68.1KB) | `[4829 place names]` | `enrichment.ts` gazetteer membership set |
+| `offers.json` (3.6KB) | `{category: [sender codes]}` × 8 | `enrichment.ts` promo sender→category |
+| `upi.json` (1.5KB) | `{handles: [111 strings]}` | `enrichment.ts` `detectUpiHandle` |
+| `vendor_banks.json` (0.6KB) | `{bank name: [aliases]}` × 13 | `enrichment.ts` `detectBank` fallback, `vendor-category-matcher.ts` |
+| `vendor_brands.json` (3.3KB) | `{brand: {tokens:[...], tags:[...]}}` × 38 | `enrichment.ts` `detectBrand` (both fields consumed — checked every entry, no field beyond `tokens`/`tags` exists anywhere in the file) |
+| `vendor_operators.json` (0.7KB) | `[79 strings]` | `vendor-category-matcher.ts` |
+| `vendor_seed.json` (5.6KB) | `{category: [keywords]}` × 31 | `vendor-category-matcher.ts` |
+
+**`blacklist.json` is a real, substantial, entirely unused asset** — a
+shingle/n-gram fuzzy-similarity spam-detection configuration (per-country
+thresholds, typed spam patterns like `rummy`/dating-scam templates with
+example sub-pattern phrases) bundled into the package but never imported
+by any TS file. This is a completely different spam-detection mechanism
+from the one actually running (`categorizer.json`'s Naive Bayes
+classifier in `enrichment.ts`'s `detectSpam`) — not a redundant duplicate,
+a wholesale missing subsystem.
+
+**Depth of this pass, stated precisely:** shape, size, and consumer are
+confirmed for all 12 files (mechanical, exhaustive — every file, every
+top-level key counted). Per-field semantic checks (duplicate/malformed
+entries within each file, ordering-dependence, cross-file collisions
+between e.g. `bank.json` and `vendor_banks.json`'s alias lists) were done
+for `categorizer.json` and `vendor_brands.json` specifically (both
+pre-existing findings from earlier this session, reconfirmed here) but
+**not** exhaustively for the other 10 — that remains open scope, distinct
+from "inventoried."
+
+## 10. Reproducibility
+
+Three scripts, committed alongside this document at
+`packages/parser/scripts/dsl-audit/`, regenerate every number in this
+report deterministically from `seeddata.json` and the `data/` directory —
+prose totals are no longer the only record, given that two of them
+contained modeling bugs in an earlier pass:
+
+- `seed_grammar_inventory.py` — `TOKENS`/`GRMR`/`CLASSIFIER` analysis:
+  dependency classification, required/ambiguous cross-category edges,
+  SCCs, multi-producer symbols, corrected reachability, pair-map
+  collisions, `<N>` multiplier counts, `TOKENS` bracket-annotation and
+  underscore-attr inventories.
+- `pattern_struct_inventory.py` — `PATTERN`/`STRUCT` element-shape
+  classification and the swallowed-capture bug detection (§4b).
+- `other_assets_inventory.py` — shape/consumer inventory for the 12
+  non-`seeddata.json` assets (§9), with an assertion that every file in
+  `data/` is covered by some script.
+
+Each script prints `[assertion]`-prefixed lines for every count that
+matters and hard-`assert`s a few invariants directly (all 111
+`PATTERN`+`STRUCT` entries accounted for; `TRANSINTENT`/`INTENT`
+reachable, matching confirmed runtime behavior; every file in `data/`
+covered by some script). Run with `python3 scripts/dsl-audit/<script>.py`
+from `packages/parser/`; requires `networkx` for
+`seed_grammar_inventory.py`'s SCC computation.
+
 ## 8. Summary table
 
 | # | Construct | TS status | Confidence |
@@ -422,10 +658,12 @@ opening) but nothing anywhere combines them.
 | 3 | `_chunk`, `_context`, `_pos`, `_tense`, `_negation` | Parsed into `values`, never read downstream | Confirmed |
 | 4 | Cross-category grammar composition | 39 required + 18 ambiguous edges, 8-category SCC (`GRM_BANK`/`GRM_BILL`/`GRM_CALLALERTS`/`GRM_DELIVERY`/`GRM_NOTIF`/`GRM_OFFERS`/`GRM_TELECOM`/`GRM_VOID`), 9 pair-map collisions if merged naively | Confirmed structure (recomputed correctly excluding local producers); correct resolution mechanism unconfirmed |
 | 5 | `RECURR`/`SUBSCRPTN`/`AUTORENEW`/`EMANDATE`/`STNDNGINS`/`AUTDBT` | Only `RECURR` is grammar-unused; the rest are real seed-grammar inputs the TS engine doesn't specifically surface | Corrected this session — see below |
-| 6 | Pattern bounded backtracking | Not statically verified — needs Yuga-equivalent Java path or golden corpus, not the numeric/date Yuga JAR | Not evaluated |
+| 6 | `PATTERN`/`STRUCT` — element parsing | 24 of 111 entries (21.6%) produce zero captures ever, due to `{N}\|#name` (no space) being swallowed into a skip clause's `stopType` instead of parsing as a separate capture — see §4b | Confirmed by tracing the actual parsing logic; likely root cause of the pre-existing garbled-vendor-label issue |
+| 6b | `PATTERN`/`STRUCT` — matching semantics | Full start-position search (not blind skip), no backtracking once a start is chosen, strict first-registered-pattern-wins per field, blind `{N}`-token skip (not 0..N trial) — see §4b | Confirmed by direct code trace |
 | 7 | `CLASSIFIER.CLS_ID` | Validated by schema, never read; plausibly the producer of `IDVAL` (4 of 37 unreachable symbols) — `URL` (21 of 37) is now the bigger, more concrete lead | Confirmed unused; production-mechanism hypothesis unconfirmed, reduced scope after correction |
 | 8 | `URL` token type | No `TOKENS` entry, no regex-tokenizer rule — real bank/delivery/offer links in SMS have nowhere to match | New this pass — concrete, checkable without bytecode |
 | 9 | `TRX`/`NEGATION` negation pairing | Both halves exist in seed (`TRX[..._negation=negatable]`, `NEGATION[_negation=negater]`); TS parses both, combines neither. Runtime-confirmed: `trxTypeRich` set on a negated debit/credit SMS | Confirmed both statically and at runtime; `trx` stays null so today's dashboard totals aren't affected |
+| 10 | `blacklist.json` | Real shingle/n-gram spam-detection config, zero TS consumers — a wholesale missing subsystem, not a redundant duplicate of the working Naive Bayes classifier | Confirmed unused |
 
 ## Corrections applied during this pass
 
