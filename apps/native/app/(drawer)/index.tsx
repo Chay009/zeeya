@@ -264,16 +264,18 @@ export default function Home() {
                       }}
                     >
                       <Text style={{ color: t.textPrimary, fontWeight: "700", fontSize: 16 }}>
-                        {dashboard.subscriptions.length} Subscription
-                        {dashboard.subscriptions.length === 1 ? "" : "s"}
+                        Recurring payments
                       </Text>
                       <Text style={{ color: t.textMuted, fontSize: 13 }}>
-                        {subscriptionTotalsLabel(dashboard.subscriptions)} / month
+                        {subscriptionTotalsLabel(
+                          dashboard.subscriptions.filter((s) => s.confidence === "likely"),
+                        )}{" "}
+                        / month
                       </Text>
                     </View>
                     {dashboard.subscriptions.map((sub) => (
                       <View
-                        key={`${sub.merchant}-${sub.amount}`}
+                        key={`${sub.merchant}-${sub.currency}`}
                         style={{
                           flexDirection: "row",
                           justifyContent: "space-between",
@@ -282,7 +284,10 @@ export default function Home() {
                       >
                         <Text style={{ color: t.textPrimary, fontSize: 13 }}>
                           {sub.merchant}{" "}
-                          <Text style={{ color: t.textMuted }}>· seen {sub.count}x</Text>
+                          <Text style={{ color: t.textMuted }}>
+                            · seen {sub.count}x ·{" "}
+                            {sub.confidence === "likely" ? "Likely" : "Possible"}
+                          </Text>
                         </Text>
                         <Text style={{ color: t.textMuted, fontSize: 13 }}>
                           {formatMoney(sub.amount, sub.currency)}
@@ -380,9 +385,10 @@ function StatRow({
 function subscriptionTotalsLabel(subs: { amount: number; currency: string }[]): string {
   const totals: Record<string, number> = {};
   for (const s of subs) totals[s.currency] = (totals[s.currency] ?? 0) + s.amount;
-  return Object.entries(totals)
-    .map(([currency, amount]) => formatMoney(amount, currency))
-    .join(" + ");
+  const parts = Object.entries(totals).map(([currency, amount]) => formatMoney(amount, currency));
+  // No "likely" subscriptions yet (only lower-confidence "possible" ones) —
+  // don't claim a monthly total with nothing behind it.
+  return parts.length > 0 ? parts.join(" + ") : "—";
 }
 
 function Stat({

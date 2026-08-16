@@ -369,6 +369,103 @@ describe("deriveDashboard — subscription cadence and deduplication", () => {
     expect(subscriptions).toHaveLength(1);
     expect(subscriptions[0]!.merchant).toBe("Netflix");
     expect(subscriptions[0]!.count).toBe(2);
+    // Only one gap has been confirmed — real, but not yet confident.
+    expect(subscriptions[0]!.confidence).toBe("possible");
+  });
+
+  it("is 'likely' once a third occurrence confirms a second consecutive monthly gap", () => {
+    const messages: ParsedSms[] = [
+      sms("1", "VM-TESTBK", now - 60 * DAY_MS, {
+        trxTypeRich: "EXPENSE",
+        trx: "199.00",
+        vendor: "Netflix",
+      }),
+      sms("2", "VM-TESTBK", now - 30 * DAY_MS, {
+        trxTypeRich: "EXPENSE",
+        trx: "199.00",
+        vendor: "Netflix",
+      }),
+      sms("3", "VM-TESTBK", now, { trxTypeRich: "EXPENSE", trx: "199.00", vendor: "Netflix" }),
+    ];
+    const { subscriptions } = deriveDashboard(messages);
+
+    expect(subscriptions).toHaveLength(1);
+    expect(subscriptions[0]!.count).toBe(3);
+    expect(subscriptions[0]!.confidence).toBe("likely");
+  });
+
+  it("drops a subscription that hasn't renewed in over 60 days, even with a clean prior history", () => {
+    const messages: ParsedSms[] = [
+      sms("1", "VM-TESTBK", now - 400 * DAY_MS, {
+        trxTypeRich: "EXPENSE",
+        trx: "199.00",
+        vendor: "Netflix",
+      }),
+      sms("2", "VM-TESTBK", now - 370 * DAY_MS, {
+        trxTypeRich: "EXPENSE",
+        trx: "199.00",
+        vendor: "Netflix",
+      }),
+    ];
+    const { subscriptions } = deriveDashboard(messages);
+
+    expect(subscriptions).toHaveLength(0);
+  });
+
+  it("tolerates a small price change but rejects a wildly different amount", () => {
+    const tolerant: ParsedSms[] = [
+      sms("1", "VM-TESTBK", now - 30 * DAY_MS, {
+        trxTypeRich: "EXPENSE",
+        trx: "199.00",
+        vendor: "Netflix",
+      }),
+      // A ~5% price bump — still the same subscription.
+      sms("2", "VM-TESTBK", now, { trxTypeRich: "EXPENSE", trx: "209.00", vendor: "Netflix" }),
+    ];
+    expect(deriveDashboard(tolerant).subscriptions).toHaveLength(1);
+
+    const unrelated: ParsedSms[] = [
+      sms("1", "VM-TESTBK", now - 30 * DAY_MS, {
+        trxTypeRich: "EXPENSE",
+        trx: "199.00",
+        vendor: "Netflix",
+      }),
+      sms("2", "VM-TESTBK", now, { trxTypeRich: "EXPENSE", trx: "999.00", vendor: "Netflix" }),
+    ];
+    expect(deriveDashboard(unrelated).subscriptions).toHaveLength(0);
+  });
+
+  it("merges merchant name variants (case, whitespace, trailing '.com')", () => {
+    const messages: ParsedSms[] = [
+      sms("1", "VM-TESTBK", now - 30 * DAY_MS, {
+        trxTypeRich: "EXPENSE",
+        trx: "199.00",
+        vendor: "NETFLIX",
+      }),
+      sms("2", "VM-TESTBK", now, {
+        trxTypeRich: "EXPENSE",
+        trx: "199.00",
+        vendor: "Netflix.com",
+      }),
+    ];
+    const { subscriptions } = deriveDashboard(messages);
+
+    expect(subscriptions).toHaveLength(1);
+    expect(subscriptions[0]!.count).toBe(2);
+  });
+
+  it("excludes ATM withdrawals, transfers, and investments from subscription candidacy", () => {
+    for (const trxTypeRich of ["ATM_WITHDRAWAL", "TRANSFER", "INVESTMENT"] as const) {
+      const messages: ParsedSms[] = [
+        sms("1", "VM-TESTBK", now - 30 * DAY_MS, {
+          trxTypeRich,
+          trx: "500.00",
+          vendor: "Repeats Monthly",
+        }),
+        sms("2", "VM-TESTBK", now, { trxTypeRich, trx: "500.00", vendor: "Repeats Monthly" }),
+      ];
+      expect(deriveDashboard(messages).subscriptions).toHaveLength(0);
+    }
   });
 
   it("does not double-count a mandate-linked recurring debit as a heuristic Subscription", () => {
