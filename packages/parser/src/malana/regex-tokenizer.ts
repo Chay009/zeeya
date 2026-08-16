@@ -219,10 +219,16 @@ class FsaContextMap {
       if (this._map.has(DT_mm)) min = parseInt(this._map.get(DT_mm)!);
       if (this._map.has(DT_ss)) sec = parseInt(this._map.get(DT_ss)!);
 
+      // confDate is always caller-constructed as "yyyy-MM-dd HH:mm:ss" (see
+      // malana.ts's makeDefaultConfig) — never user input — but parseInt('')
+      // on a missing split segment yields NaN, which harmlessly falls through
+      // to this function's own final isNaN(d.getTime()) null-return, so a
+      // defensive fallback is safe end-to-end rather than asserting non-null.
       const confDate = config.get(YUGA_CONF_DATE);
-      if (year == null && confDate) year = parseInt(confDate.split('-')[0]);
-      if (month == null && confDate) month = parseInt(confDate.split('-')[1]);
-      if (day == null && confDate) day = parseInt(confDate.split('-')[2]);
+      const confDateParts = confDate?.split('-') ?? [];
+      if (year == null && confDate) year = parseInt(confDateParts[0] ?? '');
+      if (month == null && confDate) month = parseInt(confDateParts[1] ?? '');
+      if (day == null && confDate) day = parseInt(confDateParts[2] ?? '');
 
       if (year == null || month == null || day == null) return null;
       // Month-swap: if month > 12 but day <= 12 and year is present, try DD/MM order (US-format dates)
@@ -247,7 +253,7 @@ function seeding(seed: string, root: GenTrie) {
     let t = root;
     const len = word.length;
     for (let i = 0; i < len; i++) {
-      const ch = word[i];
+      const ch = charAt(word, i);
       t.child = true;
       if (!t.next.has(ch)) t.next.set(ch, new GenTrie());
       t = t.next.get(ch)!;
@@ -283,6 +289,20 @@ const ROOT: RootTrie = createRoot();
 
 // ── Util helpers ──────────────────────────────────────────────────────────────
 
+// Java's String.charAt(i) is safe wherever it's used in the original FSA
+// because every call site's own loop condition (`i < str.length`/`i < len`,
+// or an equivalent bound already checked before the call) guarantees `i` is
+// in range. noUncheckedIndexedAccess can't see that invariant through a
+// plain `str[i]`, so this centralizes it in one documented place instead of
+// asserting non-null independently at each call site. Only use this where
+// that loop-bound invariant genuinely holds — a look-ahead/look-behind
+// index (`str[i + N]`, `str[i - N]`) is a different case and needs its own
+// explicit bounds check instead, since those can genuinely run past the end
+// of the string.
+function charAt(str: string, i: number): string {
+  return str[i]!;
+}
+
 function isNum(c: string) { const n = c.charCodeAt(0); return n >= 48 && n <= 57; }
 function isNumStr(s: string) { return s.length > 0 && [...s].every(isNum); }
 function isDateOp(c: string) { const n = c.charCodeAt(0); return n === CH_SLSH || n === CH_HYPH || n === CH_SPACE; }
@@ -306,7 +326,7 @@ function checkTypes(root: RootTrie, type: string, word: string): [number, string
   let t = trie;
   let i = 0;
   for (; i < word.length; i++) {
-    const ch = word[i];
+    const ch = charAt(word, i);
     if (t.leaf && !t.next.has(ch) && isTypeEnd(ch))
       return [i - 1, t.token];
     if (t.child && t.next.has(ch)) {
@@ -319,26 +339,26 @@ function checkTypes(root: RootTrie, type: string, word: string): [number, string
 
 function meridienTimeAhead(str: string, i: number): boolean {
   if (i + 1 >= str.length) return false;
-  const c0 = str[i], c1 = str[i + 1];
+  const c0 = charAt(str, i), c1 = charAt(str, i + 1);
   if (!((c0 === 'a' || c0 === 'p') && c1 === 'm')) return false;
   if (i + 2 >= str.length) return true;
-  const c2 = str[i + 2];
+  const c2 = charAt(str, i + 2);
   return c2 === ' ' || c2 === '.' || c2 === ',' || c2 === ')' || c2 === '-' || c2 === '\n' || c2 === '\r';
 }
 
 function hrsTimeAhead(str: string, i: number): boolean {
-  if (i + 1 >= str.length || str[i] !== 'h' || str[i + 1] !== 'r') return false;
+  if (i + 1 >= str.length || charAt(str, i) !== 'h' || charAt(str, i + 1) !== 'r') return false;
   let j = i + 2;
   if (j >= str.length) return true;
-  if (str[j] === 's') j++;
+  if (charAt(str, j) === 's') j++;
   if (j >= str.length) return true;
-  const c = str[j];
+  const c = charAt(str, j);
   return c === ' ' || c === '.' || c === ',' || c === ')' || c === '-' || c === '\n';
 }
 
 function possibleTimeAhead(str: string, i: number): boolean {
   if (i >= str.length) return false;
-  const c = str[i];
+  const c = charAt(str, i);
   return c === ' ' && (meridienTimeAhead(str, i + 1) || hrsTimeAhead(str, i + 1));
 }
 
@@ -365,7 +385,7 @@ function lookAheadForInstr(str: string, index: number): number {
   for (let i = index; i < str.length; i++) {
     const n = str.charCodeAt(i);
     if (n === CH_FSTP) continue;
-    else if (n === 42 || n === 88 || n === 120 || isNum(str[i])) return i;
+    else if (n === 42 || n === 88 || n === 120 || isNum(charAt(str, i))) return i;
     else return -1;
   }
   return -1;
@@ -373,7 +393,7 @@ function lookAheadForInstr(str: string, index: number): number {
 
 function lookAheadForNum(str: string, index: number): number {
   for (let i = index + 1; i < str.length; i++) {
-    const c = str[i];
+    const c = charAt(str, i);
     if (c === ' ') continue;
     else if (isNum(c)) return i - 1;
     else return -1;
@@ -390,7 +410,7 @@ function lookAheadForMerid(str: string, index: number): boolean {
 
 function nextSpace(str: string): number {
   let i = 0;
-  while (i < str.length && str[i] !== ' ') i++;
+  while (i < str.length && charAt(str, i) !== ' ') i++;
   return i;
 }
 
@@ -419,18 +439,20 @@ function checkForNumRange(val: string): boolean {
   if (!val || val.length < 3 || !val.includes('-') || val.startsWith('00')) return false;
   const parts = val.split('-');
   if (parts.length !== 2) return false;
-  if (parts[0].length === 0 || parts[0].length > 6 || parts[1].length === 0 || parts[1].length > 6) return false;
-  const lengthOk = parts[1].length >= parts[0].length && (parts[1].length - parts[0].length) < 2;
-  const a = parseStrToInt(parts[0]);
-  const b = parseStrToInt(parts[1]);
-  if (!isNumStr(parts[0]) || !isNumStr(parts[1]) || a == null || b == null) return false;
+  // parts.length === 2 just verified above — safe to treat as exactly 2 elements.
+  const [p0, p1] = parts as [string, string];
+  if (p0.length === 0 || p0.length > 6 || p1.length === 0 || p1.length > 6) return false;
+  const lengthOk = p1.length >= p0.length && (p1.length - p0.length) < 2;
+  const a = parseStrToInt(p0);
+  const b = parseStrToInt(p1);
+  if (!isNumStr(p0) || !isNumStr(p1) || a == null || b == null) return false;
   return lengthOk && (b - a) > 0;
 }
 
 function skip(str: string): number {
   let i = 0;
   while (i < str.length) {
-    const c = str[i];
+    const c = charAt(str, i);
     if (c === ' ' || c === ',' || c === '(' || c === ':') i++;
     else break;
   }
@@ -451,13 +473,15 @@ function configContextIsCURR(config: Map<string, string>): boolean {
 
 function getPrevState(prevStates: number[]): number {
   const idx = prevStates.length - 2;
-  return idx < 0 ? 1 : prevStates[idx];
+  // idx < prevStates.length always holds here (idx = length - 2), so once
+  // the idx < 0 case is excluded, prevStates[idx] is always in range.
+  return idx < 0 ? 1 : prevStates[idx]!;
 }
 
 function checkIfData(str: string, j: number, map: FsaContextMap) {
   map.setVal('data', map.get(map.getType()) ?? '');
   let sData = '';
-  switch (str[j]) {
+  switch (charAt(str, j)) {
     case 'k': map.setVal('data_type', 'KB'); sData = ' KB'; break;
     case 'm': map.setVal('data_type', 'MB'); sData = ' MB'; break;
     case 'g': map.setVal('data_type', 'GB'); sData = ' GB'; break;
@@ -470,12 +494,15 @@ function setIfNumRange(str: string, i: number, map: FsaContextMap) {
   if (!str || i < 0 || i > str.length) return;
   let trimmed = str.substring(0, i).trim();
   if (!trimmed) return;
-  if (isDelimiter(trimmed[trimmed.length - 1]))
+  // trimmed is non-empty (checked above), so its last index is always valid.
+  if (isDelimiter(trimmed[trimmed.length - 1]!))
     trimmed = trimmed.slice(0, -1);
   if (checkForNumRange(trimmed) && map.getType() !== TY_TMS) {
-    const parts = trimmed.split('-');
-    map.setVal('from_num', parts[0]);
-    map.setVal('to_num', parts[1]);
+    // checkForNumRange(trimmed) === true guarantees trimmed.split('-') has
+    // exactly 2 parts — it's the same split, checked internally there.
+    const [from, to] = trimmed.split('-') as [string, string];
+    map.setVal('from_num', from);
+    map.setVal('to_num', to);
     map.setType(TY_NUMRANGE);
   }
 }
@@ -483,7 +510,7 @@ function setIfNumRange(str: string, i: number, map: FsaContextMap) {
 function skipForTZ(str: string, map: FsaContextMap): number {
   let state = 1, i = 0;
   while (state > 0 && i < str.length) {
-    const c = str[i];
+    const c = charAt(str, i);
     const n = c.charCodeAt(0);
     switch (state) {
       case 1:
@@ -520,7 +547,8 @@ class DelimiterStack {
   private stack: string[] = [];
   push(ch: string) { this.stack.push(ch); }
   pop(): string {
-    return this.stack.length > 0 ? this.stack[this.stack.length - 1] : '~';
+    // Guarded by the length check on the left of the ternary.
+    return this.stack.length > 0 ? this.stack[this.stack.length - 1]! : '~';
   }
 }
 
@@ -530,7 +558,7 @@ function accAmtNumPct(
   str: string, i: number, map: FsaContextMap,
   config: Map<string, string>
 ): number {
-  const c = str[i];
+  const c = charAt(str, i);
   const n = c.charCodeAt(0);
   const subStr = str.substring(i);
   let p: [number, string] | null;
