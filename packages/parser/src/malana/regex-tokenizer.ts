@@ -707,7 +707,7 @@ function parseInternal(str: string, config: Map<string, string>): [number, FsaCo
       case 6:
         if (isNum(c)) {
           map.upgrade(c);
-          if (i + 1 < str.length && isNum(str[i + 1])) map.append(str[i + 1]);
+          if (i + 1 < str.length && isNum(charAt(str, i + 1))) map.append(charAt(str, i + 1));
           i++; state = -1;
         } else state = -1;
         break;
@@ -733,9 +733,9 @@ function parseInternal(str: string, config: Map<string, string>): [number, FsaCo
         if (isNum(c)) { map.append(c); state = 9; }
         else {
           state = accAmtNumPct(str, i, map, config);
-          if (cn === CH_SPACE && state === -1 && i + 1 < str.length && isNum(str[i + 1]) && !configContextIsCURR(config))
+          if (cn === CH_SPACE && state === -1 && i + 1 < str.length && isNum(charAt(str, i + 1)) && !configContextIsCURR(config))
             state = 12;
-          else if (cn === CH_HYPH && state === -1 && i + 1 < str.length && isNum(str[i + 1]) && !configContextIsCURR(config))
+          else if (cn === CH_HYPH && state === -1 && i + 1 < str.length && isNum(charAt(str, i + 1)) && !configContextIsCURR(config))
             state = 45;
           else if (state === -1 && map.getType() !== TY_PCT) i = i - 1;
           else if (cn === CH_COMA) delimiterStack.push(c);
@@ -765,17 +765,17 @@ function parseInternal(str: string, config: Map<string, string>): [number, FsaCo
         else if (isNum(c)) { map.append(c); state = 13; }
         else if (cn === CH_SPACE && i + 1 < str.length &&
           (str.charCodeAt(i + 1) === 42 || str.charCodeAt(i + 1) === 88 ||
-           str.charCodeAt(i + 1) === 120 || isNum(str[i + 1])))
+           str.charCodeAt(i + 1) === 120 || isNum(charAt(str, i + 1))))
           state = 11;
         else if (cn === CH_FSTP && (insi = lookAheadForInstr(str, i)) > 0) {
           for (let x = insi - i; x > 0; x--) map.append('X');
-          i = isNum(str[insi]) ? insi - 1 : insi;
+          i = isNum(charAt(str, insi)) ? insi - 1 : insi;
         } else { i = i - 1; state = -1; }
         break;
 
       case 12: {
         if (isNum(c)) {
-          if ((i > 2 && str[i - 1] === ' ' && isNum(str[i - 2])) || delimiterStack.pop() === '/') {
+          if ((i > 2 && charAt(str, i - 1) === ' ' && isNum(charAt(str, i - 2))) || delimiterStack.pop() === '/') {
             map.append(c);
             if (map.contains('NUM')) counter = (map.get('NUM') ?? '').length;
             state = 15;
@@ -784,7 +784,7 @@ function parseInternal(str: string, config: Map<string, string>): [number, FsaCo
           }
         } else if (cn === CH_COMA) { comma_count++; }
         else if (cn === CH_FSTP) { map.append(c); state = 10; }
-        else if (cn === CH_HYPH && i + 1 < str.length && isNum(str[i + 1])) { state = 39; }
+        else if (cn === CH_HYPH && i + 1 < str.length && isNum(charAt(str, i + 1))) { state = 39; }
         else if (getPrevState(prevStates) === 37 && cn === CH_HYPH &&
           (p = checkTypes(ROOT, 'FSA_MONTHS', str.substring(i + 1))) !== null) {
           i = -1; map = new FsaContextMap(); str = str.substring(1); state = 1;
@@ -792,8 +792,8 @@ function parseInternal(str: string, config: Map<string, string>): [number, FsaCo
           if (delimiterStack.pop() === ',') state = -1;
           else state = 15;
         } else {
-          if (i - 1 > 0 && str[i - 1] === ',') i = i - 2;
-          else if (i - 3 > 0 && str[i - 3] === ',' && comma_count === 1) {
+          if (i - 1 > 0 && charAt(str, i - 1) === ',') i = i - 2;
+          else if (i - 3 > 0 && charAt(str, i - 3) === ',' && comma_count === 1) {
             const c1 = map.pop(); const c2 = map.pop();
             map.append('.'); map.append(c2); map.append(c1);
           } else i = i - 1;
@@ -816,8 +816,8 @@ function parseInternal(str: string, config: Map<string, string>): [number, FsaCo
           map.append(c); state = 10;
         } else if (cn === CH_FSTP && (insi = lookAheadForInstr(str, i)) > 0) {
           for (let x = insi - i; x > 0; x--) map.append('X');
-          i = isNum(str[insi]) ? insi - 1 : insi;
-        } else if (cn === CH_HASH && (i === str.length - 1 || (i + 1 < str.length && isDelimiter(str[i + 1])))) {
+          i = isNum(charAt(str, insi)) ? insi - 1 : insi;
+        } else if (cn === CH_HASH && (i === str.length - 1 || (i + 1 < str.length && isDelimiter(charAt(str, i + 1))))) {
           map.setType(TY_USSD);
         } else { i = i - 1; state = -1; }
         break;
@@ -826,25 +826,28 @@ function parseInternal(str: string, config: Map<string, string>): [number, FsaCo
         if (isNum(c)) map.append(c);
         else if (map.get(TY_AMT) != null && (map.get(TY_AMT) ?? '').includes('.') && possibleTimeAhead(str, i)) {
           const samt = map.get(TY_AMT) ?? '';
-          const parts = samt.split('.');
-          map.put(DT_HH, parts[0]); map.put(DT_mm, parts[1]);
+          // samt.includes('.') just verified above -> split('.') has >= 2 parts.
+          const [hh0, mm0] = samt.split('.') as [string, string, ...string[]];
+          map.put(DT_HH, hh0); map.put(DT_mm, mm0);
           map.setType(TY_DTE); state = 7;
         } else if (cn === CH_PCT) {
           map.setType(TY_PCT, TY_PCT); state = -1;
-        } else if ((c === 'k' || c === 'c') && i + 1 < str.length && str[i + 1] === 'm') {
+        } else if ((c === 'k' || c === 'c') && i + 1 < str.length && charAt(str, i + 1) === 'm') {
           map.setType(TY_DST, TY_DST); i++; state = -1;
-        } else if ((c === 'k' || c === 'm') && i + 1 < str.length && str[i + 1] === 'g') {
+        } else if ((c === 'k' || c === 'm') && i + 1 < str.length && charAt(str, i + 1) === 'g') {
           map.setType(TY_WGT, TY_WGT); i++; state = -1;
         } else {
-          if (cn === CH_FSTP && i + 1 < str.length && isNum(str[i + 1])) {
+          if (cn === CH_FSTP && i + 1 < str.length && isNum(charAt(str, i + 1))) {
             const samt = map.get(map.getType()) ?? '';
             if (samt.includes('.')) {
               const parts = samt.split('.');
               if (parts.length === 2) {
-                const d = parseStrToInt(parts[0]), mm = parseStrToInt(parts[1]);
+                // parts.length === 2 just verified above.
+                const [p0, p1] = parts as [string, string];
+                const d = parseStrToInt(p0), mm = parseStrToInt(p1);
                 if (d != null && mm != null && d <= 31 && mm <= 12) {
                   map.setType(TY_DTE);
-                  map.put(DT_D, parts[0]); map.put(DT_MM, parts[1]);
+                  map.put(DT_D, p0); map.put(DT_MM, p1);
                   state = 19; break;
                 }
               }
@@ -859,11 +862,11 @@ function parseInternal(str: string, config: Map<string, string>): [number, FsaCo
         else if (cn === CH_COMA && counter < 10) { delimiterStack.push(c); state = 12; }
         else if (cn === CH_FSTP) { map.append(c); state = 10; }
         else if ((cn === 42 || cn === 88 || cn === 120) && i + 1 < str.length &&
-          (isNum(str[i + 1]) || str.charCodeAt(i + 1) === CH_HYPH ||
+          (isNum(charAt(str, i + 1)) || str.charCodeAt(i + 1) === CH_HYPH ||
            str.charCodeAt(i + 1) === 42 || str.charCodeAt(i + 1) === 88 || str.charCodeAt(i + 1) === 120)) {
           map.setType(TY_ACC, TY_ACC); map.append('X'); state = 11;
         } else if (cn === CH_SPACE && counter >= 5 && counter < 10 && !configContextIsCURR(config) &&
-          i + 2 < str.length && isNum(str[i + 1]) && isNum(str[i + 2])) {
+          i + 2 < str.length && isNum(charAt(str, i + 1)) && isNum(charAt(str, i + 2))) {
           state = 41;
         } else { i = i - 1; state = -1; }
         break;
@@ -882,12 +885,12 @@ function parseInternal(str: string, config: Map<string, string>): [number, FsaCo
           extractTime(s, map.getValMap()); i += p[0]; state = -1;
         } else {
           if (delimiterStack.pop() === ' ' && cn === CH_HYPH && i + 1 < str.length &&
-            (isNum(str[i + 1]) || checkTypes(ROOT, 'FSA_MONTHS', str.substring(i + 1)) !== null)) {
+            (isNum(charAt(str, i + 1)) || checkTypes(ROOT, 'FSA_MONTHS', str.substring(i + 1)) !== null)) {
             // stay 16
           } else {
             map.setType(TY_NUM, TY_NUM);
             let j = i;
-            while (j >= 0 && j < str.length && !isNum(str[j])) j--;
+            while (j >= 0 && j < str.length && !isNum(charAt(str, j))) j--;
             i = j; state = -1;
           }
         }
