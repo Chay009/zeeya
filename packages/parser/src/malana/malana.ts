@@ -210,6 +210,11 @@ export class MalanaEngine {
   private seed: SeedData;
   // Pre-compiled patterns per grammar category; populated lazily
   private patternCache = new Map<string, ReturnType<typeof compilePatterns>>();
+  // Pre-compiled grammar (GRMR) layers per category; populated lazily. Was
+  // being recompiled on every single parse() call — real cost given the app
+  // bulk-parses up to 5,000 messages per screen load, all through the same
+  // small set of grammar categories.
+  private layerCache = new Map<string, ReturnType<typeof compileSeed>>();
 
   constructor(seed: SeedData) {
     this.seed = seed;
@@ -228,6 +233,14 @@ export class MalanaEngine {
     return compiled;
   }
 
+  private getLayersFor(category: string) {
+    const cached = this.layerCache.get(category);
+    if (cached) return cached;
+    const compiled = compileSeed(this.seed, category);
+    this.layerCache.set(category, compiled);
+    return compiled;
+  }
+
   parse(message: string, sender = '', defaultCategory = 'GRM_BANK'): MalanaResult {
     // Step 1: Tokenize
     const regexToks = regexTokenize(message);
@@ -241,8 +254,8 @@ export class MalanaEngine {
     const senderGrammar = grammarForSender(sender);
     const category = tokenCategory || senderGrammar || defaultCategory;
 
-    // Step 3: Compile grammar layers for category
-    const layers = compileSeed(this.seed, category);
+    // Step 3: Compile grammar layers for category (cached — see getLayersFor)
+    const layers = this.getLayersFor(category);
     // Routing itself constitutes detection when we've moved away from the default
     let detectedCategory: string | null = category !== defaultCategory ? category : null;
 
