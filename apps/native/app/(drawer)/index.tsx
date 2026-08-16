@@ -17,8 +17,6 @@ import { dashboardTheme as t } from "@/constants/dashboard-theme";
 import {
   deriveDashboard,
   isRecurringTransaction,
-  subscriptionMonthlyTotals,
-  trxDirection,
   type AccountBalance,
   type Mandate,
   type MerchantMandates,
@@ -30,6 +28,8 @@ import {
   readSmsInbox,
   requestSmsReadPermission,
 } from "@/lib/sms";
+import { subscriptionMonthlyTotals } from "@/lib/subscriptions";
+import { trxDirection } from "@/lib/transaction-direction";
 
 type Status = "checking" | "needs-permission" | "loading" | "ready" | "unsupported" | "error";
 
