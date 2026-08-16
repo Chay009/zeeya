@@ -7,8 +7,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import { detectAirports, detectLocation, detectOfferCategory } from './enrichment.js';
-import { readFileSync } from 'fs';
 import { MalanaEngine } from './malana.js';
+import { seedData } from './index.js';
 
 describe('detectAirports', () => {
   it('resolves IATA codes for known city names', () => {
@@ -51,8 +51,7 @@ describe('detectOfferCategory', () => {
 });
 
 describe('MalanaResult integration', () => {
-  const seed = JSON.parse(readFileSync('/tmp/seeddata.json', 'utf8'));
-  const engine = new MalanaEngine(seed);
+  const engine = new MalanaEngine(seedData);
 
   it('departureCode/arrivalCode read from the correct grammar tags (from_loc/to_loc, not dept/arrv)', () => {
     // GRM_TRAVEL's PATTERN captures city names into tags['from_loc']/['to_loc']

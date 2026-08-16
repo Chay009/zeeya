@@ -15,11 +15,10 @@
  * balance-indicating token types, not just any amount+auxiliary-verb pair.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
 import { MalanaEngine } from './malana.js';
+import { seedData } from './index.js';
 
-const seed = JSON.parse(readFileSync('/tmp/seeddata.json', 'utf8'));
-const engine = new MalanaEngine(seed);
+const engine = new MalanaEngine(seedData);
 
 describe('bal false positive — amount+auxiliary-verb is not a balance statement', () => {
   it('UPI mandate creation notice: amount is the mandate value, not a balance', () => {

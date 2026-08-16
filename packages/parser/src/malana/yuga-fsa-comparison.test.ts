@@ -6,12 +6,20 @@
  */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { spawnSync } from 'child_process';
+import { existsSync } from 'fs';
 import { regexTokenize } from './regex-tokenizer.js';
 
 // ── Java runner ───────────────────────────────────────────────────────────────
+//
+// This proof only exists where the compiled Yuga JAR happens to be checked out
+// (a sibling messai-engineering repo, not part of this project) — it's a one-time
+// ground-truth verification, not something every dev/CI environment can run.
+// Without the existsSync guard below, a missing JAR made spawnSync return empty
+// stdout, and JSON.parse('') threw a confusing crash instead of a clear skip.
 
 const JAR = '/workspace/messai-engineering/yuga/target/yuga-1.0.71.jar';
 const MAIN = 'com.twelfthmile.yuga.YugaRunner';
+const JAR_AVAILABLE = existsSync(JAR);
 
 interface JavaToken { type: string; value: string; raw: string }
 
@@ -120,7 +128,11 @@ function isDateToken(type: string): boolean {
 
 // ── Test ──────────────────────────────────────────────────────────────────────
 
-describe('Yuga FSA — Java vs TypeScript port', () => {
+describe.skipIf(!JAR_AVAILABLE)('Yuga FSA — Java vs TypeScript port', () => {
+  if (!JAR_AVAILABLE) {
+    console.warn(`Skipping Yuga FSA ground-truth comparison — JAR not found at ${JAR}`);
+  }
+
   let javaResults: JavaToken[][];
 
   beforeAll(() => {

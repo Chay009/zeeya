@@ -1,10 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
 import { MalanaEngine } from './malana.js';
+import { seedData } from './index.js';
 
-const seedPath = '/tmp/seeddata.json';
-const seed = JSON.parse(readFileSync(seedPath, 'utf8'));
-const engine = new MalanaEngine(seed);
+const engine = new MalanaEngine(seedData);
 
 describe('MalanaEngine', () => {
   it('extracts debit transaction from HDFC-style SMS', () => {

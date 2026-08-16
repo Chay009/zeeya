@@ -6,11 +6,10 @@
  *   creditLimit  — crdlmt tag exposed as top-level field
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
 import { MalanaEngine } from './malana.js';
+import { seedData } from './index.js';
 
-const seed = JSON.parse(readFileSync('/tmp/seeddata.json', 'utf8'));
-const engine = new MalanaEngine(seed);
+const engine = new MalanaEngine(seedData);
 
 function parse(msg: string, sender = 'VM-TESTBK') {
   return engine.parse(msg, sender);
