@@ -63,6 +63,15 @@ describe("trxTypeRich", () => {
   });
 });
 
+describe("repeated amount positioning", () => {
+  it("keeps identical transaction and balance amounts as separate occurrences", () => {
+    const r = parse("Rs.500 debited from A/c XX1234. Available balance Rs.500.");
+
+    expect(r.trx).toBe("500");
+    expect(r.bal).toBe("500");
+  });
+});
+
 describe("currency", () => {
   it("INR — Rs. prefix", () => {
     const r = parse("Rs.500.00 debited from A/c XX1234 on 20-Oct-25");

@@ -48,10 +48,16 @@ function mergeTokens(regexTokens: Token[], keywordTokens: Token[], message: stri
   const lower = message.toLowerCase();
   const positioned: Array<{ token: Token; pos: number; end: number }> = [];
 
+  let regexSearchFrom = 0;
   for (const t of regexTokens) {
-    const idx = message.indexOf(t.raw);
+    // regexTokenize scans left-to-right, so resolve repeated raw values from
+    // the end of the preceding token instead of mapping every occurrence to
+    // the first identical substring in the message.
+    const idx = message.indexOf(t.raw, regexSearchFrom);
     if (idx !== -1) {
-      positioned.push({ token: t, pos: idx, end: idx + t.raw.length });
+      const end = idx + t.raw.length;
+      positioned.push({ token: t, pos: idx, end });
+      regexSearchFrom = end;
     }
   }
 
