@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { deriveDashboard, isRecurringTransaction, trxDirection } from "./dashboard";
+import {
+  deriveDashboard,
+  isRecurringTransaction,
+  subscriptionMonthlyTotals,
+  trxDirection,
+} from "./dashboard";
 import type { ParsedSms } from "./sms";
 import type { MalanaResult } from "@zeeya/parser/malana";
 
@@ -491,5 +496,208 @@ describe("deriveDashboard — subscription cadence and deduplication", () => {
 
     expect(mandates).toHaveLength(1);
     expect(subscriptions).toHaveLength(0);
+  });
+
+  it("displays the latest charge's amount, not the first historical one", () => {
+    const messages: ParsedSms[] = [
+      sms("1", "VM-TESTBK", now - 30 * DAY_MS, {
+        trxTypeRich: "EXPENSE",
+        trx: "199.00",
+        vendor: "Netflix",
+      }),
+      sms("2", "VM-TESTBK", now, { trxTypeRich: "EXPENSE", trx: "209.00", vendor: "Netflix" }),
+    ];
+    const { subscriptions } = deriveDashboard(messages);
+
+    expect(subscriptions).toHaveLength(1);
+    expect(subscriptions[0]!.amount).toBe(209);
+  });
+
+  describe("boundaries", () => {
+    it("includes a gap of exactly 20 days", () => {
+      const messages: ParsedSms[] = [
+        sms("1", "VM-TESTBK", now - 20 * DAY_MS, {
+          trxTypeRich: "EXPENSE",
+          trx: "199.00",
+          vendor: "Netflix",
+        }),
+        sms("2", "VM-TESTBK", now, { trxTypeRich: "EXPENSE", trx: "199.00", vendor: "Netflix" }),
+      ];
+      expect(deriveDashboard(messages).subscriptions).toHaveLength(1);
+    });
+
+    it("excludes a gap of 19 days", () => {
+      const messages: ParsedSms[] = [
+        sms("1", "VM-TESTBK", now - 19 * DAY_MS, {
+          trxTypeRich: "EXPENSE",
+          trx: "199.00",
+          vendor: "Netflix",
+        }),
+        sms("2", "VM-TESTBK", now, { trxTypeRich: "EXPENSE", trx: "199.00", vendor: "Netflix" }),
+      ];
+      expect(deriveDashboard(messages).subscriptions).toHaveLength(0);
+    });
+
+    it("includes a gap of exactly 45 days", () => {
+      const messages: ParsedSms[] = [
+        sms("1", "VM-TESTBK", now - 45 * DAY_MS, {
+          trxTypeRich: "EXPENSE",
+          trx: "199.00",
+          vendor: "Netflix",
+        }),
+        sms("2", "VM-TESTBK", now, { trxTypeRich: "EXPENSE", trx: "199.00", vendor: "Netflix" }),
+      ];
+      expect(deriveDashboard(messages).subscriptions).toHaveLength(1);
+    });
+
+    it("excludes a gap of 46 days", () => {
+      const messages: ParsedSms[] = [
+        sms("1", "VM-TESTBK", now - 46 * DAY_MS, {
+          trxTypeRich: "EXPENSE",
+          trx: "199.00",
+          vendor: "Netflix",
+        }),
+        sms("2", "VM-TESTBK", now, { trxTypeRich: "EXPENSE", trx: "199.00", vendor: "Netflix" }),
+      ];
+      expect(deriveDashboard(messages).subscriptions).toHaveLength(0);
+    });
+
+    it("includes a subscription last seen exactly 60 days ago", () => {
+      // deriveDashboard's own `new Date()` would run a moment after `now`
+      // was captured above, so an exact-boundary case needs an explicit
+      // reference clock instead of racing that drift.
+      const clock = new Date(now);
+      const messages: ParsedSms[] = [
+        sms("1", "VM-TESTBK", now - 90 * DAY_MS, {
+          trxTypeRich: "EXPENSE",
+          trx: "199.00",
+          vendor: "Netflix",
+        }),
+        sms("2", "VM-TESTBK", now - 60 * DAY_MS, {
+          trxTypeRich: "EXPENSE",
+          trx: "199.00",
+          vendor: "Netflix",
+        }),
+      ];
+      expect(deriveDashboard(messages, clock).subscriptions).toHaveLength(1);
+    });
+
+    it("excludes a subscription last seen 61 days ago", () => {
+      const clock = new Date(now);
+      const messages: ParsedSms[] = [
+        sms("1", "VM-TESTBK", now - 91 * DAY_MS, {
+          trxTypeRich: "EXPENSE",
+          trx: "199.00",
+          vendor: "Netflix",
+        }),
+        sms("2", "VM-TESTBK", now - 61 * DAY_MS, {
+          trxTypeRich: "EXPENSE",
+          trx: "199.00",
+          vendor: "Netflix",
+        }),
+      ];
+      expect(deriveDashboard(messages, clock).subscriptions).toHaveLength(0);
+    });
+
+    it("includes an amount exactly 10% higher", () => {
+      const messages: ParsedSms[] = [
+        sms("1", "VM-TESTBK", now - 30 * DAY_MS, {
+          trxTypeRich: "EXPENSE",
+          trx: "100.00",
+          vendor: "Netflix",
+        }),
+        sms("2", "VM-TESTBK", now, { trxTypeRich: "EXPENSE", trx: "110.00", vendor: "Netflix" }),
+      ];
+      expect(deriveDashboard(messages).subscriptions).toHaveLength(1);
+    });
+
+    it("excludes an amount just over 10% higher", () => {
+      const messages: ParsedSms[] = [
+        sms("1", "VM-TESTBK", now - 30 * DAY_MS, {
+          trxTypeRich: "EXPENSE",
+          trx: "100.00",
+          vendor: "Netflix",
+        }),
+        sms("2", "VM-TESTBK", now, { trxTypeRich: "EXPENSE", trx: "110.01", vendor: "Netflix" }),
+      ];
+      expect(deriveDashboard(messages).subscriptions).toHaveLength(0);
+    });
+  });
+
+  it("recovers a valid trailing run after an earlier broken cadence", () => {
+    const messages: ParsedSms[] = [
+      // An isolated, unrelated-looking earlier charge — 140 days before the
+      // next one, well outside any recurring band.
+      sms("1", "VM-TESTBK", now - 200 * DAY_MS, {
+        trxTypeRich: "EXPENSE",
+        trx: "199.00",
+        vendor: "Netflix",
+      }),
+      // A clean, real monthly run starts here, unrelated to the above.
+      sms("2", "VM-TESTBK", now - 60 * DAY_MS, {
+        trxTypeRich: "EXPENSE",
+        trx: "199.00",
+        vendor: "Netflix",
+      }),
+      sms("3", "VM-TESTBK", now - 30 * DAY_MS, {
+        trxTypeRich: "EXPENSE",
+        trx: "199.00",
+        vendor: "Netflix",
+      }),
+      sms("4", "VM-TESTBK", now, { trxTypeRich: "EXPENSE", trx: "199.00", vendor: "Netflix" }),
+    ];
+    const { subscriptions } = deriveDashboard(messages);
+
+    expect(subscriptions).toHaveLength(1);
+    // Only the 3 occurrences forming the unbroken trailing run count — the
+    // earlier isolated charge doesn't inflate the count or vouch for it.
+    expect(subscriptions[0]!.count).toBe(3);
+    expect(subscriptions[0]!.confidence).toBe("likely");
+  });
+});
+
+describe("subscriptionMonthlyTotals", () => {
+  it("sums only 'likely' subscriptions, never 'possible' ones", () => {
+    const likely: ParsedSms[] = [
+      sms("1", "VM-TESTBK", now - 60 * DAY_MS, {
+        trxTypeRich: "EXPENSE",
+        trx: "199.00",
+        vendor: "Netflix",
+      }),
+      sms("2", "VM-TESTBK", now - 30 * DAY_MS, {
+        trxTypeRich: "EXPENSE",
+        trx: "199.00",
+        vendor: "Netflix",
+      }),
+      sms("3", "VM-TESTBK", now, { trxTypeRich: "EXPENSE", trx: "199.00", vendor: "Netflix" }),
+    ];
+    const possible: ParsedSms[] = [
+      sms("4", "VM-TESTBK", now - 30 * DAY_MS, {
+        trxTypeRich: "EXPENSE",
+        trx: "50.00",
+        vendor: "Random Gym",
+      }),
+      sms("5", "VM-TESTBK", now, { trxTypeRich: "EXPENSE", trx: "50.00", vendor: "Random Gym" }),
+    ];
+    const { subscriptions } = deriveDashboard([...likely, ...possible]);
+    expect(subscriptions.map((s) => s.confidence).sort()).toEqual(["likely", "possible"]);
+
+    const totals = subscriptionMonthlyTotals(subscriptions);
+
+    expect(totals["INR"]).toBe(199);
+  });
+
+  it("returns an empty record when there are no 'likely' subscriptions", () => {
+    const possibleOnly: ParsedSms[] = [
+      sms("1", "VM-TESTBK", now - 30 * DAY_MS, {
+        trxTypeRich: "EXPENSE",
+        trx: "50.00",
+        vendor: "Random Gym",
+      }),
+      sms("2", "VM-TESTBK", now, { trxTypeRich: "EXPENSE", trx: "50.00", vendor: "Random Gym" }),
+    ];
+    const { subscriptions } = deriveDashboard(possibleOnly);
+
+    expect(subscriptionMonthlyTotals(subscriptions)).toEqual({});
   });
 });

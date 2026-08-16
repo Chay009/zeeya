@@ -17,6 +17,7 @@ import { dashboardTheme as t } from "@/constants/dashboard-theme";
 import {
   deriveDashboard,
   isRecurringTransaction,
+  subscriptionMonthlyTotals,
   trxDirection,
   type AccountBalance,
   type Mandate,
@@ -268,7 +269,7 @@ export default function Home() {
                       </Text>
                       <Text style={{ color: t.textMuted, fontSize: 13 }}>
                         {subscriptionTotalsLabel(
-                          dashboard.subscriptions.filter((s) => s.confidence === "likely"),
+                          subscriptionMonthlyTotals(dashboard.subscriptions),
                         )}{" "}
                         / month
                       </Text>
@@ -382,10 +383,10 @@ function StatRow({
 // One "₹1,234" per currency present, joined — subscriptions can be in
 // different currencies, and summing them as raw numbers would be as wrong
 // as the monthly income/expense totals this mirrors.
-function subscriptionTotalsLabel(subs: { amount: number; currency: string }[]): string {
-  const totals: Record<string, number> = {};
-  for (const s of subs) totals[s.currency] = (totals[s.currency] ?? 0) + s.amount;
-  const parts = Object.entries(totals).map(([currency, amount]) => formatMoney(amount, currency));
+function subscriptionTotalsLabel(totalsByCurrency: Record<string, number>): string {
+  const parts = Object.entries(totalsByCurrency).map(([currency, amount]) =>
+    formatMoney(amount, currency),
+  );
   // No "likely" subscriptions yet (only lower-confidence "possible" ones) —
   // don't claim a monthly total with nothing behind it.
   return parts.length > 0 ? parts.join(" + ") : "—";

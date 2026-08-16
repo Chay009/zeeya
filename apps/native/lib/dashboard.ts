@@ -220,8 +220,12 @@ function amountsWithinTolerance(occurrences: SubscriptionOccurrence[]): boolean 
 // and the most recent recognized transactions — all derived client-side
 // from what Malana already extracted. No message is ever excluded from this
 // derivation; unrecognized ones just don't contribute to any bucket.
-export function deriveDashboard(messages: ParsedSms[]): Dashboard {
-  const now = new Date();
+//
+// `now` is injectable (defaults to the real clock) so tests can assert an
+// exact-day boundary (e.g. "included at exactly 60 days old") without
+// racing the small drift between when a test captures its own reference
+// time and when this function calls `new Date()` internally.
+export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): Dashboard {
   const accountsByKey = new Map<string, AccountBalance>();
   const monthIncomeByCurrency: Record<string, number> = {};
   const monthExpenseByCurrency: Record<string, number> = {};
@@ -398,6 +402,21 @@ export function deriveDashboard(messages: ParsedSms[]): Dashboard {
     mandatesByMerchant,
     recent: recognized,
   };
+}
+
+// Only "likely" subscriptions ever count toward a combined monthly total —
+// a "possible" entry (a single confirmed gap) is real evidence but not
+// confident enough to be presented as money that will definitely recur.
+// Exported as the one place this filter is applied, so a UI summing
+// subscriptions can't accidentally include "possible" ones by re-deriving
+// the sum itself.
+export function subscriptionMonthlyTotals(subscriptions: Subscription[]): Record<string, number> {
+  const totals: Record<string, number> = {};
+  for (const s of subscriptions) {
+    if (s.confidence !== "likely") continue;
+    totals[s.currency] = (totals[s.currency] ?? 0) + s.amount;
+  }
+  return totals;
 }
 
 // A transaction is recurring if it's tied to a tracked UPI mandate, or its
