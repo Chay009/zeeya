@@ -10,6 +10,9 @@ function parseNum(str: string): number | null {
 function normalizeUnicodeText(text: string): string {
   return text
     .normalize('NFKD')
+    // Control-char range (0x00-0x1F) is intentional — strips any non-ASCII
+    // byte, control characters included, same as the other bank parsers.
+    // oxlint-disable-next-line no-control-regex
     .replace(/[^\x00-\x7F]/g, ' ') // Replace non-ASCII with space
     .replace(/\s+/g, ' ')           // Collapse multiple spaces
     .trim();

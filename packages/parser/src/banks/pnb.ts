@@ -26,6 +26,10 @@ export class PNBBankParser extends BankParser {
   private normalizeUnicodeText(text: string): string {
     return text
       .normalize('NFKD')
+      // Control-char range (0x00-0x1F) is intentional here — this strips
+      // any non-ASCII byte, control characters included, while keeping the
+      // real-world currency symbols banks actually send.
+      // oxlint-disable-next-line no-control-regex
       .replace(/[^\x00-\x7F₹$€£¥]/g, '');
   }
 
@@ -73,7 +77,7 @@ export class PNBBankParser extends BankParser {
     const towardsMatch = /UPI-Mandate.*towards\s+([^\s]+)\s+for/i.exec(message);
     if (towardsMatch?.[1]) return towardsMatch[1].trim();
 
-    const cardMatch = /thru\s+card\s+([X\*]+\d{4})/i.exec(message);
+    const cardMatch = /thru\s+card\s+([X*]+\d{4})/i.exec(message);
     if (cardMatch?.[1]) return `Card ${cardMatch[1]}`;
 
     const fromSlashMatch = /From\s+([^/]+)\//i.exec(message);
@@ -90,7 +94,7 @@ export class PNBBankParser extends BankParser {
   }
 
   protected override extractAccountLast4(message: string): string | null {
-    const m = /(?:A\/c(?:\s*No\.)?|Ac|Card)\s*(?:[X\*]+)?(\d{4,16})/i.exec(message);
+    const m = /(?:A\/c(?:\s*No\.)?|Ac|Card)\s*(?:[X*]+)?(\d{4,16})/i.exec(message);
     if (m?.[1]) return m[1].slice(-4);
     return super.extractAccountLast4(message);
   }

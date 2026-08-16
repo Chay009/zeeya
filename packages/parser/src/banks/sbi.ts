@@ -191,7 +191,7 @@ export class SBIBankParser extends BankParser {
   }
 
   protected override extractAccountLast4(message: string): string | null {
-    const debitCardMatch = /by\s+SBI\s+Debit\s+Card\s+([\w\-]+)/i.exec(message);
+    const debitCardMatch = /by\s+SBI\s+Debit\s+Card\s+([\w-]+)/i.exec(message);
     if (debitCardMatch?.[1]) {
       const cardInfo = debitCardMatch[1];
       if (/^\d{4}$/.test(cardInfo)) return cardInfo;
@@ -237,7 +237,7 @@ export class SBIBankParser extends BankParser {
   }
 
   protected override extractReference(message: string): string | null {
-    const txnNumberMatch = /transaction\s+number\s+([\w\-]+)/i.exec(message);
+    const txnNumberMatch = /transaction\s+number\s+([\w-]+)/i.exec(message);
     if (txnNumberMatch?.[1]) return txnNumberMatch[1];
 
     const p1 = /Ref\s+No\.?\s*(\w+)/i.exec(message);

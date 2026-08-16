@@ -75,7 +75,7 @@ export const CompiledPatterns = {
     REF_SIMPLE: /Ref\s+(\d{9,12})/i,
     UPI_REF_NO: /UPI\s+Ref\s+No\s+(\d{12})/i,
     REF_NO: /Ref\s+No\.?\s+([A-Z0-9]+)/i,
-    REF_END: /(?:Ref|Reference)[:\.\s]+([A-Z0-9]{6,})(?:\s*$|\s*Not\s+You)/i,
+    REF_END: /(?:Ref|Reference)[:.\s]+([A-Z0-9]{6,})(?:\s*$|\s*Not\s+You)/i,
     ACCOUNT_DEPOSITED: /deposited\s+in\s+(?:HDFC\s+Bank\s+)?A\/c\s+(?:XX+)?(\d+)/i,
     ACCOUNT_FROM: /from\s+(?:HDFC\s+Bank\s+)?A\/c\s+(?:XX+)?(\d+)/i,
     ACCOUNT_SIMPLE: /HDFC\s+Bank\s+A\/c\s+(\d+)/i,

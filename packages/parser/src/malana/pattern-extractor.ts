@@ -14,7 +14,7 @@
 import type { Token } from './types';
 
 // Patterns that should never be captured as a merchant/vendor name
-const DATE_RE     = /^\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2,4}$/;
+const DATE_RE     = /^\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}$/;
 const PURE_NUM_RE = /^\d+$/;
 const URL_RE      = /^https?:\/\//i;
 

@@ -212,8 +212,8 @@ function jaroWinkler(a: string, b: string): number {
   if (len1 === 0 || len2 === 0) return 0;
 
   const matchWindow = Math.max(Math.floor(Math.max(len1, len2) / 2) - 1, 0);
-  const aMatched = new Array<boolean>(len1).fill(false);
-  const bMatched = new Array<boolean>(len2).fill(false);
+  const aMatched = Array.from({ length: len1 }, () => false);
+  const bMatched = Array.from({ length: len2 }, () => false);
   let matches = 0;
 
   for (let i = 0; i < len1; i++) {
@@ -256,10 +256,10 @@ function jaroWinkler(a: string, b: string): number {
 // instead of a full 2D table — same result, less memory, and (with
 // noUncheckedIndexedAccess on) no non-null assertions needed to read it.
 function longestCommonSubstringLength(a: string, b: string): number {
-  let prevRow = new Array<number>(b.length + 1).fill(0);
+  let prevRow = Array.from({ length: b.length + 1 }, () => 0);
   let max = 0;
   for (let i = 1; i <= a.length; i++) {
-    const currRow = new Array<number>(b.length + 1).fill(0);
+    const currRow = Array.from({ length: b.length + 1 }, () => 0);
     for (let j = 1; j <= b.length; j++) {
       if (a[i - 1] === b[j - 1]) {
         const val = (prevRow[j - 1] ?? 0) + 1;

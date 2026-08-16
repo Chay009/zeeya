@@ -123,8 +123,8 @@ export class KeywordTokenizer {
         j++;
         if (node.isEnd) {
           // Only accept match at word boundary
-          const nextOk = j >= len || /[\s,.:;!?()[\]{}"'\/\\]/.test(lower[j] ?? '');
-          const prevOk = i === 0 || /[\s,.:;!?()[\]{}"'\/\\]/.test(lower[i - 1] ?? '');
+          const nextOk = j >= len || /[\s,.:;!?()[\]{}"'/\\]/.test(lower[j] ?? '');
+          const prevOk = i === 0 || /[\s,.:;!?()[\]{}"'/\\]/.test(lower[i - 1] ?? '');
           if (prevOk && nextOk) lastMatch = { end: j, node };
         }
       }
