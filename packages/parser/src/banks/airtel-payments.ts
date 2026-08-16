@@ -1,16 +1,16 @@
 // Exact 1:1 port of AirtelPaymentsBankParser.kt from Cashiro parser-core
-import { BankParser } from '../base-parser.js';
-import type { TransactionType } from '../types.js';
+import { BankParser } from "../base-parser.js";
+import type { TransactionType } from "../types.js";
 
 export class AirtelPaymentsBankParser extends BankParser {
   getBankName(): string {
-    return 'Airtel Payments Bank';
+    return "Airtel Payments Bank";
   }
 
   canHandle(sender: string): boolean {
     const normalizedSender = sender.toUpperCase();
     // Only handle Airtel Payments Bank, not prepaid recharges (Airtel-S)
-    return normalizedSender.includes('AIRBNK');
+    return normalizedSender.includes("AIRBNK");
   }
 
   protected override extractAmount(message: string): number | null {
@@ -26,7 +26,7 @@ export class AirtelPaymentsBankParser extends BankParser {
     for (const pattern of amountPatterns) {
       const match = pattern.exec(message);
       if (match?.[1]) {
-        const val = parseFloat(match[1].replace(/,/g, ''));
+        const val = parseFloat(match[1].replace(/,/g, ""));
         if (!isNaN(val)) return val;
       }
     }
@@ -37,23 +37,23 @@ export class AirtelPaymentsBankParser extends BankParser {
   protected override extractTransactionType(message: string): TransactionType | null {
     const lowerMessage = message.toLowerCase();
 
-    if (lowerMessage.includes('credited with')) return 'INCOME';
-    if (lowerMessage.includes('is credited')) return 'INCOME';
-    if (lowerMessage.includes('credit')) return 'INCOME';
+    if (lowerMessage.includes("credited with")) return "INCOME";
+    if (lowerMessage.includes("is credited")) return "INCOME";
+    if (lowerMessage.includes("credit")) return "INCOME";
 
-    if (lowerMessage.includes('debited from')) return 'EXPENSE';
-    if (lowerMessage.includes('debited with')) return 'EXPENSE';
-    if (lowerMessage.includes('debit')) return 'EXPENSE';
+    if (lowerMessage.includes("debited from")) return "EXPENSE";
+    if (lowerMessage.includes("debited with")) return "EXPENSE";
+    if (lowerMessage.includes("debit")) return "EXPENSE";
 
     return super.extractTransactionType(message);
   }
 
   protected override extractMerchant(message: string, sender: string): string | null {
     const lowerMessage = message.toLowerCase();
-    if (lowerMessage.includes('airtel payments bank')) {
-      return 'Airtel Payments Bank Transaction';
+    if (lowerMessage.includes("airtel payments bank")) {
+      return "Airtel Payments Bank Transaction";
     }
-    return super.extractMerchant(message, sender) ?? 'Airtel Payments Bank';
+    return super.extractMerchant(message, sender) ?? "Airtel Payments Bank";
   }
 
   protected override extractReference(message: string): string | null {
@@ -62,7 +62,7 @@ export class AirtelPaymentsBankParser extends BankParser {
     if (txnIdMatch?.[1]) {
       const txnId = txnIdMatch[1];
       // Filter out masked IDs like "xxxxxxxx" — no reference when masked
-      if (txnId.toLowerCase().includes('x')) return null;
+      if (txnId.toLowerCase().includes("x")) return null;
       return txnId;
     }
 
@@ -79,14 +79,14 @@ export class AirtelPaymentsBankParser extends BankParser {
     // Pattern: "Bal:15.56"
     const balMatch = /Bal[:\s]+([0-9,]+(?:\.\d{2})?)/i.exec(message);
     if (balMatch?.[1]) {
-      const val = parseFloat(balMatch[1].replace(/,/g, ''));
+      const val = parseFloat(balMatch[1].replace(/,/g, ""));
       if (!isNaN(val)) return val;
     }
 
     // Alternative pattern: "Balance: Rs. 15.56"
     const altBalMatch = /Balance[:\s]+Rs\.?\s*([0-9,]+(?:\.\d{2})?)/i.exec(message);
     if (altBalMatch?.[1]) {
-      const val = parseFloat(altBalMatch[1].replace(/,/g, ''));
+      const val = parseFloat(altBalMatch[1].replace(/,/g, ""));
       if (!isNaN(val)) return val;
     }
 
@@ -98,20 +98,20 @@ export class AirtelPaymentsBankParser extends BankParser {
 
     // Skip OTP and non-transaction messages
     if (
-      lowerMessage.includes('otp') ||
-      lowerMessage.includes('verification') ||
-      lowerMessage.includes('request') ||
-      lowerMessage.includes('failed')
+      lowerMessage.includes("otp") ||
+      lowerMessage.includes("verification") ||
+      lowerMessage.includes("request") ||
+      lowerMessage.includes("failed")
     ) {
       return false;
     }
 
     // Check for Airtel Payments Bank specific transaction patterns
     if (
-      lowerMessage.includes('credited with') ||
-      lowerMessage.includes('debited from') ||
-      (lowerMessage.includes('airtel payments bank') &&
-        (lowerMessage.includes('credited') || lowerMessage.includes('debited')))
+      lowerMessage.includes("credited with") ||
+      lowerMessage.includes("debited from") ||
+      (lowerMessage.includes("airtel payments bank") &&
+        (lowerMessage.includes("credited") || lowerMessage.includes("debited")))
     ) {
       return true;
     }

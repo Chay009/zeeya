@@ -1,21 +1,21 @@
 // Exact 1:1 port of JKBankParser.kt from Cashiro parser-core
-import { BankParser } from '../base-parser.js';
-import type { ParsedTransaction, TransactionType } from '../types.js';
-import { createHash } from 'node:crypto';
+import { BankParser } from "../base-parser.js";
+import type { ParsedTransaction, TransactionType } from "../types.js";
+import { createHash } from "node:crypto";
 
 function parseNum(str: string): number | null {
-  const n = parseFloat(str.replace(/,/g, ''));
+  const n = parseFloat(str.replace(/,/g, ""));
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 export class JKBankParser extends BankParser {
   getBankName(): string {
-    return 'JK Bank';
+    return "JK Bank";
   }
 
   canHandle(sender: string): boolean {
     const u = sender.toUpperCase();
-    const directMatches = new Set(['JKBANK', 'JKB', 'JKBANKL', 'JKBNK']);
+    const directMatches = new Set(["JKBANK", "JKB", "JKBANKL", "JKBNK"]);
     if (directMatches.has(u)) return true;
     return (
       /^[A-Z]{2}-JKBANK/.test(u) ||
@@ -36,7 +36,7 @@ export class JKBankParser extends BankParser {
   private generateJKBankHash(
     transaction: ParsedTransaction,
     smsBody: string,
-    sender: string
+    sender: string,
   ): string {
     const normalizedAmount = transaction.amount.toFixed(2);
     const reference = transaction.reference;
@@ -57,7 +57,7 @@ export class JKBankParser extends BankParser {
       hashData = `${sender}|${normalizedAmount}|${transaction.timestamp}`;
     }
 
-    return createHash('sha256').update(hashData).digest('hex');
+    return createHash("sha256").update(hashData).digest("hex");
   }
 
   private extractTransactionTime(message: string): string | null {
@@ -89,17 +89,17 @@ export class JKBankParser extends BankParser {
         const m = fromMatch[1].trim();
         if (m) return this.cleanMerchantName(m);
       }
-      return 'IMPS Transfer';
+      return "IMPS Transfer";
     }
 
     // TIN / Tax Information Network
     if (/TIN\/Tax Informat/i.test(message) || /TIN\/Tax Information/i.test(message)) {
-      return 'Tax Information Network';
+      return "Tax Information Network";
     }
 
     // ATM Recovery charge
     if (/ATM RECOVERY/i.test(message)) {
-      return 'ATM Recovery Charge';
+      return "ATM Recovery Charge";
     }
 
     // "towards ..." pattern
@@ -108,7 +108,7 @@ export class JKBankParser extends BankParser {
     if (towardsMatch?.[1]) {
       const m = towardsMatch[1].trim();
       if (/TIN\/Tax Informat/i.test(m) || /TIN\/Tax Information/i.test(m)) {
-        return 'Tax Information Network';
+        return "Tax Information Network";
       }
       return this.cleanMerchantName(m);
     }
@@ -116,26 +116,26 @@ export class JKBankParser extends BankParser {
     // "Debited|Credited by INR X at HH:MM by TRANSFER_TYPE/..."
     const txnByMatch =
       /(?:Debited|Credited)\s+by\s+INR\s+[\d,]+(?:\.\d{2})?\s+at\s+[\d:]+\s+by\s+([^.\n]+?)(?:\.|Available|$)/i.exec(
-        message
+        message,
       );
     if (txnByMatch?.[1]) {
       const m = txnByMatch[1].trim();
       if (/CHRGS|CHARGES/i.test(m)) return null;
-      if (/INDIAN CLEARING CORPO/i.test(m)) return 'Indian Clearing Corporation';
-      if (/CLEARING CORPO/i.test(m)) return 'Clearing Corporation';
-      if (/NSE CLEARING/i.test(m)) return 'NSE Clearing';
-      if (/BSE CLEARING/i.test(m)) return 'BSE Clearing';
-      if (/RTGS/i.test(m) && !/CLEARING/i.test(m)) return 'RTGS Transfer';
-      if (/NEFT/i.test(m)) return 'NEFT Transfer';
-      if (/IMPS/i.test(m)) return 'IMPS Transfer';
-      if (/eTFR/i.test(m)) return 'Transfer';
+      if (/INDIAN CLEARING CORPO/i.test(m)) return "Indian Clearing Corporation";
+      if (/CLEARING CORPO/i.test(m)) return "Clearing Corporation";
+      if (/NSE CLEARING/i.test(m)) return "NSE Clearing";
+      if (/BSE CLEARING/i.test(m)) return "BSE Clearing";
+      if (/RTGS/i.test(m) && !/CLEARING/i.test(m)) return "RTGS Transfer";
+      if (/NEFT/i.test(m)) return "NEFT Transfer";
+      if (/IMPS/i.test(m)) return "IMPS Transfer";
+      if (/eTFR/i.test(m)) return "Transfer";
       if (/mTFR/i.test(m)) {
         const mtfrMatch = /mTFR\/\d+\/(.+)/i.exec(m);
         if (mtfrMatch?.[1]) return this.cleanMerchantName(mtfrMatch[1].trim());
-        return 'Mobile Transfer';
+        return "Mobile Transfer";
       }
-      if (/TIN/i.test(m)) return 'Tax Information Network';
-      const firstPart = m.split('/')[0];
+      if (/TIN/i.test(m)) return "Tax Information Network";
+      const firstPart = m.split("/")[0];
       return this.cleanMerchantName(firstPart !== undefined ? firstPart : m);
     }
 
@@ -169,8 +169,8 @@ export class JKBankParser extends BankParser {
       const vpaMatch = /to\s+([^@\s]+@[^\s]+)/i.exec(message);
       if (vpaMatch?.[1]) {
         const vpa = vpaMatch[1].trim();
-        const merchantName = vpa.split('@')[0] ?? '';
-        if (merchantName && merchantName.toLowerCase() !== 'upi') {
+        const merchantName = vpa.split("@")[0] ?? "";
+        if (merchantName && merchantName.toLowerCase() !== "upi") {
           return this.cleanMerchantName(merchantName);
         }
       }
@@ -179,12 +179,12 @@ export class JKBankParser extends BankParser {
         const m = toMerchantMatch[1].trim();
         if (this.isValidMerchantName(m)) return this.cleanMerchantName(m);
       }
-      return 'UPI';
+      return "UPI";
     }
 
     // ATM / withdrawal
     if (/ATM/i.test(message) || /withdrawn/i.test(message)) {
-      return 'ATM';
+      return "ATM";
     }
 
     // Generic patterns: to/from/at/for
@@ -210,31 +210,31 @@ export class JKBankParser extends BankParser {
 
     // Investment-related clearing corporations
     if (
-      lower.includes('clearing corpo') ||
-      lower.includes('indian clearing') ||
-      lower.includes('nse clearing') ||
-      lower.includes('bse clearing') ||
-      lower.includes('iccl') ||
-      lower.includes('nsccl')
+      lower.includes("clearing corpo") ||
+      lower.includes("indian clearing") ||
+      lower.includes("nse clearing") ||
+      lower.includes("bse clearing") ||
+      lower.includes("iccl") ||
+      lower.includes("nsccl")
     ) {
-      if (lower.includes('credited') || lower.includes('debited')) return 'INVESTMENT';
+      if (lower.includes("credited") || lower.includes("debited")) return "INVESTMENT";
       return null;
     }
 
-    if (lower.includes('has been debited')) return 'EXPENSE';
-    if (lower.includes('has been credited')) return 'INCOME';
-    if (lower.includes('debited')) return 'EXPENSE';
-    if (lower.includes('withdrawn')) return 'EXPENSE';
-    if (lower.includes('spent')) return 'EXPENSE';
-    if (lower.includes('charged')) return 'EXPENSE';
-    if (lower.includes('paid')) return 'EXPENSE';
-    if (lower.includes('purchase')) return 'EXPENSE';
-    if (lower.includes('transferred')) return 'EXPENSE';
-    if (lower.includes('credited')) return 'INCOME';
-    if (lower.includes('deposited')) return 'INCOME';
-    if (lower.includes('received')) return 'INCOME';
-    if (lower.includes('refund')) return 'INCOME';
-    if (lower.includes('cashback') && !lower.includes('earn cashback')) return 'INCOME';
+    if (lower.includes("has been debited")) return "EXPENSE";
+    if (lower.includes("has been credited")) return "INCOME";
+    if (lower.includes("debited")) return "EXPENSE";
+    if (lower.includes("withdrawn")) return "EXPENSE";
+    if (lower.includes("spent")) return "EXPENSE";
+    if (lower.includes("charged")) return "EXPENSE";
+    if (lower.includes("paid")) return "EXPENSE";
+    if (lower.includes("purchase")) return "EXPENSE";
+    if (lower.includes("transferred")) return "EXPENSE";
+    if (lower.includes("credited")) return "INCOME";
+    if (lower.includes("deposited")) return "INCOME";
+    if (lower.includes("received")) return "INCOME";
+    if (lower.includes("refund")) return "INCOME";
+    if (lower.includes("cashback") && !lower.includes("earn cashback")) return "INCOME";
     return null;
   }
 
@@ -291,60 +291,60 @@ export class JKBankParser extends BankParser {
     const lower = message.toLowerCase();
 
     if (
-      lower.includes('otp') ||
-      lower.includes('one time password') ||
-      lower.includes('verification code')
+      lower.includes("otp") ||
+      lower.includes("one time password") ||
+      lower.includes("verification code")
     )
       return false;
 
     if (
-      lower.includes('offer') ||
-      lower.includes('discount') ||
-      lower.includes('cashback offer') ||
-      lower.includes('win ')
+      lower.includes("offer") ||
+      lower.includes("discount") ||
+      lower.includes("cashback offer") ||
+      lower.includes("win ")
     )
       return false;
 
     if (
-      lower.includes('has requested') ||
-      lower.includes('payment request') ||
-      lower.includes('collect request') ||
-      lower.includes('requesting payment')
+      lower.includes("has requested") ||
+      lower.includes("payment request") ||
+      lower.includes("collect request") ||
+      lower.includes("requesting payment")
     )
       return false;
 
     // Skip RTGS/NEFT/IMPS confirmation messages (separate from the actual debit/credit)
-    if (lower.includes('your rtgs txn') && lower.includes('has been credited')) return false;
-    if (lower.includes('your neft txn') && lower.includes('has been credited')) return false;
-    if (lower.includes('your imps txn') && lower.includes('has been credited')) return false;
+    if (lower.includes("your rtgs txn") && lower.includes("has been credited")) return false;
+    if (lower.includes("your neft txn") && lower.includes("has been credited")) return false;
+    if (lower.includes("your imps txn") && lower.includes("has been credited")) return false;
 
     // If message mentions fraud reporting, only treat as transaction if keywords are present
-    if (lower.includes('if not done by you') || lower.includes('report immediately')) {
+    if (lower.includes("if not done by you") || lower.includes("report immediately")) {
       const transactionKeywords = [
-        'debited',
-        'credited',
-        'withdrawn',
-        'deposited',
-        'spent',
-        'received',
-        'transferred',
-        'paid',
+        "debited",
+        "credited",
+        "withdrawn",
+        "deposited",
+        "spent",
+        "received",
+        "transferred",
+        "paid",
       ];
-      return transactionKeywords.some(kw => lower.includes(kw));
+      return transactionKeywords.some((kw) => lower.includes(kw));
     }
 
     const jkBankTransactionKeywords = [
-      'has been debited',
-      'has been credited',
-      'debited',
-      'credited',
-      'withdrawn',
-      'deposited',
-      'spent',
-      'received',
-      'transferred',
-      'paid',
+      "has been debited",
+      "has been credited",
+      "debited",
+      "credited",
+      "withdrawn",
+      "deposited",
+      "spent",
+      "received",
+      "transferred",
+      "paid",
     ];
-    return jkBankTransactionKeywords.some(kw => lower.includes(kw));
+    return jkBankTransactionKeywords.some((kw) => lower.includes(kw));
   }
 }

@@ -1,18 +1,18 @@
 // Bank name detection, merchant category, brand enrichment, subcategory derivation.
 // All data loaded from the original Truecaller APK JSON assets.
 
-import type { Token } from './types';
-import { parseCategorizerData } from './asset-schemas';
-import vendorBanksRaw     from './data/vendor_banks.json';
-import vendorBrandsRaw    from './data/vendor_brands.json';
-import bankSeedRaw     from './data/bank.json';       // malanaSeed — 32 banks, complete sender IDs
-import addrSeedRaw     from './data/addr.json';       // malanaSeed — 424 sender IDs → grammar category
-import upiSeedRaw      from './data/upi.json';        // malanaSeed — 111 UPI handles
-import categorizerRaw  from './data/categorizer.json'; // Naive Bayes binary classifier (3708 words)
-import airportSeedRaw  from './data/airport.json';    // malanaSeed — 101 Indian/regional city → IATA code
-import locationSeedRaw from './data/location.json';   // malanaSeed — 4,829-place Indian gazetteer
-import offersSeedRaw   from './data/offers.json';      // malanaSeed — 251 promo sender-codes → 8 categories
-import { matchVendor } from './vendor-category-matcher';
+import type { Token } from "./types";
+import { parseCategorizerData } from "./asset-schemas";
+import vendorBanksRaw from "./data/vendor_banks.json";
+import vendorBrandsRaw from "./data/vendor_brands.json";
+import bankSeedRaw from "./data/bank.json"; // malanaSeed — 32 banks, complete sender IDs
+import addrSeedRaw from "./data/addr.json"; // malanaSeed — 424 sender IDs → grammar category
+import upiSeedRaw from "./data/upi.json"; // malanaSeed — 111 UPI handles
+import categorizerRaw from "./data/categorizer.json"; // Naive Bayes binary classifier (3708 words)
+import airportSeedRaw from "./data/airport.json"; // malanaSeed — 101 Indian/regional city → IATA code
+import locationSeedRaw from "./data/location.json"; // malanaSeed — 4,829-place Indian gazetteer
+import offersSeedRaw from "./data/offers.json"; // malanaSeed — 251 promo sender-codes → 8 categories
+import { matchVendor } from "./vendor-category-matcher";
 
 // ── Sender → grammar category (addr.json) ─────────────────────────────────────
 // "GRM_BANK" → ["ICICIB", "HDFCBK", ...]
@@ -20,8 +20,12 @@ import { matchVendor } from './vendor-category-matcher';
 // Priority order: GRM_BANK > GRM_TRAVEL > GRM_DELIVERY > GRM_OFFERS > GRM_EVENT > GRM_BILL > others
 // Many bank senders appear in both GRM_BANK and GRM_BILL; GRM_BANK must win.
 const GRAMMAR_PRIORITY: Record<string, number> = {
-  GRM_BANK: 100, GRM_TRAVEL: 80, GRM_DELIVERY: 70,
-  GRM_OFFERS: 60, GRM_EVENT: 50, GRM_BILL: 40,
+  GRM_BANK: 100,
+  GRM_TRAVEL: 80,
+  GRM_DELIVERY: 70,
+  GRM_OFFERS: 60,
+  GRM_EVENT: 50,
+  GRM_BILL: 40,
 };
 const SENDER_GRAMMAR_MAP = new Map<string, string>();
 for (const [grammar, senders] of Object.entries(addrSeedRaw as Record<string, string[]>)) {
@@ -52,7 +56,7 @@ export function grammarForSender(sender: string): string | null {
 // bank.json (malanaSeed) — 32 banks, each with their real SMS sender fragments.
 // Primary source: more complete than vendor_banks.json (13 banks).
 const BANK_SEED: Array<[string, string[]]> = Object.entries(
-  bankSeedRaw as Record<string, string[]>
+  bankSeedRaw as Record<string, string[]>,
 );
 
 // vendor_banks.json (vendorSeed) — covers a few extra UPI handles (okhdfc, okaxis, etc.)
@@ -64,7 +68,10 @@ const BANK_SEED: Array<[string, string[]]> = Object.entries(
 const BANK_SEED_NAMES: string[] = BANK_SEED.map(([name]) => name);
 
 function toTitleCase(key: string): string {
-  return key.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  return key
+    .split(" ")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
 }
 
 // Resolves a vendor_banks.json key to bank.json's canonical name for the same
@@ -76,35 +83,37 @@ function toTitleCase(key: string): string {
 // title-cased version of the key.
 function resolveBankName(key: string): string {
   const lower = key.toLowerCase();
-  const exact = BANK_SEED_NAMES.find(name => name.toLowerCase() === lower);
+  const exact = BANK_SEED_NAMES.find((name) => name.toLowerCase() === lower);
   if (exact) return exact;
-  const prefixMatches = BANK_SEED_NAMES.filter(name => name.toLowerCase().startsWith(lower + ' '));
+  const prefixMatches = BANK_SEED_NAMES.filter((name) =>
+    name.toLowerCase().startsWith(lower + " "),
+  );
   if (prefixMatches.length === 1) return prefixMatches[0]!;
   return toTitleCase(key);
 }
 
 const VENDOR_BANKS: Array<[string, string[]]> = Object.entries(
-  vendorBanksRaw as Record<string, string[]>
+  vendorBanksRaw as Record<string, string[]>,
 ).map(([name, patterns]) => [resolveBankName(name), patterns] as [string, string[]]);
 
 // Message-body fallback for banks without sender-based detection.
 const BODY_BANK_PATTERNS: Array<[RegExp, string]> = [
-  [/bandhan/i,                 'Bandhan Bank'],
-  [/equitas/i,                 'Equitas Small Finance Bank'],
-  [/karnataka bank/i,          'Karnataka Bank'],
-  [/au small finance|au bank/i,'AU Small Finance Bank'],
-  [/uco bank/i,                'UCO Bank'],
-  [/central bank/i,            'Central Bank of India'],
-  [/punjab.*sind|sind.*bank/i, 'Punjab & Sind Bank'],
-  [/airtel.*bank/i,            'Airtel Payments Bank'],
-  [/jio.*bank/i,               'Jio Payments Bank'],
-  [/saraswat/i,                'Saraswat Bank'],
-  [/dbs bank/i,                'DBS Bank'],
-  [/city union/i,              'City Union Bank'],
-  [/nsdl/i,                    'NSDL Payments Bank'],
-  [/jupiter/i,                 'Jupiter'],
-  [/\bslice\b/i,               'Slice'],
-  [/\bcred\b/i,                'CRED'],
+  [/bandhan/i, "Bandhan Bank"],
+  [/equitas/i, "Equitas Small Finance Bank"],
+  [/karnataka bank/i, "Karnataka Bank"],
+  [/au small finance|au bank/i, "AU Small Finance Bank"],
+  [/uco bank/i, "UCO Bank"],
+  [/central bank/i, "Central Bank of India"],
+  [/punjab.*sind|sind.*bank/i, "Punjab & Sind Bank"],
+  [/airtel.*bank/i, "Airtel Payments Bank"],
+  [/jio.*bank/i, "Jio Payments Bank"],
+  [/saraswat/i, "Saraswat Bank"],
+  [/dbs bank/i, "DBS Bank"],
+  [/city union/i, "City Union Bank"],
+  [/nsdl/i, "NSDL Payments Bank"],
+  [/jupiter/i, "Jupiter"],
+  [/\bslice\b/i, "Slice"],
+  [/\bcred\b/i, "CRED"],
 ];
 
 export function detectBank(sender: string, message: string): string | null {
@@ -113,16 +122,16 @@ export function detectBank(sender: string, message: string): string | null {
 
   // Layer 1: bank.json exact sender fragment match (primary — 32 banks, complete sender lists)
   for (const [name, senders] of BANK_SEED) {
-    if (senders.some(id => fragments.includes(id.toLowerCase()))) return name;
+    if (senders.some((id) => fragments.includes(id.toLowerCase()))) return name;
   }
 
   // Layer 2: vendor_banks.json substring match (covers UPI handles: okhdfc, okaxis, oksbi, etc.)
   for (const [name, patterns] of VENDOR_BANKS) {
-    if (patterns.some(p => s.includes(p))) return name;
+    if (patterns.some((p) => s.includes(p))) return name;
   }
 
   // Layer 3: message body keyword match
-  const haystack = sender + ' ' + message;
+  const haystack = sender + " " + message;
   for (const [re, name] of BODY_BANK_PATTERNS) {
     if (re.test(haystack)) return name;
   }
@@ -146,7 +155,7 @@ export function detectBank(sender: string, message: string): string | null {
 // into a single "active" state rather than inventing a distinction the
 // dictionary doesn't support.
 export function isMandateCancelled(kwToks: Token[]): boolean {
-  return kwToks.some(t => t.type === 'RESCHE');
+  return kwToks.some((t) => t.type === "RESCHE");
 }
 
 // The generic #vendor PATTERN capture (pattern-extractor.ts) is unreliable on
@@ -158,7 +167,10 @@ export function isMandateCancelled(kwToks: Token[]): boolean {
 // broken generic capture.
 const MANDATE_MERCHANT_RE = /towards\s+(.+?)\s+for\s+([\d,]+(?:\.\d+)?)/i;
 
-export interface MandateMerchantMatch { merchant: string; amount: string }
+export interface MandateMerchantMatch {
+  merchant: string;
+  amount: string;
+}
 
 export function extractMandateMerchant(message: string): MandateMerchantMatch | null {
   const m = MANDATE_MERCHANT_RE.exec(message);
@@ -170,14 +182,14 @@ export function extractMandateMerchant(message: string): MandateMerchantMatch | 
 
 // upi.json: { handles: ["airtel", "axis", "paytm", ...] }
 const UPI_HANDLES = new Set<string>(
-  ((upiSeedRaw as { handles: string[] }).handles ?? []).map(h => h.toLowerCase())
+  ((upiSeedRaw as { handles: string[] }).handles ?? []).map((h) => h.toLowerCase()),
 );
 
 // Extracts the UPI handle from a VPA like "user@airtel" → "airtel".
 // Returns the handle name if it's a known UPI handle, else null.
 export function detectUpiHandle(vpa: string): string | null {
   if (!vpa) return null;
-  const atIdx = vpa.lastIndexOf('@');
+  const atIdx = vpa.lastIndexOf("@");
   if (atIdx === -1) return null;
   const handle = vpa.slice(atIdx + 1).toLowerCase();
   return UPI_HANDLES.has(handle) ? handle : null;
@@ -199,10 +211,13 @@ export function detectMerchantCategory(merchant: string): string | null {
 // ── Brand enrichment ──────────────────────────────────────────────────────────
 
 // vendor_brands.json: "brand" → { tokens: [...], tags: [...] }
-interface BrandEntry { tokens: string[]; tags: string[] }
+interface BrandEntry {
+  tokens: string[];
+  tags: string[];
+}
 
 const VENDOR_BRANDS = new Map<string, BrandEntry>(
-  Object.entries(vendorBrandsRaw as Record<string, BrandEntry>)
+  Object.entries(vendorBrandsRaw as Record<string, BrandEntry>),
 );
 
 export interface BrandMatch {
@@ -215,10 +230,10 @@ export function detectBrand(text: string): BrandMatch | null {
   if (!text) return null;
   const lower = text.toLowerCase();
   for (const [brand, entry] of VENDOR_BRANDS) {
-    const matched = entry.tokens.some(t => lower.includes(t.toLowerCase()));
+    const matched = entry.tokens.some((t) => lower.includes(t.toLowerCase()));
     if (!matched) continue;
-    const isOnline = entry.tags.includes('online');
-    const category = entry.tags.find(t => t !== 'online' && t !== 'network_provider') ?? null;
+    const isOnline = entry.tags.includes("online");
+    const category = entry.tags.find((t) => t !== "online" && t !== "network_provider") ?? null;
     return { brand, category, isOnline };
   }
   return null;
@@ -244,18 +259,19 @@ for (const entry of catData.probabilities) {
 const CAT_LOG_PRIOR = Math.log(catData.meta[0] / catData.meta[1]);
 
 // Replace amount-like patterns with the placeholder token "AMT" (matches categorizer training format).
-const AMT_NORM_RE = /(?:Rs\.?\s*|INR\s*|₹\s*|\$\s*|[A-Z]{2,3}\s*)[\d,]+(?:\.\d+)?|[\d]{4,}(?:[.,]\d+)*/gi;
+const AMT_NORM_RE =
+  /(?:Rs\.?\s*|INR\s*|₹\s*|\$\s*|[A-Z]{2,3}\s*)[\d,]+(?:\.\d+)?|[\d]{4,}(?:[.,]\d+)*/gi;
 
 function buildNgrams(words: string[], n: number): string[] {
   const out: string[] = [];
   for (let i = 0; i <= words.length - n; i++) {
-    out.push(words.slice(i, i + n).join(' '));
+    out.push(words.slice(i, i + n).join(" "));
   }
   return out;
 }
 
 export function detectSpam(message: string): { isSpam: boolean; score: number } {
-  const normalized = message.replace(AMT_NORM_RE, 'AMT');
+  const normalized = message.replace(AMT_NORM_RE, "AMT");
   const words = normalized.split(/\s+/).filter(Boolean);
 
   let logScore = CAT_LOG_PRIOR;
@@ -267,9 +283,9 @@ export function detectSpam(message: string): { isSpam: boolean; score: number } 
       if (p0 > 0 && p1 > 0) {
         logScore += Math.log(p0 / p1);
       } else if (p0 > 0) {
-        logScore += 5;  // exclusive class0 evidence
+        logScore += 5; // exclusive class0 evidence
       } else {
-        logScore -= 5;  // exclusive class1 (spam) evidence
+        logScore -= 5; // exclusive class1 (spam) evidence
       }
     }
   }
@@ -280,24 +296,24 @@ export function detectSpam(message: string): { isSpam: boolean; score: number } 
 // ── Subcategory ───────────────────────────────────────────────────────────────
 
 export function detectSubcategory(tags: Record<string, string>): string | null {
-  const type = (tags['type'] || '').toLowerCase();
-  if (type === 'upi')   return 'upi';
-  if (type === 'neft')  return 'neft';
-  if (type === 'imps')  return 'imps';
-  if (type === 'rtgs')  return 'rtgs';
-  if (type === 'aeps')  return 'aeps';
-  if (tags['autdbt'])   return 'autdbt';
-  if (tags['chqamt'])   return 'cheque';
-  if (tags['waladd'] || tags['walsub']) return 'wallet';
-  if (tags['incrdlmt']) return 'incrdlmt';
-  if (tags['subsidy'])  return 'deposit';
-  if (tags['otp'] || tags['pin'] || tags['code']) return 'otp';
-  if (type === 'atm' || tags['wdl']) return 'atm';
-  if (tags['beneacc'] || tags['beneadd']) return 'transfer';
-  if (tags['decline'] || tags['autpaydecline'] || tags['trxfailed']) return 'decline';
-  if (tags['emi']) return 'emi';
-  if (tags['cashback']) return 'cashback';
-  if (tags['ref'] && tags['type'] === 'credit') return 'refund';
+  const type = (tags["type"] || "").toLowerCase();
+  if (type === "upi") return "upi";
+  if (type === "neft") return "neft";
+  if (type === "imps") return "imps";
+  if (type === "rtgs") return "rtgs";
+  if (type === "aeps") return "aeps";
+  if (tags["autdbt"]) return "autdbt";
+  if (tags["chqamt"]) return "cheque";
+  if (tags["waladd"] || tags["walsub"]) return "wallet";
+  if (tags["incrdlmt"]) return "incrdlmt";
+  if (tags["subsidy"]) return "deposit";
+  if (tags["otp"] || tags["pin"] || tags["code"]) return "otp";
+  if (type === "atm" || tags["wdl"]) return "atm";
+  if (tags["beneacc"] || tags["beneadd"]) return "transfer";
+  if (tags["decline"] || tags["autpaydecline"] || tags["trxfailed"]) return "decline";
+  if (tags["emi"]) return "emi";
+  if (tags["cashback"]) return "cashback";
+  if (tags["ref"] && tags["type"] === "credit") return "refund";
   return null;
 }
 
@@ -325,16 +341,25 @@ export function detectSubcategory(tags: Record<string, string>): string | null {
 //     against fragments of the SMS sender ID, not the message body.
 
 const AIRPORT_MAP = new Map<string, string>(
-  Object.entries(airportSeedRaw as Record<string, string>).map(([city, code]) => [city.toLowerCase(), code]),
+  Object.entries(airportSeedRaw as Record<string, string>).map(([city, code]) => [
+    city.toLowerCase(),
+    code,
+  ]),
 );
 
-export interface AirportMatch { city: string; code: string }
+export interface AirportMatch {
+  city: string;
+  code: string;
+}
 
 // Scans free text (e.g. a departure/arrival capture, or the whole message)
 // for known city names and returns every IATA code found.
 export function detectAirports(text: string): AirportMatch[] {
   if (!text) return [];
-  const words = text.toLowerCase().split(/[^a-z]+/).filter(Boolean);
+  const words = text
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter(Boolean);
   const seen = new Set<string>();
   const matches: AirportMatch[] = [];
   for (const word of words) {
@@ -347,8 +372,8 @@ export function detectAirports(text: string): AirportMatch[] {
   return matches;
 }
 
-const LOCATION_SET = new Set<string>((locationSeedRaw as string[]).map(l => l.toLowerCase()));
-const LOCATION_MULTIWORD = [...LOCATION_SET].filter(l => l.includes(' '));
+const LOCATION_SET = new Set<string>((locationSeedRaw as string[]).map((l) => l.toLowerCase()));
+const LOCATION_MULTIWORD = [...LOCATION_SET].filter((l) => l.includes(" "));
 
 // Gazetteer fallback: only called when the grammar's own PATTERN-based
 // `location` tag came up empty, so this fills a gap rather than overriding
@@ -369,7 +394,7 @@ export function detectLocation(text: string): string | null {
 const OFFER_SENDER_MAP = new Map<string, string>();
 for (const [category, codes] of Object.entries(offersSeedRaw as Record<string, string[]>)) {
   for (const code of codes) {
-    OFFER_SENDER_MAP.set(code.toLowerCase().replace(/[^a-z0-9]/g, ''), category);
+    OFFER_SENDER_MAP.set(code.toLowerCase().replace(/[^a-z0-9]/g, ""), category);
   }
 }
 
@@ -379,7 +404,10 @@ for (const [category, codes] of Object.entries(offersSeedRaw as Record<string, s
 // general, bank_offers, food_beverages, utility).
 export function detectOfferCategory(sender: string): string | null {
   if (!sender) return null;
-  const fragments = sender.toLowerCase().replace(/[^a-z0-9-_]/g, '').split(/[-_]/);
+  const fragments = sender
+    .toLowerCase()
+    .replace(/[^a-z0-9-_]/g, "")
+    .split(/[-_]/);
   for (const frag of fragments) {
     const cat = OFFER_SENDER_MAP.get(frag);
     if (cat) return cat;

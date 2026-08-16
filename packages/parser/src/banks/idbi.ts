@@ -1,43 +1,52 @@
 // Exact 1:1 port of IDBIBankParser.kt from Cashiro parser-core
-import { BankParser } from '../base-parser.js';
+import { BankParser } from "../base-parser.js";
 
 function parseNum(str: string): number | null {
-  const n = parseFloat(str.replace(/,/g, ''));
+  const n = parseFloat(str.replace(/,/g, ""));
   return Number.isFinite(n) ? n : null;
 }
 
 export class IDBIBankParser extends BankParser {
   getBankName(): string {
-    return 'IDBI Bank';
+    return "IDBI Bank";
   }
 
   canHandle(sender: string): boolean {
     const u = sender.toUpperCase();
     return (
-      u.includes('IDBIBK') ||
-      u.includes('IDBIBANK') ||
-      u.includes('IDBI') ||
+      u.includes("IDBIBK") ||
+      u.includes("IDBIBANK") ||
+      u.includes("IDBI") ||
       /^[A-Z]{2}-IDBIBK-S$/.test(u) ||
       /^[A-Z]{2}-IDBI-S$/.test(u) ||
       /^[A-Z]{2}-IDBIBK$/.test(u) ||
       /^[A-Z]{2}-IDBI$/.test(u) ||
-      u === 'IDBIBK' ||
-      u === 'IDBIBANK'
+      u === "IDBIBK" ||
+      u === "IDBIBANK"
     );
   }
 
   protected override extractAmount(message: string): number | null {
     // Pattern 1: "debited with Rs 59.00"
     const c1 = /debited\s+with\s+Rs\.?\s*([0-9,]+(?:\.\d{2})?)/i.exec(message)?.[1];
-    if (c1) { const v = parseNum(c1); if (v !== null) return v; }
+    if (c1) {
+      const v = parseNum(c1);
+      if (v !== null) return v;
+    }
 
     // Pattern 2: "debited for Rs 1040.00"
     const c2 = /debited\s+for\s+Rs\.?\s*([0-9,]+(?:\.\d{2})?)/i.exec(message)?.[1];
-    if (c2) { const v = parseNum(c2); if (v !== null) return v; }
+    if (c2) {
+      const v = parseNum(c2);
+      if (v !== null) return v;
+    }
 
     // Pattern 3: "credited with Rs XXX"
     const c3 = /credited\s+with\s+Rs\.?\s*([0-9,]+(?:\.\d{2})?)/i.exec(message)?.[1];
-    if (c3) { const v = parseNum(c3); if (v !== null) return v; }
+    if (c3) {
+      const v = parseNum(c3);
+      if (v !== null) return v;
+    }
 
     return super.extractAmount(message);
   }
@@ -93,7 +102,10 @@ export class IDBIBankParser extends BankParser {
   protected override extractBalance(message: string): number | null {
     // Pattern: "Bal Rs 3694.38"
     const c = /Bal\s+Rs\.?\s*([0-9,]+(?:\.\d{2})?)/i.exec(message)?.[1];
-    if (c) { const v = parseNum(c); if (v !== null) return v; }
+    if (c) {
+      const v = parseNum(c);
+      if (v !== null) return v;
+    }
 
     return super.extractBalance(message);
   }

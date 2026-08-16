@@ -1,6 +1,6 @@
-import { BankParser } from '../base-parser.js';
-import { CompiledPatterns } from '../patterns.js';
-import type { BalanceUpdateInfo, MandateInfo, TransactionType } from '../types.js';
+import { BankParser } from "../base-parser.js";
+import { CompiledPatterns } from "../patterns.js";
+import type { BalanceUpdateInfo, MandateInfo, TransactionType } from "../types.js";
 
 export interface EMandateInfo extends MandateInfo {
   amount: number;
@@ -12,13 +12,13 @@ export interface EMandateInfo extends MandateInfo {
 
 export class HDFCBankParser extends BankParser {
   getBankName(): string {
-    return 'HDFC Bank';
+    return "HDFC Bank";
   }
 
   canHandle(sender: string): boolean {
     const upperSender = sender.toUpperCase();
-    if (['HDFCBK', 'HDFCBANK', 'HDFC', 'HDFCB'].includes(upperSender)) return true;
-    return CompiledPatterns.HDFC.DLT_PATTERNS.some(p => p.test(upperSender));
+    if (["HDFCBK", "HDFCBANK", "HDFC", "HDFCB"].includes(upperSender)) return true;
+    return CompiledPatterns.HDFC.DLT_PATTERNS.some((p) => p.test(upperSender));
   }
 
   isEMandateNotification(message: string): boolean {
@@ -26,50 +26,50 @@ export class HDFCBankParser extends BankParser {
   }
 
   isFutureDebitNotification(message: string): boolean {
-    return message.toLowerCase().includes('will be');
+    return message.toLowerCase().includes("will be");
   }
 
   parseEMandateSubscription(message: string): EMandateInfo | null {
     if (!this.isEMandateNotification(message)) return null;
     const amountMatch = CompiledPatterns.HDFC.AMOUNT_WILL_DEDUCT.exec(message);
     if (!amountMatch) return null;
-    const amount = parseFloat((amountMatch[1] ?? '').replace(/,/g, ''));
+    const amount = parseFloat((amountMatch[1] ?? "").replace(/,/g, ""));
     if (!isFinite(amount)) return null;
     const dateStr = CompiledPatterns.HDFC.DEDUCTION_DATE.exec(message)?.[1] ?? null;
     const merchantRaw = CompiledPatterns.HDFC.MANDATE_MERCHANT.exec(message)?.[1]?.trim() ?? null;
-    const merchant = merchantRaw ? this.cleanMerchantName(merchantRaw) : 'Unknown Subscription';
+    const merchant = merchantRaw ? this.cleanMerchantName(merchantRaw) : "Unknown Subscription";
     const umn = CompiledPatterns.HDFC.UMN_PATTERN.exec(message)?.[1] ?? null;
-    return { amount, nextDeductionDate: dateStr, merchant, umn, dateFormat: 'dd/MM/yy' };
+    return { amount, nextDeductionDate: dateStr, merchant, umn, dateFormat: "dd/MM/yy" };
   }
 
   parseFutureDebit(message: string): EMandateInfo | null {
     if (!this.isFutureDebitNotification(message)) return null;
     const amountMatch = CompiledPatterns.HDFC.AMOUNT_WILL_DEDUCT.exec(message);
     if (!amountMatch) return null;
-    const amount = parseFloat((amountMatch[1] ?? '').replace(/,/g, ''));
+    const amount = parseFloat((amountMatch[1] ?? "").replace(/,/g, ""));
     if (!isFinite(amount)) return null;
     const dateStr = CompiledPatterns.HDFC.DEDUCTION_DATE.exec(message)?.[1] ?? null;
     const merchantRaw = CompiledPatterns.HDFC.MANDATE_MERCHANT.exec(message)?.[1]?.trim() ?? null;
-    const merchant = merchantRaw ? this.cleanMerchantName(merchantRaw) : 'Unknown Subscription';
+    const merchant = merchantRaw ? this.cleanMerchantName(merchantRaw) : "Unknown Subscription";
     const umn = CompiledPatterns.HDFC.UMN_PATTERN.exec(message)?.[1] ?? null;
-    return { amount, nextDeductionDate: dateStr, merchant, umn, dateFormat: 'dd/MM/yy' };
+    return { amount, nextDeductionDate: dateStr, merchant, umn, dateFormat: "dd/MM/yy" };
   }
 
   isBalanceUpdateNotification(message: string): boolean {
     const lower = message.toLowerCase();
     const hasBalanceCue =
-      lower.includes('avl bal') ||
-      lower.includes('available bal') ||
-      lower.includes('account balance') ||
-      lower.includes('a/c balance') ||
-      lower.includes('updated balance');
+      lower.includes("avl bal") ||
+      lower.includes("available bal") ||
+      lower.includes("account balance") ||
+      lower.includes("a/c balance") ||
+      lower.includes("updated balance");
     const hasTxnVerb =
-      lower.includes('debited') ||
-      lower.includes('credited') ||
-      lower.includes('withdrawn') ||
-      lower.includes('spent') ||
-      lower.includes('transferred') ||
-      lower.includes('payment of');
+      lower.includes("debited") ||
+      lower.includes("credited") ||
+      lower.includes("withdrawn") ||
+      lower.includes("spent") ||
+      lower.includes("transferred") ||
+      lower.includes("payment of");
     return hasBalanceCue && !hasTxnVerb;
   }
 
@@ -79,41 +79,56 @@ export class HDFCBankParser extends BankParser {
     if (!accountLast4) return null;
     const balance = this.extractBalance(message);
     if (balance === null) return null;
-    return { bankName: this.getBankName(), accountLast4, balance, asOfDate: null, isCreditCard: false };
+    return {
+      bankName: this.getBankName(),
+      accountLast4,
+      balance,
+      asOfDate: null,
+      isCreditCard: false,
+    };
   }
 
   protected isTransactionMessage(message: string): boolean {
     if (this.isEMandateNotification(message)) return false;
     if (this.isFutureDebitNotification(message)) return false;
     const lower = message.toLowerCase();
-    if (lower.includes('bill alert') || (lower.includes('bill') && lower.includes('is due on'))) return false;
-    if (lower.includes('payment alert') && !lower.includes('will be')) return true;
+    if (lower.includes("bill alert") || (lower.includes("bill") && lower.includes("is due on")))
+      return false;
+    if (lower.includes("payment alert") && !lower.includes("will be")) return true;
     if (
-      lower.includes('has requested') ||
-      lower.includes('payment request') ||
-      lower.includes('to pay, download') ||
-      lower.includes('collect request') ||
-      lower.includes('ignore if already paid')
+      lower.includes("has requested") ||
+      lower.includes("payment request") ||
+      lower.includes("to pay, download") ||
+      lower.includes("collect request") ||
+      lower.includes("ignore if already paid")
     )
       return false;
-    if (lower.includes('received towards your credit card')) return false;
-    if (lower.includes('payment') && lower.includes('credited to your card')) return false;
+    if (lower.includes("received towards your credit card")) return false;
+    if (lower.includes("payment") && lower.includes("credited to your card")) return false;
     if (
-      lower.includes('otp') ||
-      lower.includes('one time password') ||
-      lower.includes('verification code') ||
-      lower.includes('offer') ||
-      lower.includes('discount') ||
-      lower.includes('cashback offer') ||
-      lower.includes('win ')
+      lower.includes("otp") ||
+      lower.includes("one time password") ||
+      lower.includes("verification code") ||
+      lower.includes("offer") ||
+      lower.includes("discount") ||
+      lower.includes("cashback offer") ||
+      lower.includes("win ")
     )
       return false;
     const keywords = [
-      'debited', 'credited', 'withdrawn', 'deposited',
-      'spent', 'received', 'transferred', 'paid',
-      'sent', 'deducted', 'txn',
+      "debited",
+      "credited",
+      "withdrawn",
+      "deposited",
+      "spent",
+      "received",
+      "transferred",
+      "paid",
+      "sent",
+      "deducted",
+      "txn",
     ];
-    return keywords.some(kw => lower.includes(kw));
+    return keywords.some((kw) => lower.includes(kw));
   }
 
   protected extractAmount(message: string): number | null {
@@ -125,7 +140,7 @@ export class HDFCBankParser extends BankParser {
     for (const pattern of patterns) {
       const match = pattern.exec(message);
       if (match) {
-        const val = parseFloat((match[1] ?? '').replace(/,/g, ''));
+        const val = parseFloat((match[1] ?? "").replace(/,/g, ""));
         if (!isNaN(val)) return val;
         return null;
       }
@@ -135,34 +150,30 @@ export class HDFCBankParser extends BankParser {
 
   protected extractTransactionType(message: string): TransactionType | null {
     const lower = message.toLowerCase();
-    if (this.isInvestmentTransaction(lower)) return 'INVESTMENT';
-    if (lower.includes('block cc') || lower.includes('block pcc')) return 'CREDIT';
-    if (lower.includes('spent on card') && !lower.includes('block dc')) return 'CREDIT';
-    if (lower.includes('payment') && lower.includes('credit card')) return 'EXPENSE';
-    if (lower.includes('towards') && lower.includes('credit card')) return 'EXPENSE';
-    if (lower.includes('sent') && lower.includes('from hdfc')) return 'EXPENSE';
-    if (lower.includes('spent') && lower.includes('from hdfc bank card')) return 'EXPENSE';
-    if (lower.includes('debited')) return 'EXPENSE';
-    if (lower.includes('withdrawn') && !lower.includes('block cc')) return 'EXPENSE';
-    if (lower.includes('spent') && !lower.includes('card')) return 'EXPENSE';
-    if (lower.includes('charged')) return 'EXPENSE';
-    if (lower.includes('paid')) return 'EXPENSE';
-    if (lower.includes('purchase')) return 'EXPENSE';
-    if (lower.includes('credited')) return 'INCOME';
-    if (lower.includes('deposited')) return 'INCOME';
-    if (lower.includes('received')) return 'INCOME';
-    if (lower.includes('refund')) return 'INCOME';
-    if (lower.includes('cashback') && !lower.includes('earn cashback')) return 'INCOME';
+    if (this.isInvestmentTransaction(lower)) return "INVESTMENT";
+    if (lower.includes("block cc") || lower.includes("block pcc")) return "CREDIT";
+    if (lower.includes("spent on card") && !lower.includes("block dc")) return "CREDIT";
+    if (lower.includes("payment") && lower.includes("credit card")) return "EXPENSE";
+    if (lower.includes("towards") && lower.includes("credit card")) return "EXPENSE";
+    if (lower.includes("sent") && lower.includes("from hdfc")) return "EXPENSE";
+    if (lower.includes("spent") && lower.includes("from hdfc bank card")) return "EXPENSE";
+    if (lower.includes("debited")) return "EXPENSE";
+    if (lower.includes("withdrawn") && !lower.includes("block cc")) return "EXPENSE";
+    if (lower.includes("spent") && !lower.includes("card")) return "EXPENSE";
+    if (lower.includes("charged")) return "EXPENSE";
+    if (lower.includes("paid")) return "EXPENSE";
+    if (lower.includes("purchase")) return "EXPENSE";
+    if (lower.includes("credited")) return "INCOME";
+    if (lower.includes("deposited")) return "INCOME";
+    if (lower.includes("received")) return "INCOME";
+    if (lower.includes("refund")) return "INCOME";
+    if (lower.includes("cashback") && !lower.includes("earn cashback")) return "INCOME";
     return null;
   }
 
   protected extractMerchant(message: string, sender: string): string | null {
     // "From HDFC Bank Card ... At <merchant> On ..."
-    if (
-      /From HDFC Bank Card/i.test(message) &&
-      / At /i.test(message) &&
-      / On /i.test(message)
-    ) {
+    if (/From HDFC Bank Card/i.test(message) && / At /i.test(message) && / On /i.test(message)) {
       const atIndex = message.search(/ At /i);
       const onIndex = message.search(/ On /i);
       if (atIndex !== -1 && onIndex !== -1 && onIndex > atIndex) {
@@ -176,12 +187,12 @@ export class HDFCBankParser extends BankParser {
       const atLocationMatch = /At\s+\+?([^O]+?)\s+On/i.exec(message);
       if (atLocationMatch?.[1]) {
         const location = atLocationMatch[1].trim();
-        return location.length > 0 ? `ATM at ${this.cleanMerchantName(location)}` : 'ATM';
+        return location.length > 0 ? `ATM at ${this.cleanMerchantName(location)}` : "ATM";
       }
-      return 'ATM';
+      return "ATM";
     }
 
-    if (/ATM/i.test(message)) return 'ATM';
+    if (/ATM/i.test(message)) return "ATM";
 
     // Block CC/PCC — credit card swipe at merchant
     if (
@@ -195,8 +206,8 @@ export class HDFCBankParser extends BankParser {
       if (atMatch?.[1]) {
         const raw = atMatch[1].trim();
         let cleaned: string;
-        if (raw.includes('@')) {
-          const vpaName = raw.split('@')[0]?.trim() ?? '';
+        if (raw.includes("@")) {
+          const vpaName = raw.split("@")[0]?.trim() ?? "";
           cleaned = /qr$/i.test(vpaName) ? vpaName.slice(0, -2) : vpaName;
         } else {
           cleaned = raw;
@@ -267,9 +278,9 @@ export class HDFCBankParser extends BankParser {
       if (sentToMatch?.[1]) {
         const payee = sentToMatch[1].trim();
         let merchant: string;
-        if (payee.includes('@')) {
-          const vpaName = payee.split('@')[0]?.trim() ?? '';
-          merchant = /[a-zA-Z]/.test(vpaName) ? this.cleanMerchantName(vpaName) : 'UPI Payee';
+        if (payee.includes("@")) {
+          const vpaName = payee.split("@")[0]?.trim() ?? "";
+          merchant = /[a-zA-Z]/.test(vpaName) ? this.cleanMerchantName(vpaName) : "UPI Payee";
         } else {
           merchant = this.cleanMerchantName(payee);
         }
@@ -332,7 +343,7 @@ export class HDFCBankParser extends BankParser {
     // HDFC Bank ([X*]*\d+) → filter digits → takeLast(4)
     const hdfcBankMatch = CompiledPatterns.HDFC.HDFC_BANK_ACCOUNT.exec(message);
     if (hdfcBankMatch?.[1]) {
-      const digits = hdfcBankMatch[1].replace(/\D/g, '');
+      const digits = hdfcBankMatch[1].replace(/\D/g, "");
       if (digits.length >= 4) return digits.slice(-4);
       if (digits.length > 0) return digits;
     }
@@ -346,7 +357,7 @@ export class HDFCBankParser extends BankParser {
     ]) {
       const m = pattern.exec(message);
       if (m?.[1]) {
-        const digits = m[1].replace(/\D/g, '');
+        const digits = m[1].replace(/\D/g, "");
         return digits.length >= 4 ? digits.slice(-4) : digits;
       }
     }
@@ -358,19 +369,19 @@ export class HDFCBankParser extends BankParser {
     // Avl bal:? INR
     const avlBalMatch = CompiledPatterns.HDFC.AVL_BAL_INR.exec(message);
     if (avlBalMatch?.[1]) {
-      const val = parseFloat(avlBalMatch[1].replace(/,/g, ''));
+      const val = parseFloat(avlBalMatch[1].replace(/,/g, ""));
       if (isFinite(val)) return val;
     }
     // Available Balance:? INR
     const availBalMatch = CompiledPatterns.HDFC.AVAILABLE_BAL_INR.exec(message);
     if (availBalMatch?.[1]) {
-      const val = parseFloat(availBalMatch[1].replace(/,/g, ''));
+      const val = parseFloat(availBalMatch[1].replace(/,/g, ""));
       if (isFinite(val)) return val;
     }
     // Bal Rs.?
     const balRsMatch = CompiledPatterns.HDFC.BAL_RS.exec(message);
     if (balRsMatch?.[1]) {
-      const val = parseFloat(balRsMatch[1].replace(/,/g, ''));
+      const val = parseFloat(balRsMatch[1].replace(/,/g, ""));
       if (isFinite(val)) return val;
     }
     return super.extractBalance(message);
@@ -385,7 +396,7 @@ export class HDFCBankParser extends BankParser {
     for (const pattern of patterns) {
       const match = pattern.exec(message);
       if (match?.[1]) {
-        const val = parseFloat(match[1].replace(/,/g, ''));
+        const val = parseFloat(match[1].replace(/,/g, ""));
         if (isFinite(val)) return val;
       }
     }

@@ -1,6 +1,6 @@
 // Exact 1:1 port of CityUnionBankParser.kt from Cashiro parser-core
-import { BankParser } from '../base-parser.js';
-import type { TransactionType } from '../types.js';
+import { BankParser } from "../base-parser.js";
+import type { TransactionType } from "../types.js";
 
 /**
  * Parser for City Union Bank SMS messages
@@ -14,18 +14,18 @@ import type { TransactionType } from '../types.js';
  */
 
 function parseNum(str: string): number | null {
-  const n = parseFloat(str.replace(/,/g, ''));
+  const n = parseFloat(str.replace(/,/g, ""));
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 export class CityUnionBankParser extends BankParser {
   getBankName(): string {
-    return 'City Union Bank';
+    return "City Union Bank";
   }
 
   canHandle(sender: string): boolean {
     const u = sender.toUpperCase();
-    return u.includes('CUBANK') || u.includes('CUBLTD') || u.includes('CUB');
+    return u.includes("CUBANK") || u.includes("CUBLTD") || u.includes("CUB");
   }
 
   protected override extractAmount(message: string): number | null {
@@ -49,14 +49,14 @@ export class CityUnionBankParser extends BankParser {
 
   protected override extractTransactionType(message: string): TransactionType | null {
     const lower = message.toLowerCase();
-    if (lower.includes('is debited')) return 'EXPENSE';
-    if (lower.includes('debited for')) return 'EXPENSE';
-    if (lower.includes('debited from')) return 'EXPENSE';
-    if (lower.includes('is credited')) return 'INCOME';
-    if (lower.includes('credited for')) return 'INCOME';
-    if (lower.includes('credited with')) return 'INCOME';
-    if (lower.includes('credited to')) return 'INCOME';
-    if (lower.includes('neft trf')) return 'INCOME';
+    if (lower.includes("is debited")) return "EXPENSE";
+    if (lower.includes("debited for")) return "EXPENSE";
+    if (lower.includes("debited from")) return "EXPENSE";
+    if (lower.includes("is credited")) return "INCOME";
+    if (lower.includes("credited for")) return "INCOME";
+    if (lower.includes("credited with")) return "INCOME";
+    if (lower.includes("credited to")) return "INCOME";
+    if (lower.includes("neft trf")) return "INCOME";
     return super.extractTransactionType(message);
   }
 
@@ -64,7 +64,7 @@ export class CityUnionBankParser extends BankParser {
     const lower = message.toLowerCase();
 
     // NEFT Transfer pattern
-    if (lower.includes('neft trf')) {
+    if (lower.includes("neft trf")) {
       // Extract sender name from "BY NEFT TRF:NAME"
       const neftPattern = /BY\s+NEFT\s+TRF:([^:]+)/i;
       const m = neftPattern.exec(message);
@@ -72,7 +72,7 @@ export class CityUnionBankParser extends BankParser {
         const merchant = this.cleanMerchantName(m[1].trim());
         return `NEFT - ${merchant}`;
       }
-      return 'NEFT Transfer';
+      return "NEFT Transfer";
     }
 
     // UPI Transaction
@@ -95,12 +95,12 @@ export class CityUnionBankParser extends BankParser {
         return `UPI Transfer from A/C XX${accountLast4}`;
       }
 
-      return 'UPI Transfer';
+      return "UPI Transfer";
     }
 
     // Generic transfer
-    if (lower.includes('credited to a/c') || lower.includes('debited from a/c')) {
-      return 'Account Transfer';
+    if (lower.includes("credited to a/c") || lower.includes("debited from a/c")) {
+      return "Account Transfer";
     }
 
     return super.extractMerchant(message, sender);
@@ -108,10 +108,7 @@ export class CityUnionBankParser extends BankParser {
 
   protected override extractAccountLast4(message: string): string | null {
     // Pattern: "Your a/c no. XXXXXXXXXXXXXXX" or "Savings No XXXXXXXXXXXXXXX"
-    const patterns = [
-      /Your\s+a\/c\s+no\.\s+[Xx]*(\d{3,4})/i,
-      /Savings\s+No\s+[Xx]*(\d{3,4})/i,
-    ];
+    const patterns = [/Your\s+a\/c\s+no\.\s+[Xx]*(\d{3,4})/i, /Savings\s+No\s+[Xx]*(\d{3,4})/i];
     for (const pattern of patterns) {
       const m = pattern.exec(message);
       if (m?.[1]) {
@@ -145,16 +142,16 @@ export class CityUnionBankParser extends BankParser {
     const lower = message.toLowerCase();
 
     // Skip OTP and non-transaction messages
-    if (lower.includes('otp') || lower.includes('verification') || lower.includes('request')) {
+    if (lower.includes("otp") || lower.includes("verification") || lower.includes("request")) {
       return false;
     }
 
     // Check for City Union Bank specific transaction patterns
     if (
-      lower.includes('is debited for') ||
-      lower.includes('is credited for') ||
-      lower.includes('credited with') ||
-      lower.includes('neft trf')
+      lower.includes("is debited for") ||
+      lower.includes("is credited for") ||
+      lower.includes("credited with") ||
+      lower.includes("neft trf")
     ) {
       return true;
     }

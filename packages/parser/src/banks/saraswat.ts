@@ -1,20 +1,20 @@
 // Exact 1:1 port of SaraswatBankParser.kt from Cashiro parser-core
-import { BankParser } from '../base-parser.js';
-import type { TransactionType } from '../types.js';
+import { BankParser } from "../base-parser.js";
+import type { TransactionType } from "../types.js";
 
 function parseNum(str: string): number | null {
-  const n = parseFloat(str.replace(/,/g, ''));
+  const n = parseFloat(str.replace(/,/g, ""));
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 export class SaraswatBankParser extends BankParser {
   getBankName(): string {
-    return 'Saraswat Co-operative Bank';
+    return "Saraswat Co-operative Bank";
   }
 
   canHandle(sender: string): boolean {
     const u = sender.toUpperCase();
-    const saraswatSenders = new Set(['SARBNK', 'SARASWAT', 'SARASWATBANK']);
+    const saraswatSenders = new Set(["SARBNK", "SARASWAT", "SARASWATBANK"]);
     if (saraswatSenders.has(u)) return true;
     return (
       /^[A-Z]{2}-SARBNK-[ST]$/.test(u) ||
@@ -44,11 +44,11 @@ export class SaraswatBankParser extends BankParser {
 
   protected override extractTransactionType(message: string): TransactionType | null {
     const lower = message.toLowerCase();
-    if (lower.includes('is credited')) return 'INCOME';
-    if (lower.includes('credited with')) return 'INCOME';
-    if (lower.includes('is debited')) return 'EXPENSE';
-    if (lower.includes('debited with')) return 'EXPENSE';
-    if (lower.includes('withdrawn')) return 'EXPENSE';
+    if (lower.includes("is credited")) return "INCOME";
+    if (lower.includes("credited with")) return "INCOME";
+    if (lower.includes("is debited")) return "EXPENSE";
+    if (lower.includes("debited with")) return "EXPENSE";
+    if (lower.includes("withdrawn")) return "EXPENSE";
     return super.extractTransactionType(message);
   }
 
@@ -58,8 +58,8 @@ export class SaraswatBankParser extends BankParser {
     if (towardsMatch?.[1]) {
       const merchant = towardsMatch[1].trim();
       const cleanedMerchant = merchant
-        .replace(/^ACH\s+Credit:\s*/i, '')
-        .replace(/^ACH\s+Debit:\s*/i, '')
+        .replace(/^ACH\s+Credit:\s*/i, "")
+        .replace(/^ACH\s+Debit:\s*/i, "")
         .trim();
       if (this.isValidMerchantName(cleanedMerchant)) {
         return this.cleanMerchantName(cleanedMerchant);
@@ -69,20 +69,26 @@ export class SaraswatBankParser extends BankParser {
     // Pattern 2: "for S.I." or "for NEFT" etc.
     const forMatch = /for\s+([A-Za-z.]+?)(?:\.\s+Current|\s+Current|$)/i.exec(message);
     if (forMatch?.[1]) {
-      const merchant = forMatch[1].trim().replace(/\.$/, '');
+      const merchant = forMatch[1].trim().replace(/\.$/, "");
       switch (merchant.toUpperCase()) {
-        case 'S.I': return 'Standing Instruction';
-        case 'SI': return 'Standing Instruction';
-        case 'NEFT': return 'NEFT Transfer';
-        case 'RTGS': return 'RTGS Transfer';
-        case 'IMPS': return 'IMPS Transfer';
-        default: return merchant;
+        case "S.I":
+          return "Standing Instruction";
+        case "SI":
+          return "Standing Instruction";
+        case "NEFT":
+          return "NEFT Transfer";
+        case "RTGS":
+          return "RTGS Transfer";
+        case "IMPS":
+          return "IMPS Transfer";
+        default:
+          return merchant;
       }
     }
 
     // Pattern 3: ATM withdrawal
     if (/ATM/i.test(message) || /withdrawn/i.test(message)) {
-      return 'ATM Withdrawal';
+      return "ATM Withdrawal";
     }
 
     return super.extractMerchant(message, sender);
@@ -112,7 +118,8 @@ export class SaraswatBankParser extends BankParser {
 
   protected override extractBalance(message: string): number | null {
     // Pattern 1: "Current Bal is INR 941.23 CR" or "Current Bal is INR 8,256.97CR"
-    const currentBalMatch = /Current\s+Bal\s+is\s+INR\s+(\d+(?:,\d{3})*(?:\.\d{2})?)\s*(?:CR|DR)?/i.exec(message);
+    const currentBalMatch =
+      /Current\s+Bal\s+is\s+INR\s+(\d+(?:,\d{3})*(?:\.\d{2})?)\s*(?:CR|DR)?/i.exec(message);
     if (currentBalMatch?.[1]) {
       const val = parseNum(currentBalMatch[1]);
       if (val !== null) return val;
@@ -133,23 +140,23 @@ export class SaraswatBankParser extends BankParser {
 
     // Skip OTP and verification messages
     if (
-      lower.includes('otp') ||
-      lower.includes('one time password') ||
-      lower.includes('verification code')
+      lower.includes("otp") ||
+      lower.includes("one time password") ||
+      lower.includes("verification code")
     ) {
       return false;
     }
 
     // Saraswat Bank specific transaction keywords
     const saraswatKeywords = [
-      'is credited with',
-      'is debited with',
-      'credited with inr',
-      'debited with inr',
-      'current bal is',
+      "is credited with",
+      "is debited with",
+      "credited with inr",
+      "debited with inr",
+      "current bal is",
     ];
 
-    if (saraswatKeywords.some(kw => lower.includes(kw))) return true;
+    if (saraswatKeywords.some((kw) => lower.includes(kw))) return true;
 
     return super.isTransactionMessage(message);
   }

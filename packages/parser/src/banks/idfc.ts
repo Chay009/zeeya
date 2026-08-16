@@ -1,14 +1,14 @@
-import { BankParser } from '../base-parser.js';
-import type { ParsedTransaction, TransactionType } from '../types.js';
+import { BankParser } from "../base-parser.js";
+import type { ParsedTransaction, TransactionType } from "../types.js";
 
 export class IDFCFirstBankParser extends BankParser {
   getBankName(): string {
-    return 'IDFC First Bank';
+    return "IDFC First Bank";
   }
 
   canHandle(sender: string): boolean {
     const u = sender.toUpperCase();
-    return u.includes('IDFCBK') || u.includes('IDFCFB') || u.includes('IDFC');
+    return u.includes("IDFCBK") || u.includes("IDFCFB") || u.includes("IDFC");
   }
 
   parse(smsBody: string, sender: string, timestamp: number): ParsedTransaction | null {
@@ -17,8 +17,8 @@ export class IDFCFirstBankParser extends BankParser {
     if (amount === null) return null;
     const type = this.extractTransactionType(smsBody);
     if (type === null) return null;
-    const currency = this.extractCurrencyFromMessage(smsBody) ?? 'INR';
-    const availableLimit = type === 'CREDIT' ? this.extractAvailableLimit(smsBody) : null;
+    const currency = this.extractCurrencyFromMessage(smsBody) ?? "INR";
+    const availableLimit = type === "CREDIT" ? this.extractAvailableLimit(smsBody) : null;
     return {
       amount,
       type,
@@ -64,7 +64,7 @@ export class IDFCFirstBankParser extends BankParser {
     for (const pattern of patterns) {
       const m = pattern.exec(message);
       if (m) {
-        const val = parseFloat(m[1]!.replace(/,/g, ''));
+        const val = parseFloat(m[1]!.replace(/,/g, ""));
         if (!isNaN(val)) return val;
       }
     }
@@ -74,75 +74,86 @@ export class IDFCFirstBankParser extends BankParser {
   protected isTransactionMessage(message: string): boolean {
     const lower = message.toLowerCase();
     if (
-      lower.includes('otp') ||
-      lower.includes('one time password') ||
-      lower.includes('verification code')
-    ) return false;
+      lower.includes("otp") ||
+      lower.includes("one time password") ||
+      lower.includes("verification code")
+    )
+      return false;
     if (
-      lower.includes('offer') ||
-      lower.includes('discount') ||
-      lower.includes('cashback offer') ||
-      lower.includes('win ')
-    ) return false;
+      lower.includes("offer") ||
+      lower.includes("discount") ||
+      lower.includes("cashback offer") ||
+      lower.includes("win ")
+    )
+      return false;
     if (
-      lower.includes('has requested') ||
-      lower.includes('payment request') ||
-      lower.includes('collect request') ||
-      lower.includes('requesting payment') ||
-      lower.includes('requests rs') ||
-      lower.includes('ignore if already paid')
-    ) return false;
+      lower.includes("has requested") ||
+      lower.includes("payment request") ||
+      lower.includes("collect request") ||
+      lower.includes("requesting payment") ||
+      lower.includes("requests rs") ||
+      lower.includes("ignore if already paid")
+    )
+      return false;
     const transactionKeywords = [
-      'debit', 'debited', 'credited', 'withdrawn', 'deposited',
-      'spent', 'received', 'transferred', 'paid', 'interest',
+      "debit",
+      "debited",
+      "credited",
+      "withdrawn",
+      "deposited",
+      "spent",
+      "received",
+      "transferred",
+      "paid",
+      "interest",
     ];
-    return transactionKeywords.some(kw => lower.includes(kw));
+    return transactionKeywords.some((kw) => lower.includes(kw));
   }
 
   protected extractTransactionType(message: string): TransactionType | null {
     const lower = message.toLowerCase();
-    if (lower.includes('debit')) return 'EXPENSE';
-    if (lower.includes('debited')) return 'EXPENSE';
-    if (lower.includes('spent')) return 'EXPENSE';
-    if (lower.includes('credited')) return 'INCOME';
-    if (lower.includes('withdrawn') || lower.includes('withdrawal')) return 'EXPENSE';
-    if (lower.includes('deposited') || lower.includes('deposit')) return 'INCOME';
-    if (lower.includes('cash deposit')) return 'INCOME';
-    if (lower.includes('interest') && lower.includes('earned')) return 'INCOME';
-    if (lower.includes('monthly interest')) return 'INCOME';
+    if (lower.includes("debit")) return "EXPENSE";
+    if (lower.includes("debited")) return "EXPENSE";
+    if (lower.includes("spent")) return "EXPENSE";
+    if (lower.includes("credited")) return "INCOME";
+    if (lower.includes("withdrawn") || lower.includes("withdrawal")) return "EXPENSE";
+    if (lower.includes("deposited") || lower.includes("deposit")) return "INCOME";
+    if (lower.includes("cash deposit")) return "INCOME";
+    if (lower.includes("interest") && lower.includes("earned")) return "INCOME";
+    if (lower.includes("monthly interest")) return "INCOME";
     return super.extractTransactionType(message);
   }
 
   protected extractMerchant(message: string, sender: string): string | null {
     const lower = message.toLowerCase();
 
-    if (lower.includes('monthly interest')) return 'Interest Credit';
+    if (lower.includes("monthly interest")) return "Interest Credit";
 
-    if (lower.includes('cash deposit')) {
+    if (lower.includes("cash deposit")) {
       const atmM = /ATM\s+(?:ID\s+)?([A-Z0-9]+)/i.exec(message);
       if (atmM) return `Cash Deposit - ATM ${atmM[1]!}`;
-      return 'Cash Deposit';
+      return "Cash Deposit";
     }
 
-    if (message.toUpperCase().includes('UPI')) {
+    if (message.toUpperCase().includes("UPI")) {
       const upiM = /(?:to|from|at)\s+([a-zA-Z0-9._-]+@[a-zA-Z0-9]+)/i.exec(message);
       if (upiM) return `UPI - ${upiM[1]!}`;
-      return 'UPI Transaction';
+      return "UPI Transaction";
     }
 
-    if (message.toUpperCase().includes('IMPS')) {
+    if (message.toUpperCase().includes("IMPS")) {
       const mobileM = /mobile\s+[X]*(\d{3,4})/i.exec(message);
       if (mobileM) return `IMPS Transfer - Mobile XXX${mobileM[1]!}`;
-      return 'IMPS Transfer';
+      return "IMPS Transfer";
     }
 
-    if (message.toUpperCase().includes('NEFT')) return 'NEFT Transfer';
-    if (message.toUpperCase().includes('RTGS')) return 'RTGS Transfer';
+    if (message.toUpperCase().includes("NEFT")) return "NEFT Transfer";
+    if (message.toUpperCase().includes("RTGS")) return "RTGS Transfer";
 
-    if (message.toUpperCase().includes('ATM')) {
+    if (message.toUpperCase().includes("ATM")) {
       const atmIdM = /ATM\s+([A-Z]{2}\d+)/i.exec(message);
       if (atmIdM) return `ATM - ${atmIdM[1]!}`;
-      return 'ATM Transaction';
+      return "ATM Transaction";
     }
 
     const toM = /(?:to|at|for)\s+([A-Z][A-Z0-9\s&.-]+?)(?:\s+on|\s+New|\.|,|$)/i.exec(message);
@@ -176,7 +187,7 @@ export class IDFCFirstBankParser extends BankParser {
     for (const pattern of patterns) {
       const m = pattern.exec(message);
       if (m) {
-        const val = parseFloat(m[1]!.replace(/,/g, ''));
+        const val = parseFloat(m[1]!.replace(/,/g, ""));
         if (!isNaN(val)) return val;
       }
     }

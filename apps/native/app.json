@@ -8,10 +8,7 @@
     },
     "name": "zeeya",
     "slug": "zeeya",
-    "plugins": [
-      "expo-font",
-      "./plugins/withReadSmsPermission.js"
-    ],
+    "plugins": ["expo-font", "./plugins/withReadSmsPermission.js"],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true

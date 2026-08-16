@@ -1,26 +1,26 @@
 // Exact 1:1 port of PunjabSindBankParser.kt from Cashiro parser-core
-import { BankParser } from '../base-parser.js';
-import type { TransactionType } from '../types.js';
+import { BankParser } from "../base-parser.js";
+import type { TransactionType } from "../types.js";
 
 export class PunjabSindBankParser extends BankParser {
   getBankName(): string {
-    return 'Punjab & Sind Bank';
+    return "Punjab & Sind Bank";
   }
 
   getCurrency(): string {
-    return 'INR';
+    return "INR";
   }
 
   canHandle(sender: string): boolean {
     const normalized = sender.toUpperCase();
-    return normalized.includes('PSB') || normalized.includes('PUNJAB SIND');
+    return normalized.includes("PSB") || normalized.includes("PUNJAB SIND");
   }
 
   protected override extractAmount(message: string): number | null {
     const inrPattern = /INR\s+(\d+(?:,\d{3})*(?:\.\d{2})?)/i;
     const match = inrPattern.exec(message);
     if (match?.[1]) {
-      const amountStr = (match[1] ?? '').replace(/,/g, '');
+      const amountStr = (match[1] ?? "").replace(/,/g, "");
       const val = parseFloat(amountStr);
       if (!isNaN(val)) return val;
     }
@@ -29,8 +29,13 @@ export class PunjabSindBankParser extends BankParser {
 
   protected override extractTransactionType(message: string): TransactionType | null {
     const lowerMessage = message.toLowerCase();
-    if (lowerMessage.includes('credited')) return 'INCOME';
-    if (lowerMessage.includes('debited') || lowerMessage.includes('spent') || lowerMessage.includes('paid')) return 'EXPENSE';
+    if (lowerMessage.includes("credited")) return "INCOME";
+    if (
+      lowerMessage.includes("debited") ||
+      lowerMessage.includes("spent") ||
+      lowerMessage.includes("paid")
+    )
+      return "EXPENSE";
     return super.extractTransactionType(message);
   }
 }

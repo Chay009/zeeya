@@ -1,22 +1,22 @@
 // Exact 1:1 port of BankOfIndiaParser.kt from Cashiro parser-core
-import { BankParser } from '../base-parser.js';
-import type { TransactionType } from '../types.js';
+import { BankParser } from "../base-parser.js";
+import type { TransactionType } from "../types.js";
 
 function parseNum(str: string): number | null {
-  const n = parseFloat(str.replace(/,/g, ''));
+  const n = parseFloat(str.replace(/,/g, ""));
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 export class BankOfIndiaParser extends BankParser {
   getBankName(): string {
-    return 'Bank of India';
+    return "Bank of India";
   }
 
   canHandle(sender: string): boolean {
     const u = sender.toUpperCase();
 
     // Direct sender IDs
-    if (u === 'BOIIND' || u === 'BOIBNK') return true;
+    if (u === "BOIIND" || u === "BOIBNK") return true;
 
     // DLT patterns
     return (
@@ -61,38 +61,38 @@ export class BankOfIndiaParser extends BankParser {
 
     // BOI specific: Cash deposits should be INCOME
     if (
-      lower.includes('deposited in your account') ||
-      (lower.includes('cash') && lower.includes('deposited'))
+      lower.includes("deposited in your account") ||
+      (lower.includes("cash") && lower.includes("deposited"))
     ) {
-      return 'INCOME';
+      return "INCOME";
     }
 
     // Check for investment transactions
     if (this.isInvestmentTransaction(lower)) {
-      return 'INVESTMENT';
+      return "INVESTMENT";
     }
 
     // UPI Mandate for mutual funds/investments
     if (
-      lower.includes('mandate') &&
-      (lower.includes('mutual fund') ||
-        lower.includes('iccl') ||
-        lower.includes('groww') ||
-        lower.includes('zerodha') ||
-        lower.includes('kuvera') ||
-        lower.includes('paytm money'))
+      lower.includes("mandate") &&
+      (lower.includes("mutual fund") ||
+        lower.includes("iccl") ||
+        lower.includes("groww") ||
+        lower.includes("zerodha") ||
+        lower.includes("kuvera") ||
+        lower.includes("paytm money"))
     ) {
-      return 'INVESTMENT';
+      return "INVESTMENT";
     }
 
     // BOI specific: "debited A/c... and credited to" pattern indicates expense
-    if (lower.includes('debited') && lower.includes('and credited to')) {
-      return 'EXPENSE';
+    if (lower.includes("debited") && lower.includes("and credited to")) {
+      return "EXPENSE";
     }
 
     // BOI specific: "credited A/c... and debited from" pattern indicates income
-    if (lower.includes('credited') && lower.includes('and debited from')) {
-      return 'INCOME';
+    if (lower.includes("credited") && lower.includes("and debited from")) {
+      return "INCOME";
     }
 
     return super.extractTransactionType(message);
@@ -104,7 +104,7 @@ export class BankOfIndiaParser extends BankParser {
       /Cash Acceptor Machine/i.test(message) ||
       (/cash/i.test(message) && /deposited/i.test(message))
     ) {
-      return 'Cash Deposit';
+      return "Cash Deposit";
     }
 
     // Pattern for UPI Mandate execution: "towards MERCHANT for Mandate Created via PLATFORM"
@@ -120,9 +120,7 @@ export class BankOfIndiaParser extends BankParser {
       const towardsMatch = /towards\s+([^,\n]+?)(?:\s+for|\s*,|$)/i.exec(message);
       if (towardsMatch?.[1]) {
         const merchantInfo = towardsMatch[1].trim();
-        const cleanedMerchant = merchantInfo
-          .replace(/\s*-\s*Autopa.*$/i, '')
-          .trim();
+        const cleanedMerchant = merchantInfo.replace(/\s*-\s*Autopa.*$/i, "").trim();
         if (this.isValidMerchantName(cleanedMerchant)) {
           return this.cleanMerchantName(cleanedMerchant);
         }
@@ -150,7 +148,7 @@ export class BankOfIndiaParser extends BankParser {
         const location = this.cleanMerchantName(atmMatch[1].trim());
         if (this.isValidMerchantName(location)) return `ATM - ${location}`;
       }
-      return 'ATM';
+      return "ATM";
     }
 
     // Pattern 4: "towards MERCHANT" (generic, not for Mandate messages)
@@ -244,15 +242,15 @@ export class BankOfIndiaParser extends BankParser {
     const lower = message.toLowerCase();
 
     // Skip future debit notifications
-    if (lower.includes('will be')) return false;
+    if (lower.includes("will be")) return false;
 
     // Detect transaction messages with security notices
-    if (lower.includes('call') && lower.includes('if not done by you')) {
+    if (lower.includes("call") && lower.includes("if not done by you")) {
       if (
-        lower.includes('debited') ||
-        lower.includes('credited') ||
-        lower.includes('withdrawn') ||
-        lower.includes('transferred')
+        lower.includes("debited") ||
+        lower.includes("credited") ||
+        lower.includes("withdrawn") ||
+        lower.includes("transferred")
       ) {
         return true;
       }
@@ -260,19 +258,19 @@ export class BankOfIndiaParser extends BankParser {
 
     // Skip OTP and verification messages
     if (
-      lower.includes('otp') ||
-      lower.includes('one time password') ||
-      lower.includes('verification code')
+      lower.includes("otp") ||
+      lower.includes("one time password") ||
+      lower.includes("verification code")
     ) {
       return false;
     }
 
     // Skip promotional messages
     if (
-      lower.includes('offer') ||
-      lower.includes('discount') ||
-      lower.includes('cashback offer') ||
-      lower.includes('win ')
+      lower.includes("offer") ||
+      lower.includes("discount") ||
+      lower.includes("cashback offer") ||
+      lower.includes("win ")
     ) {
       return false;
     }

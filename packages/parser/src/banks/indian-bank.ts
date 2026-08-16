@@ -1,14 +1,14 @@
 // Exact 1:1 port of IndianBankParser.kt from Cashiro parser-core
-import { BankParser } from '../base-parser.js';
-import type { TransactionType, MandateInfo } from '../types.js';
+import { BankParser } from "../base-parser.js";
+import type { TransactionType, MandateInfo } from "../types.js";
 
 function parseNum(str: string): number | null {
-  const n = parseFloat(str.replace(/,/g, ''));
+  const n = parseFloat(str.replace(/,/g, ""));
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 export interface IndianMandateInfo extends MandateInfo {
-  dateFormat: 'd-MMM-yy';
+  dateFormat: "d-MMM-yy";
 }
 
 /**
@@ -22,15 +22,15 @@ export interface IndianMandateInfo extends MandateInfo {
  */
 export class IndianBankParser extends BankParser {
   getBankName(): string {
-    return 'Indian Bank';
+    return "Indian Bank";
   }
 
   canHandle(sender: string): boolean {
     const u = sender.toUpperCase();
     return (
-      u.includes('INDIAN BANK') ||
-      u.includes('INDIANBANK') ||
-      u.includes('INDIANBK') ||
+      u.includes("INDIAN BANK") ||
+      u.includes("INDIANBANK") ||
+      u.includes("INDIANBK") ||
       // Match DLT patterns for transactions (-S suffix)
       /^[A-Z]{2}-INDBNK-S$/.test(u) ||
       // Also handle other patterns for completeness
@@ -38,8 +38,8 @@ export class IndianBankParser extends BankParser {
       // Legacy patterns without suffix
       /^[A-Z]{2}-INDBNK$/.test(u) ||
       // Direct sender IDs
-      u === 'INDBNK' ||
-      u === 'INDIAN'
+      u === "INDBNK" ||
+      u === "INDIAN"
     );
   }
 
@@ -59,7 +59,9 @@ export class IndianBankParser extends BankParser {
     }
 
     // Pattern 2a: Rs.589.00 credited to (amount before credited)
-    const creditReverseMatch = /Rs\.?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)\s+credited\s+to/i.exec(message);
+    const creditReverseMatch = /Rs\.?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)\s+credited\s+to/i.exec(
+      message,
+    );
     if (creditReverseMatch?.[1]) {
       const val = parseNum(creditReverseMatch[1]);
       if (val !== null) return val;
@@ -103,7 +105,7 @@ export class IndianBankParser extends BankParser {
     if (vpaMatch?.[1]) {
       const vpa = vpaMatch[1];
       // Extract the part before @ as merchant name
-      const merchantFromVpa = vpa.split('@')[0] ?? vpa;
+      const merchantFromVpa = vpa.split("@")[0] ?? vpa;
       return this.cleanMerchantName(merchantFromVpa);
     }
 
@@ -179,13 +181,13 @@ export class IndianBankParser extends BankParser {
     const lower = message.toLowerCase();
 
     // Indian Bank specific patterns
-    if (lower.includes('debited')) return 'EXPENSE';
-    if (lower.includes('withdrawn')) return 'EXPENSE';
-    if (lower.includes('upi payment') && !lower.includes('received')) return 'EXPENSE';
+    if (lower.includes("debited")) return "EXPENSE";
+    if (lower.includes("withdrawn")) return "EXPENSE";
+    if (lower.includes("upi payment") && !lower.includes("received")) return "EXPENSE";
 
-    if (lower.includes('credited')) return 'INCOME';
-    if (lower.includes('deposited')) return 'INCOME';
-    if (lower.includes('received')) return 'INCOME';
+    if (lower.includes("credited")) return "INCOME";
+    if (lower.includes("deposited")) return "INCOME";
+    if (lower.includes("received")) return "INCOME";
 
     // Fall back to base class for other patterns
     return super.extractTransactionType(message);
@@ -198,10 +200,8 @@ export class IndianBankParser extends BankParser {
   isMandateNotification(message: string): boolean {
     const lower = message.toLowerCase();
     return (
-      lower.includes('mandate') &&
-      (lower.includes('upcoming') ||
-        lower.includes('set for') ||
-        lower.includes('will be debited'))
+      lower.includes("mandate") &&
+      (lower.includes("upcoming") || lower.includes("set for") || lower.includes("will be debited"))
     );
   }
 
@@ -215,9 +215,9 @@ export class IndianBankParser extends BankParser {
 
     const match = mandatePattern.exec(message);
     if (match) {
-      const dateStr = match[1] ?? '';
-      const amountStr = match[2] ?? '';
-      const merchantStr = match[3] ?? '';
+      const dateStr = match[1] ?? "";
+      const amountStr = match[2] ?? "";
+      const merchantStr = match[3] ?? "";
       const amount = parseFloat(amountStr);
       if (!isNaN(amount) && amount > 0) {
         return {
@@ -225,7 +225,7 @@ export class IndianBankParser extends BankParser {
           nextDeductionDate: dateStr || null,
           merchant: this.cleanMerchantName(merchantStr.trim()),
           umn: null,
-          dateFormat: 'd-MMM-yy',
+          dateFormat: "d-MMM-yy",
         };
       }
     }

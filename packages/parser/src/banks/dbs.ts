@@ -1,23 +1,23 @@
 // Exact 1:1 port of DBSBankParser.kt from Cashiro parser-core
-import { BankParser } from '../base-parser.js';
-import type { TransactionType } from '../types.js';
+import { BankParser } from "../base-parser.js";
+import type { TransactionType } from "../types.js";
 
 function parseNum(str: string): number | null {
-  const n = parseFloat(str.replace(/,/g, ''));
+  const n = parseFloat(str.replace(/,/g, ""));
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 export class DBSBankParser extends BankParser {
   getBankName(): string {
-    return 'DBS Bank';
+    return "DBS Bank";
   }
 
   canHandle(sender: string): boolean {
     const u = sender.toUpperCase();
     return (
-      u.includes('DBSBNK') ||
-      u.includes('DBS') ||
-      u === 'DBSBANK' ||
+      u.includes("DBSBNK") ||
+      u.includes("DBS") ||
+      u === "DBSBANK" ||
       // DLT patterns
       /^[A-Z]{2}-DBSBNK-[ST]$/.test(u) ||
       /^[A-Z]{2}-DBS-[ST]$/.test(u) ||
@@ -45,11 +45,7 @@ export class DBSBankParser extends BankParser {
 
   protected override extractAccountLast4(message: string): string | null {
     // Pattern: "account no ********1234" or "a/c ****1234" or "account ****1234"
-    const patterns = [
-      /account\s+no\s+\*+(\d{4})/i,
-      /a\/c\s+\*+(\d{4})/i,
-      /account\s+\*+(\d{4})/i,
-    ];
+    const patterns = [/account\s+no\s+\*+(\d{4})/i, /a\/c\s+\*+(\d{4})/i, /account\s+\*+(\d{4})/i];
 
     for (const pattern of patterns) {
       const match = pattern.exec(message);
@@ -81,10 +77,10 @@ export class DBSBankParser extends BankParser {
   protected override extractTransactionType(message: string): TransactionType | null {
     const lower = message.toLowerCase();
 
-    if (lower.includes('debited')) return 'EXPENSE';
-    if (lower.includes('credited')) return 'INCOME';
-    if (lower.includes('withdrawn')) return 'EXPENSE';
-    if (lower.includes('deposited')) return 'INCOME';
+    if (lower.includes("debited")) return "EXPENSE";
+    if (lower.includes("credited")) return "INCOME";
+    if (lower.includes("withdrawn")) return "EXPENSE";
+    if (lower.includes("deposited")) return "INCOME";
 
     return super.extractTransactionType(message);
   }

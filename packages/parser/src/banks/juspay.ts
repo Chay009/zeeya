@@ -1,51 +1,47 @@
 // Exact 1:1 port of JuspayParser.kt from Cashiro parser-core
-import { BankParser } from '../base-parser.js';
-import type { TransactionType } from '../types.js';
+import { BankParser } from "../base-parser.js";
+import type { TransactionType } from "../types.js";
 
 export class JuspayParser extends BankParser {
   getBankName(): string {
-    return 'Amazon Pay';
+    return "Amazon Pay";
   }
 
   override getCurrency(): string {
-    return 'INR';
+    return "INR";
   }
 
   canHandle(sender: string): boolean {
     const u = sender.toUpperCase();
-    return (
-      u.includes('JUSPAY') ||
-      u.includes('APAY') ||
-      u === 'AMAZON PAY'
-    );
+    return u.includes("JUSPAY") || u.includes("APAY") || u === "AMAZON PAY";
   }
 
   protected override extractAmount(message: string): number | null {
     // Pattern 1: "Your Apay Wallet balance is debited for INR Xxx"
     const debitMatch = /debited\s+for\s+INR\s+([0-9,]+(?:\.[0-9]{1,2})?)/i.exec(message);
     if (debitMatch?.[1]) {
-      const val = parseFloat(debitMatch[1].replace(/,/g, ''));
+      const val = parseFloat(debitMatch[1].replace(/,/g, ""));
       if (!isNaN(val)) return val;
     }
 
     // Pattern 2: "Payment of Rs xxx using Apay Balance"
     const paymentMatch = /Payment\s+of\s+Rs\s+([0-9,]+(?:\.[0-9]{1,2})?)/i.exec(message);
     if (paymentMatch?.[1]) {
-      const val = parseFloat(paymentMatch[1].replace(/,/g, ''));
+      const val = parseFloat(paymentMatch[1].replace(/,/g, ""));
       if (!isNaN(val)) return val;
     }
 
     // Pattern 3: "Rs xxx" generic pattern
     const rsMatch = /Rs\s+([0-9,]+(?:\.[0-9]{1,2})?)/i.exec(message);
     if (rsMatch?.[1]) {
-      const val = parseFloat(rsMatch[1].replace(/,/g, ''));
+      const val = parseFloat(rsMatch[1].replace(/,/g, ""));
       if (!isNaN(val)) return val;
     }
 
     // Pattern 4: "INR xxx" generic pattern
     const inrMatch = /INR\s+([0-9,]+(?:\.[0-9]{1,2})?)/i.exec(message);
     if (inrMatch?.[1]) {
-      const val = parseFloat(inrMatch[1].replace(/,/g, ''));
+      const val = parseFloat(inrMatch[1].replace(/,/g, ""));
       if (!isNaN(val)) return val;
     }
 
@@ -64,29 +60,29 @@ export class JuspayParser extends BankParser {
     }
 
     // Pattern 2: Common merchant indicators
-    if (lowerMessage.includes('amazon')) return 'Amazon';
-    if (lowerMessage.includes('flipkart')) return 'Flipkart';
-    if (lowerMessage.includes('swiggy')) return 'Swiggy';
-    if (lowerMessage.includes('zomato')) return 'Zomato';
-    if (lowerMessage.includes('ola')) return 'Ola';
-    if (lowerMessage.includes('uber')) return 'Uber';
-    if (lowerMessage.includes('zepto')) return 'Zepto';
-    if (lowerMessage.includes('blinkit')) return 'Blinkit';
-    if (lowerMessage.includes('apay wallet')) return 'Amazon Pay Transaction';
-    if (lowerMessage.includes('wallet')) return 'Amazon Pay Transaction';
+    if (lowerMessage.includes("amazon")) return "Amazon";
+    if (lowerMessage.includes("flipkart")) return "Flipkart";
+    if (lowerMessage.includes("swiggy")) return "Swiggy";
+    if (lowerMessage.includes("zomato")) return "Zomato";
+    if (lowerMessage.includes("ola")) return "Ola";
+    if (lowerMessage.includes("uber")) return "Uber";
+    if (lowerMessage.includes("zepto")) return "Zepto";
+    if (lowerMessage.includes("blinkit")) return "Blinkit";
+    if (lowerMessage.includes("apay wallet")) return "Amazon Pay Transaction";
+    if (lowerMessage.includes("wallet")) return "Amazon Pay Transaction";
 
-    return super.extractMerchant(message, sender) ?? 'Amazon Pay';
+    return super.extractMerchant(message, sender) ?? "Amazon Pay";
   }
 
   protected override extractTransactionType(message: string): TransactionType | null {
     const lowerMessage = message.toLowerCase();
 
-    if (lowerMessage.includes('debited')) return 'EXPENSE';
-    if (lowerMessage.includes('payment')) return 'EXPENSE';
-    if (lowerMessage.includes('charged')) return 'EXPENSE';
-    if (lowerMessage.includes('credited')) return 'CREDIT';
-    if (lowerMessage.includes('refunded')) return 'CREDIT';
-    if (lowerMessage.includes('received')) return 'CREDIT';
+    if (lowerMessage.includes("debited")) return "EXPENSE";
+    if (lowerMessage.includes("payment")) return "EXPENSE";
+    if (lowerMessage.includes("charged")) return "EXPENSE";
+    if (lowerMessage.includes("credited")) return "CREDIT";
+    if (lowerMessage.includes("refunded")) return "CREDIT";
+    if (lowerMessage.includes("received")) return "CREDIT";
 
     return null;
   }
@@ -107,15 +103,15 @@ export class JuspayParser extends BankParser {
     const lowerMessage = message.toLowerCase();
 
     const transactionKeywords = [
-      'debited for',
-      'payment of rs',
-      'using apay balance',
-      'transaction reference number',
-      'updated balance is',
+      "debited for",
+      "payment of rs",
+      "using apay balance",
+      "transaction reference number",
+      "updated balance is",
     ];
 
     return (
-      transactionKeywords.some(kw => lowerMessage.includes(kw)) ||
+      transactionKeywords.some((kw) => lowerMessage.includes(kw)) ||
       super.isTransactionMessage(message)
     );
   }

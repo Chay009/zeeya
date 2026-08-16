@@ -1,17 +1,17 @@
 // Exact 1:1 port of UnionBankParser.kt from Cashiro parser-core
-import { BankParser } from '../base-parser.js';
+import { BankParser } from "../base-parser.js";
 
 export class UnionBankParser extends BankParser {
   getBankName(): string {
-    return 'Union Bank of India';
+    return "Union Bank of India";
   }
 
   canHandle(sender: string): boolean {
     const u = sender.toUpperCase();
     return (
-      u.includes('UNIONB') ||
-      u.includes('UNIONBANK') ||
-      u.includes('UBOI') ||
+      u.includes("UNIONB") ||
+      u.includes("UNIONBANK") ||
+      u.includes("UBOI") ||
       /^[A-Z]{2}-UNIONB-[ST]$/.test(u) ||
       /^[A-Z]{2}-UNIONB-[TPG]$/.test(u) ||
       /^[A-Z]{2}-UNIONB$/.test(u) ||
@@ -21,21 +21,30 @@ export class UnionBankParser extends BankParser {
 
   protected override isTransactionMessage(message: string): boolean {
     const lower = message.toLowerCase();
-    const keywords = ['debited','credited','withdrawn','deposited','spent','received','transferred','paid'];
-    if (keywords.some(k => lower.includes(k))) return true;
+    const keywords = [
+      "debited",
+      "credited",
+      "withdrawn",
+      "deposited",
+      "spent",
+      "received",
+      "transferred",
+      "paid",
+    ];
+    if (keywords.some((k) => lower.includes(k))) return true;
     return super.isTransactionMessage(message);
   }
 
   protected override extractAmount(message: string): number | null {
     const m1 = /Rs[:.]?\s*([0-9,]+(?:\.\d{2})?)/i.exec(message);
     if (m1?.[1]) {
-      const val = parseFloat(m1[1].replace(/,/g, ''));
+      const val = parseFloat(m1[1].replace(/,/g, ""));
       if (!isNaN(val)) return val;
     }
 
     const m2 = /INR\s+([0-9,]+(?:\.\d{2})?)/i.exec(message);
     if (m2?.[1]) {
-      const val = parseFloat(m2[1].replace(/,/g, ''));
+      const val = parseFloat(m2[1].replace(/,/g, ""));
       if (!isNaN(val)) return val;
     }
 
@@ -43,12 +52,12 @@ export class UnionBankParser extends BankParser {
   }
 
   protected override extractMerchant(message: string, sender: string): string | null {
-    if (/Mob\s+Bk/i.test(message)) return 'Mobile Banking Transfer';
+    if (/Mob\s+Bk/i.test(message)) return "Mobile Banking Transfer";
 
     if (/ATM/i.test(message)) {
       const atmMatch = /at\s+([^.\s]+(?:\s+[^.\s]+)*)(?:\s+on|\s+Avl|$)/i.exec(message);
       if (atmMatch?.[1]) return this.cleanMerchantName(atmMatch[1].trim());
-      return 'ATM Withdrawal';
+      return "ATM Withdrawal";
     }
 
     if (/UPI/i.test(message)) {
@@ -64,13 +73,13 @@ export class UnionBankParser extends BankParser {
     const toMatch = /to\s+([^.\n]+?)(?:\s+on|\s+Avl|$)/i.exec(message);
     if (toMatch?.[1]) {
       const m = toMatch[1].trim();
-      if (!m.toLowerCase().includes('avl')) return this.cleanMerchantName(m);
+      if (!m.toLowerCase().includes("avl")) return this.cleanMerchantName(m);
     }
 
     const fromMatch = /from\s+([^.\n]+?)(?:\s+on|\s+Avl|$)/i.exec(message);
     if (fromMatch?.[1]) {
       const m = fromMatch[1].trim();
-      if (!m.toLowerCase().includes('avl')) return this.cleanMerchantName(m);
+      if (!m.toLowerCase().includes("avl")) return this.cleanMerchantName(m);
     }
 
     return super.extractMerchant(message, sender);
@@ -114,7 +123,7 @@ export class UnionBankParser extends BankParser {
     for (const p of patterns) {
       const m = p.exec(message);
       if (m?.[1]) {
-        const val = parseFloat(m[1].replace(/,/g, ''));
+        const val = parseFloat(m[1].replace(/,/g, ""));
         if (!isNaN(val)) return val;
       }
     }
@@ -123,21 +132,19 @@ export class UnionBankParser extends BankParser {
 
   private parseUPIMerchant(vpa: string): string {
     const lower = vpa.toLowerCase();
-    if (lower.includes('paytm')) return 'Paytm';
-    if (lower.includes('phonepe')) return 'PhonePe';
-    if (lower.includes('googlepay') || lower.includes('gpay')) return 'Google Pay';
-    if (lower.includes('bharatpe')) return 'BharatPe';
-    if (lower.includes('amazon')) return 'Amazon';
-    if (lower.includes('flipkart')) return 'Flipkart';
-    if (lower.includes('swiggy')) return 'Swiggy';
-    if (lower.includes('zomato')) return 'Zomato';
-    if (lower.includes('uber')) return 'Uber';
-    if (lower.includes('ola')) return 'Ola';
-    if (/^\d+$/.test(lower)) return 'Individual';
+    if (lower.includes("paytm")) return "Paytm";
+    if (lower.includes("phonepe")) return "PhonePe";
+    if (lower.includes("googlepay") || lower.includes("gpay")) return "Google Pay";
+    if (lower.includes("bharatpe")) return "BharatPe";
+    if (lower.includes("amazon")) return "Amazon";
+    if (lower.includes("flipkart")) return "Flipkart";
+    if (lower.includes("swiggy")) return "Swiggy";
+    if (lower.includes("zomato")) return "Zomato";
+    if (lower.includes("uber")) return "Uber";
+    if (lower.includes("ola")) return "Ola";
+    if (/^\d+$/.test(lower)) return "Individual";
     const parts = lower.split(/[.\-_]/);
-    const meaningful = parts.find(p => p.length > 3 && !/^\d+$/.test(p));
-    return meaningful
-      ? meaningful.charAt(0).toUpperCase() + meaningful.slice(1)
-      : 'Merchant';
+    const meaningful = parts.find((p) => p.length > 3 && !/^\d+$/.test(p));
+    return meaningful ? meaningful.charAt(0).toUpperCase() + meaningful.slice(1) : "Merchant";
   }
 }

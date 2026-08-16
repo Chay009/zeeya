@@ -1,24 +1,24 @@
 // Exact 1:1 port of FederalBankParser.kt from Cashiro parser-core
-import { BankParser } from '../base-parser.js';
-import type { MandateInfo, TransactionType } from '../types.js';
+import { BankParser } from "../base-parser.js";
+import type { MandateInfo, TransactionType } from "../types.js";
 
 function parseNum(str: string): number | null {
-  const n = parseFloat(str.replace(/,/g, ''));
+  const n = parseFloat(str.replace(/,/g, ""));
   return Number.isFinite(n) ? n : null;
 }
 
 export class FederalBankParser extends BankParser {
   getBankName(): string {
-    return 'Federal Bank';
+    return "Federal Bank";
   }
 
   canHandle(sender: string): boolean {
     const u = sender.toUpperCase();
     return (
-      u.includes('FEDBNK') ||
-      u.includes('FEDERAL') ||
-      u.includes('FEDFIB') ||
-      u.includes('FEDSCP') ||
+      u.includes("FEDBNK") ||
+      u.includes("FEDERAL") ||
+      u.includes("FEDFIB") ||
+      u.includes("FEDSCP") ||
       /^[A-Z]{2}-FEDBNK-S$/.test(u) ||
       /^[A-Z]{2}-FEDSCP-S$/.test(u) ||
       /^[A-Z]{2}-FedFiB-[A-Z]$/.test(u) ||
@@ -28,7 +28,7 @@ export class FederalBankParser extends BankParser {
   }
 
   detectIsCreditCard(message: string): boolean {
-    return message.toLowerCase().includes('credit card');
+    return message.toLowerCase().includes("credit card");
   }
 
   /**
@@ -42,36 +42,37 @@ export class FederalBankParser extends BankParser {
     if (this.detectIsCreditCard(message)) return true;
 
     // Explicit debit card patterns
-    if (lower.includes('debit card')) return true;
+    if (lower.includes("debit card")) return true;
 
     // Card number patterns: "card XX**9747" or "card ending with 1234"
-    if (lower.includes('card xx**')) return true;
-    if (lower.includes('card ending with')) return true;
+    if (lower.includes("card xx**")) return true;
+    if (lower.includes("card ending with")) return true;
 
     // INR spent pattern (typically credit card)
     if (/inr\s+[\d,]+(?:\.\d{2})?\s+spent/i.test(lower)) return true;
 
     // "at <merchant> on <date>" pattern (credit card transactions)
-    if (lower.includes(' spent ') && lower.includes(' at ') && lower.includes(' on ')) return true;
+    if (lower.includes(" spent ") && lower.includes(" at ") && lower.includes(" on ")) return true;
 
     // E-mandate on card patterns
     if (
-      (lower.includes('e-mandate') || lower.includes('payment of')) &&
-      (lower.includes('federal bank debit card') || lower.includes('federal bank credit card'))
-    ) return true;
+      (lower.includes("e-mandate") || lower.includes("payment of")) &&
+      (lower.includes("federal bank debit card") || lower.includes("federal bank credit card"))
+    )
+      return true;
 
     // Exclude UPI transactions (these are not card transactions)
-    if (lower.includes('via upi')) return false;
-    if (lower.includes('to vpa')) return false;
+    if (lower.includes("via upi")) return false;
+    if (lower.includes("to vpa")) return false;
 
     // Exclude ATM withdrawals from being categorized as card transactions
-    if (lower.includes('atm')) return false;
-    if (lower.includes('withdrawn') && !lower.includes('card')) return false;
+    if (lower.includes("atm")) return false;
+    if (lower.includes("withdrawn") && !lower.includes("card")) return false;
 
     // Exclude IMPS/NEFT/RTGS transfers
-    if (lower.includes('via imps')) return false;
-    if (lower.includes('via neft')) return false;
-    if (lower.includes('via rtgs')) return false;
+    if (lower.includes("via imps")) return false;
+    if (lower.includes("via neft")) return false;
+    if (lower.includes("via rtgs")) return false;
 
     return false;
   }
@@ -131,11 +132,8 @@ export class FederalBankParser extends BankParser {
 
   protected override extractMerchant(message: string, sender: string): string | null {
     // Priority 1: IMPS credits - show "IMPS Credit" instead of parsing description
-    if (
-      /credited to your A\/c/i.test(message) &&
-      /via IMPS/i.test(message)
-    ) {
-      return 'IMPS Credit';
+    if (/credited to your A\/c/i.test(message) && /via IMPS/i.test(message)) {
+      return "IMPS Credit";
     }
 
     // Priority 2: Card transactions - use detectIsCard to avoid duplication
@@ -146,7 +144,9 @@ export class FederalBankParser extends BankParser {
         if (scapiaMatch?.[1]) {
           const merchant = this.cleanMerchantName(scapiaMatch[1].trim());
           if (this.isValidMerchantName(merchant)) {
-            const cleaned = merchant.replace(/\s+(limited|ltd|pvt\s+ltd|private\s+limited)$/i, '').trim();
+            const cleaned = merchant
+              .replace(/\s+(limited|ltd|pvt\s+ltd|private\s+limited)$/i, "")
+              .trim();
             return cleaned.length > 0 ? cleaned : merchant;
           }
         }
@@ -156,7 +156,9 @@ export class FederalBankParser extends BankParser {
         if (ccMatch?.[1]) {
           const merchant = this.cleanMerchantName(ccMatch[1].trim());
           if (this.isValidMerchantName(merchant)) {
-            const cleaned = merchant.replace(/\s+(limited|ltd|pvt\s+ltd|private\s+limited)$/i, '').trim();
+            const cleaned = merchant
+              .replace(/\s+(limited|ltd|pvt\s+ltd|private\s+limited)$/i, "")
+              .trim();
             return cleaned.length > 0 ? cleaned : merchant;
           }
         }
@@ -165,7 +167,9 @@ export class FederalBankParser extends BankParser {
 
     // Priority 3: E-mandate transactions
     if (/e-mandate/i.test(message) || /payment of/i.test(message)) {
-      const emandateMatch = /payment of\s+[^.]+?\s+for\s+([^.\n]+?)\s+via\s+e-mandate/i.exec(message);
+      const emandateMatch = /payment of\s+[^.]+?\s+for\s+([^.\n]+?)\s+via\s+e-mandate/i.exec(
+        message,
+      );
       if (emandateMatch?.[1]) {
         const merchant = this.cleanMerchantName(emandateMatch[1].trim());
         if (this.isValidMerchantName(merchant)) {
@@ -173,9 +177,12 @@ export class FederalBankParser extends BankParser {
         }
       }
 
-      const declinedMatch = /payment via e-mandate\s+declined\s+for\s+ID:\s*[^.]+?\s+on\s+Federal Bank\s+Debit Card\s+\d+/i.exec(message);
+      const declinedMatch =
+        /payment via e-mandate\s+declined\s+for\s+ID:\s*[^.]+?\s+on\s+Federal Bank\s+Debit Card\s+\d+/i.exec(
+          message,
+        );
       if (declinedMatch) {
-        return 'E-Mandate Declined';
+        return "E-Mandate Declined";
       }
     }
 
@@ -206,7 +213,7 @@ export class FederalBankParser extends BankParser {
       if (sentByMatch?.[1]) {
         const senderName = sentByMatch[1].trim();
         if (/^0+$/.test(senderName) || senderName.length <= 4) {
-          return 'Bank Transfer';
+          return "Bank Transfer";
         }
         const merchant = this.cleanMerchantName(senderName);
         if (this.isValidMerchantName(merchant)) {
@@ -226,85 +233,78 @@ export class FederalBankParser extends BankParser {
 
     // Priority 8: ATM transactions
     if (/ATM/i.test(message) || /withdrawn/i.test(message)) {
-      return 'ATM Withdrawal';
+      return "ATM Withdrawal";
     }
 
     return super.extractMerchant(message, sender);
   }
 
   private parseUPIMerchant(vpa: string): string {
-    const cleanVPA = vpa.split('@')[0]?.toLowerCase() ?? '';
+    const cleanVPA = vpa.split("@")[0]?.toLowerCase() ?? "";
 
     // Airlines & Travel
-    if (cleanVPA.includes('indigo')) return 'Indigo';
-    if (cleanVPA.includes('spicejet')) return 'SpiceJet';
-    if (cleanVPA.includes('airasia')) return 'AirAsia';
-    if (cleanVPA.includes('vistara')) return 'Vistara';
-    if (cleanVPA.includes('airindia')) return 'Air India';
+    if (cleanVPA.includes("indigo")) return "Indigo";
+    if (cleanVPA.includes("spicejet")) return "SpiceJet";
+    if (cleanVPA.includes("airasia")) return "AirAsia";
+    if (cleanVPA.includes("vistara")) return "Vistara";
+    if (cleanVPA.includes("airindia")) return "Air India";
 
     // Ride-hailing
-    if (cleanVPA.includes('uber')) return 'Uber';
-    if (cleanVPA.includes('ola')) return 'Ola';
-    if (cleanVPA.includes('rapido')) return 'Rapido';
+    if (cleanVPA.includes("uber")) return "Uber";
+    if (cleanVPA.includes("ola")) return "Ola";
+    if (cleanVPA.includes("rapido")) return "Rapido";
 
     // E-commerce
-    if (cleanVPA.includes('amazon')) return 'Amazon';
-    if (cleanVPA.includes('flipkart')) return 'Flipkart';
-    if (cleanVPA.includes('myntra')) return 'Myntra';
-    if (cleanVPA.includes('meesho')) return 'Meesho';
+    if (cleanVPA.includes("amazon")) return "Amazon";
+    if (cleanVPA.includes("flipkart")) return "Flipkart";
+    if (cleanVPA.includes("myntra")) return "Myntra";
+    if (cleanVPA.includes("meesho")) return "Meesho";
 
     // Payment apps
-    if (cleanVPA.includes('paytm')) return 'Paytm';
-    if (cleanVPA.includes('bharatpe')) return 'BharatPe';
-    if (cleanVPA.includes('phonepe')) return 'PhonePe';
-    if (cleanVPA.includes('googlepay') || cleanVPA.includes('gpay')) return 'Google Pay';
+    if (cleanVPA.includes("paytm")) return "Paytm";
+    if (cleanVPA.includes("bharatpe")) return "BharatPe";
+    if (cleanVPA.includes("phonepe")) return "PhonePe";
+    if (cleanVPA.includes("googlepay") || cleanVPA.includes("gpay")) return "Google Pay";
 
     // Food delivery
-    if (cleanVPA.includes('swiggy')) return 'Swiggy';
-    if (cleanVPA.includes('zomato')) return 'Zomato';
+    if (cleanVPA.includes("swiggy")) return "Swiggy";
+    if (cleanVPA.includes("zomato")) return "Zomato";
 
     // Entertainment
-    if (cleanVPA.includes('netflix')) return 'Netflix';
-    if (cleanVPA.includes('spotify')) return 'Spotify';
-    if (cleanVPA.includes('hotstar') || cleanVPA.includes('disney')) return 'Disney+ Hotstar';
-    if (cleanVPA.includes('prime')) return 'Amazon Prime';
-    if (cleanVPA.includes('pvr') || cleanVPA.includes('inox')) return 'PVR Inox';
-    if (cleanVPA.includes('bookmyshow') || cleanVPA.includes('bms')) return 'BookMyShow';
+    if (cleanVPA.includes("netflix")) return "Netflix";
+    if (cleanVPA.includes("spotify")) return "Spotify";
+    if (cleanVPA.includes("hotstar") || cleanVPA.includes("disney")) return "Disney+ Hotstar";
+    if (cleanVPA.includes("prime")) return "Amazon Prime";
+    if (cleanVPA.includes("pvr") || cleanVPA.includes("inox")) return "PVR Inox";
+    if (cleanVPA.includes("bookmyshow") || cleanVPA.includes("bms")) return "BookMyShow";
 
     // Telecom
-    if (cleanVPA.includes('jio')) return 'Jio';
-    if (cleanVPA.includes('airtel')) return 'Airtel';
-    if (cleanVPA.includes('vodafone') || cleanVPA.includes('vi')) return 'Vi';
-    if (cleanVPA.includes('bsnl')) return 'BSNL';
+    if (cleanVPA.includes("jio")) return "Jio";
+    if (cleanVPA.includes("airtel")) return "Airtel";
+    if (cleanVPA.includes("vodafone") || cleanVPA.includes("vi")) return "Vi";
+    if (cleanVPA.includes("bsnl")) return "BSNL";
 
     // Travel
-    if (cleanVPA.includes('irctc')) return 'IRCTC';
-    if (cleanVPA.includes('redbus')) return 'RedBus';
-    if (cleanVPA.includes('makemytrip') || cleanVPA.includes('mmt')) return 'MakeMyTrip';
-    if (cleanVPA.includes('goibibo')) return 'Goibibo';
-    if (cleanVPA.includes('oyo')) return 'OYO';
-    if (cleanVPA.includes('airbnb')) return 'Airbnb';
+    if (cleanVPA.includes("irctc")) return "IRCTC";
+    if (cleanVPA.includes("redbus")) return "RedBus";
+    if (cleanVPA.includes("makemytrip") || cleanVPA.includes("mmt")) return "MakeMyTrip";
+    if (cleanVPA.includes("goibibo")) return "Goibibo";
+    if (cleanVPA.includes("oyo")) return "OYO";
+    if (cleanVPA.includes("airbnb")) return "Airbnb";
 
     // Payment gateways
-    if (
-      cleanVPA.includes('razorpay') ||
-      cleanVPA.includes('razorp') ||
-      cleanVPA.includes('rzp')
-    ) {
-      if (cleanVPA.includes('pvr')) return 'PVR';
-      if (cleanVPA.includes('inox')) return 'PVR Inox';
-      if (cleanVPA.includes('swiggy')) return 'Swiggy';
-      if (cleanVPA.includes('zomato')) return 'Zomato';
-      return 'Online Payment';
+    if (cleanVPA.includes("razorpay") || cleanVPA.includes("razorp") || cleanVPA.includes("rzp")) {
+      if (cleanVPA.includes("pvr")) return "PVR";
+      if (cleanVPA.includes("inox")) return "PVR Inox";
+      if (cleanVPA.includes("swiggy")) return "Swiggy";
+      if (cleanVPA.includes("zomato")) return "Zomato";
+      return "Online Payment";
     }
-    if (
-      cleanVPA.includes('payu') ||
-      cleanVPA.includes('billdesk') ||
-      cleanVPA.includes('ccavenue')
-    ) return 'Online Payment';
+    if (cleanVPA.includes("payu") || cleanVPA.includes("billdesk") || cleanVPA.includes("ccavenue"))
+      return "Online Payment";
 
     // Individual transfers
-    if (/^\d+$/.test(cleanVPA)) return 'Individual';
+    if (/^\d+$/.test(cleanVPA)) return "Individual";
 
     return vpa.trim();
   }
@@ -314,9 +314,9 @@ export class FederalBankParser extends BankParser {
 
     // Skip OTP and promotional messages
     if (
-      lower.includes('otp') ||
-      lower.includes('one time password') ||
-      lower.includes('verification code')
+      lower.includes("otp") ||
+      lower.includes("one time password") ||
+      lower.includes("verification code")
     ) {
       return false;
     }
@@ -328,19 +328,19 @@ export class FederalBankParser extends BankParser {
 
     // Federal Bank specific transaction keywords
     const federalKeywords = [
-      'sent via upi',
-      'debited via upi',
-      'credited',
-      'withdrawn',
-      'received',
-      'transferred',
-      'spent on your credit card',
-      'credit card was successful',
-      'payment of',
-      'payment via e-mandate',
+      "sent via upi",
+      "debited via upi",
+      "credited",
+      "withdrawn",
+      "received",
+      "transferred",
+      "spent on your credit card",
+      "credit card was successful",
+      "payment of",
+      "payment via e-mandate",
     ];
 
-    if (federalKeywords.some(kw => lower.includes(kw))) {
+    if (federalKeywords.some((kw) => lower.includes(kw))) {
       return true;
     }
 
@@ -374,27 +374,29 @@ export class FederalBankParser extends BankParser {
     // Credit card transactions
     if (
       this.detectIsCreditCard(message) &&
-      (lower.includes('spent') || (lower.includes('txn') && lower.includes('successful')))
-    ) return 'CREDIT';
+      (lower.includes("spent") || (lower.includes("txn") && lower.includes("successful")))
+    )
+      return "CREDIT";
 
     // E-mandate payments (only successful ones)
     if (
-      (lower.includes('e-mandate') || lower.includes('payment of')) &&
-      lower.includes('processed successfully')
-    ) return 'EXPENSE';
+      (lower.includes("e-mandate") || lower.includes("payment of")) &&
+      lower.includes("processed successfully")
+    )
+      return "EXPENSE";
 
     // Expense keywords
-    if (lower.includes('sent via upi')) return 'EXPENSE';
-    if (lower.includes('debited')) return 'EXPENSE';
-    if (lower.includes('withdrawn')) return 'EXPENSE';
-    if (lower.includes('spent') && !this.detectIsCreditCard(message)) return 'EXPENSE';
-    if (lower.includes('paid')) return 'EXPENSE';
+    if (lower.includes("sent via upi")) return "EXPENSE";
+    if (lower.includes("debited")) return "EXPENSE";
+    if (lower.includes("withdrawn")) return "EXPENSE";
+    if (lower.includes("spent") && !this.detectIsCreditCard(message)) return "EXPENSE";
+    if (lower.includes("paid")) return "EXPENSE";
 
     // Income keywords
-    if (lower.includes('credited')) return 'INCOME';
-    if (lower.includes('received')) return 'INCOME';
-    if (lower.includes('deposited')) return 'INCOME';
-    if (lower.includes('refund')) return 'INCOME';
+    if (lower.includes("credited")) return "INCOME";
+    if (lower.includes("received")) return "INCOME";
+    if (lower.includes("deposited")) return "INCOME";
+    if (lower.includes("refund")) return "INCOME";
 
     return super.extractTransactionType(message);
   }
@@ -402,27 +404,27 @@ export class FederalBankParser extends BankParser {
   isMandateCreationNotification(message: string): boolean {
     const lower = message.toLowerCase();
     return (
-      (lower.includes('mandate') || lower.includes('e-mandate')) &&
-      (lower.includes('successfully created a mandate') ||
-        lower.includes('you have successfully created') ||
-        lower.includes('successfully created') ||
-        lower.includes('has been initiated') ||
-        lower.includes('registration has been initiated'))
+      (lower.includes("mandate") || lower.includes("e-mandate")) &&
+      (lower.includes("successfully created a mandate") ||
+        lower.includes("you have successfully created") ||
+        lower.includes("successfully created") ||
+        lower.includes("has been initiated") ||
+        lower.includes("registration has been initiated"))
     );
   }
 
   isDeclinedMandatePayment(message: string): boolean {
     const lower = message.toLowerCase();
     return (
-      (lower.includes('e-mandate') || lower.includes('payment of')) &&
-      lower.includes('declined')
+      (lower.includes("e-mandate") || lower.includes("payment of")) && lower.includes("declined")
     );
   }
 
   parseEMandateSubscription(message: string): MandateInfo | null {
     if (!this.isMandateCreationNotification(message)) return null;
 
-    const amountMatch = /(?:for\s+a\s+)?maximum\s+amount\s+of\s+Rs\.?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)/i.exec(message);
+    const amountMatch =
+      /(?:for\s+a\s+)?maximum\s+amount\s+of\s+Rs\.?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)/i.exec(message);
     if (!amountMatch?.[1]) return null;
     const amount = parseNum(amountMatch[1]);
     if (amount === null) return null;
@@ -430,10 +432,11 @@ export class FederalBankParser extends BankParser {
     const dateMatch = /starting\s+from\s+(\d{2}-\d{2}-\d{4})/i.exec(message);
     const startDate = dateMatch?.[1] ?? null;
 
-    const merchantMatch = /(?:created\s+a\s+mandate\s+on|mandate\s+on)\s+([^.\n]+?)(?:\s+for|\s*$)/i.exec(message);
+    const merchantMatch =
+      /(?:created\s+a\s+mandate\s+on|mandate\s+on)\s+([^.\n]+?)(?:\s+for|\s*$)/i.exec(message);
     const merchant = merchantMatch?.[1]
       ? this.cleanMerchantName(merchantMatch[1].trim())
-      : 'Unknown Subscription';
+      : "Unknown Subscription";
 
     const umnMatch = /Mandate\s+Ref\s+No-?\s*([^.\s]+)/i.exec(message);
     const umn = umnMatch?.[1] ?? null;
@@ -443,13 +446,13 @@ export class FederalBankParser extends BankParser {
       nextDeductionDate: startDate,
       merchant,
       umn,
-      dateFormat: 'dd-MM-yyyy',
+      dateFormat: "dd-MM-yyyy",
     };
   }
 
   parseFutureDebit(message: string): MandateInfo | null {
     const lower = message.toLowerCase();
-    if (!lower.includes('payment due') || !lower.includes('will be processed')) return null;
+    if (!lower.includes("payment due") || !lower.includes("will be processed")) return null;
 
     const amountMatch = /INR\s+(\d+(?:,\d{3})*(?:\.\d{2})?)/i.exec(message);
     if (!amountMatch?.[1]) return null;
@@ -461,10 +464,10 @@ export class FederalBankParser extends BankParser {
     if (dateMatch?.[1]) {
       const dateStr = dateMatch[1];
       try {
-        const parts = dateStr.split('/');
+        const parts = dateStr.split("/");
         if (parts.length === 3) {
-          const year = parts[2] ?? '';
-          dueDate = `${parts[0] ?? ''}/${parts[1] ?? ''}/${year.slice(-2)}`;
+          const year = parts[2] ?? "";
+          dueDate = `${parts[0] ?? ""}/${parts[1] ?? ""}/${year.slice(-2)}`;
         } else {
           dueDate = dateStr;
         }
@@ -476,14 +479,14 @@ export class FederalBankParser extends BankParser {
     const merchantMatch = /for\s+([^.\n]+?)\s*,\s*INR/i.exec(message);
     const merchant = merchantMatch?.[1]
       ? this.cleanMerchantName(merchantMatch[1].trim())
-      : 'Unknown Subscription';
+      : "Unknown Subscription";
 
     return {
       amount,
       nextDeductionDate: dueDate,
       merchant,
       umn: null,
-      dateFormat: 'dd-MM-yyyy',
+      dateFormat: "dd-MM-yyyy",
     };
   }
 

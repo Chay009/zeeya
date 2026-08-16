@@ -1,54 +1,64 @@
 // Exact 1:1 port of SouthIndianBankParser.kt from Cashiro parser-core
-import { BankParser } from '../base-parser.js';
-import type { TransactionType } from '../types.js';
+import { BankParser } from "../base-parser.js";
+import type { TransactionType } from "../types.js";
 
 function parseNum(str: string): number | null {
-  const n = parseFloat(str.replace(/,/g, ''));
+  const n = parseFloat(str.replace(/,/g, ""));
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 export class SouthIndianBankParser extends BankParser {
   getBankName(): string {
-    return 'South Indian Bank';
+    return "South Indian Bank";
   }
 
   canHandle(sender: string): boolean {
     const u = sender.toUpperCase();
     const sibSenders = new Set([
-      'SIBSMS',
-      'AD-SIBSMS',
-      'CP-SIBSMS',
-      'SIBSMS-S',
-      'AD-SIBSMS-S',
-      'CP-SIBSMS-S',
-      'SOUTHINDIANBANK',
-      'SIBBANK',
+      "SIBSMS",
+      "AD-SIBSMS",
+      "CP-SIBSMS",
+      "SIBSMS-S",
+      "AD-SIBSMS-S",
+      "CP-SIBSMS-S",
+      "SOUTHINDIANBANK",
+      "SIBBANK",
     ]);
     if (sibSenders.has(u)) return true;
-    if (u.includes('SIBSMS')) return true;
-    if (u.includes('SIBBANK')) return true;
-    return u.startsWith('AD-SIB') || u.startsWith('CP-SIB') || u.startsWith('VM-SIB');
+    if (u.includes("SIBSMS")) return true;
+    if (u.includes("SIBBANK")) return true;
+    return u.startsWith("AD-SIB") || u.startsWith("CP-SIB") || u.startsWith("VM-SIB");
   }
 
   protected override isTransactionMessage(message: string): boolean {
     const lower = message.toLowerCase();
     // Skip OTP and promotional messages
     if (
-      lower.includes('otp') ||
-      lower.includes('one time password') ||
-      lower.includes('verification code') ||
-      lower.includes('offer') ||
-      lower.includes('discount')
-    ) return false;
+      lower.includes("otp") ||
+      lower.includes("one time password") ||
+      lower.includes("verification code") ||
+      lower.includes("offer") ||
+      lower.includes("discount")
+    )
+      return false;
     // Skip UPI auto-pay scheduled reminders
-    if (lower.includes('upi auto pay') && lower.includes('is scheduled on')) return false;
+    if (lower.includes("upi auto pay") && lower.includes("is scheduled on")) return false;
     // Check for transaction keywords (broader than base class: 'debit' not just 'debited', plus 'upi' etc.)
     const keywords = [
-      'debit', 'credit', 'withdrawn', 'deposited',
-      'spent', 'received', 'transferred', 'paid',
-      'purchase', 'refund', 'cashback', 'upi',
+      "debit",
+      "credit",
+      "withdrawn",
+      "deposited",
+      "spent",
+      "received",
+      "transferred",
+      "paid",
+      "purchase",
+      "refund",
+      "cashback",
+      "upi",
     ];
-    return keywords.some(kw => lower.includes(kw));
+    return keywords.some((kw) => lower.includes(kw));
   }
 
   protected override extractAmount(message: string): number | null {
@@ -62,18 +72,18 @@ export class SouthIndianBankParser extends BankParser {
 
   protected override extractTransactionType(message: string): TransactionType | null {
     const lower = message.toLowerCase();
-    if (lower.includes('debit')) return 'EXPENSE';
-    if (lower.includes('withdrawn')) return 'EXPENSE';
-    if (lower.includes('spent')) return 'EXPENSE';
-    if (lower.includes('purchase')) return 'EXPENSE';
-    if (lower.includes('paid')) return 'EXPENSE';
-    if (lower.includes('transfer to')) return 'EXPENSE';
-    if (lower.includes('credit')) return 'INCOME';
-    if (lower.includes('deposited')) return 'INCOME';
-    if (lower.includes('received')) return 'INCOME';
-    if (lower.includes('refund')) return 'INCOME';
-    if (lower.includes('transfer from')) return 'INCOME';
-    if (lower.includes('cashback')) return 'INCOME';
+    if (lower.includes("debit")) return "EXPENSE";
+    if (lower.includes("withdrawn")) return "EXPENSE";
+    if (lower.includes("spent")) return "EXPENSE";
+    if (lower.includes("purchase")) return "EXPENSE";
+    if (lower.includes("paid")) return "EXPENSE";
+    if (lower.includes("transfer to")) return "EXPENSE";
+    if (lower.includes("credit")) return "INCOME";
+    if (lower.includes("deposited")) return "INCOME";
+    if (lower.includes("received")) return "INCOME";
+    if (lower.includes("refund")) return "INCOME";
+    if (lower.includes("transfer from")) return "INCOME";
+    if (lower.includes("cashback")) return "INCOME";
     return null;
   }
 
@@ -81,7 +91,7 @@ export class SouthIndianBankParser extends BankParser {
     const lower = message.toLowerCase();
 
     // For IMPS transactions — "Info: IMPS/FDRL/REF/MERCHANT." format
-    if (lower.includes('imps') && /info:/i.test(message)) {
+    if (lower.includes("imps") && /info:/i.test(message)) {
       const m = /Info:\s*IMPS\/[^/]+\/[^/]+\/([^.]+)/i.exec(message);
       if (m?.[1]) {
         const merchant = m[1].trim();
@@ -90,7 +100,7 @@ export class SouthIndianBankParser extends BankParser {
     }
 
     // For UPI transactions
-    if (lower.includes('upi')) {
+    if (lower.includes("upi")) {
       // "Info:UPI/IPOS/number/MERCHANT NAME on" format
       const infoM = /Info:UPI\/[^/]+\/[^/]+\/([^/]+?)\s+on/i.exec(message);
       if (infoM?.[1]) {
@@ -107,21 +117,24 @@ export class SouthIndianBankParser extends BankParser {
       }
 
       // "from merchant@upi" pattern for incoming credits
-      if (lower.includes('credit')) {
+      if (lower.includes("credit")) {
         const fromM = /from\s+([^,\s]+@[^\s,]+)/i.exec(prefix);
         if (fromM?.[1]) {
           const merchant = fromM[1].trim();
           if (merchant.length > 0) return this.cleanMerchantName(merchant);
         }
-        return 'UPI Credit';
+        return "UPI Credit";
       }
 
-      return 'UPI Transaction';
+      return "UPI Transaction";
     }
 
     // For non-UPI debit/credit — "DEBIT:Rs.983.75 MERCHANT NAME Bal:..." format
-    if ((lower.includes('debit') || lower.includes('credit')) && !lower.includes('upi')) {
-      const m = /(?:DEBIT|CREDIT)[:\s]*Rs\.?\s*[0-9,]+(?:\.\d{2})?\s+([A-Z\s]+?)\s+(?:Bal|Available)/i.exec(message);
+    if ((lower.includes("debit") || lower.includes("credit")) && !lower.includes("upi")) {
+      const m =
+        /(?:DEBIT|CREDIT)[:\s]*Rs\.?\s*[0-9,]+(?:\.\d{2})?\s+([A-Z\s]+?)\s+(?:Bal|Available)/i.exec(
+          message,
+        );
       if (m?.[1]) {
         const merchant = m[1].trim();
         if (merchant.length > 2) return this.cleanMerchantName(merchant);
@@ -129,12 +142,12 @@ export class SouthIndianBankParser extends BankParser {
     }
 
     // ATM withdrawals
-    if (lower.includes('atm') || lower.includes('withdrawn')) {
-      return 'ATM';
+    if (lower.includes("atm") || lower.includes("withdrawn")) {
+      return "ATM";
     }
 
     // Card transactions — try to extract merchant after "at"
-    if (lower.includes('card')) {
+    if (lower.includes("card")) {
       const m = /at\s+([^,\n]+?)(?:\s+on|\s*,|$)/i.exec(message);
       if (m?.[1]) {
         const merchant = m[1].trim();
@@ -147,7 +160,7 @@ export class SouthIndianBankParser extends BankParser {
 
   protected override extractReference(message: string): string | null {
     // IMPS reference in "Info: IMPS/BANK/REF/MERCHANT" format
-    if (message.toLowerCase().includes('imps') && /info:/i.test(message)) {
+    if (message.toLowerCase().includes("imps") && /info:/i.test(message)) {
       const m = /Info:\s*IMPS\/[^/]+\/([^/]+)\//i.exec(message);
       if (m?.[1]) {
         const ref = m[1].trim();

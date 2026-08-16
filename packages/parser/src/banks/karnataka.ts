@@ -1,32 +1,32 @@
 // Exact 1:1 port of KarnatakaBankParser.kt from Cashiro parser-core
-import { BankParser } from '../base-parser.js';
+import { BankParser } from "../base-parser.js";
 
 function parseNum(str: string): number | null {
-  const n = parseFloat(str.replace(/,/g, ''));
+  const n = parseFloat(str.replace(/,/g, ""));
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 export class KarnatakaBankParser extends BankParser {
   getBankName(): string {
-    return 'Karnataka Bank';
+    return "Karnataka Bank";
   }
 
   canHandle(sender: string): boolean {
     const u = sender.toUpperCase();
     return (
-      u.includes('KARNATAKA BANK') ||
-      u.includes('KARNATAKABANK') ||
-      u.includes('KBLBNK') ||
-      u.includes('KTKBANK') ||
-      u.includes('KARBANK') ||
+      u.includes("KARNATAKA BANK") ||
+      u.includes("KARNATAKABANK") ||
+      u.includes("KBLBNK") ||
+      u.includes("KTKBANK") ||
+      u.includes("KARBANK") ||
       // DLT patterns for transactions (-S suffix)
       /^[A-Z]{2}-KBLBNK-S$/.test(u) ||
       /^[A-Z]{2}-KARBANK-S$/.test(u) ||
       // Legacy patterns
       /^[A-Z]{2}-KBLBNK$/.test(u) ||
       // Direct sender IDs
-      u === 'KBLBNK' ||
-      u === 'KARBANK'
+      u === "KBLBNK" ||
+      u === "KARBANK"
     );
   }
 
@@ -65,8 +65,8 @@ export class KarnatakaBankParser extends BankParser {
 
     // Pattern 3: Check for specific transaction types
     const lowerMessage = message.toLowerCase();
-    if (lowerMessage.includes('lic of india')) return 'LIC of India';
-    if (lowerMessage.includes('upi') && fromMatch === null) return 'UPI Transaction';
+    if (lowerMessage.includes("lic of india")) return "LIC of India";
+    if (lowerMessage.includes("upi") && fromMatch === null) return "UPI Transaction";
 
     return super.extractMerchant(message, sender);
   }

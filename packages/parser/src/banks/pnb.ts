@@ -1,36 +1,38 @@
 // Exact 1:1 port of PNBBankParser.kt from Cashiro parser-core
-import { BankParser } from '../base-parser.js';
-import type { ParsedTransaction, TransactionType } from '../types.js';
+import { BankParser } from "../base-parser.js";
+import type { ParsedTransaction, TransactionType } from "../types.js";
 
 export class PNBBankParser extends BankParser {
   getBankName(): string {
-    return 'Punjab National Bank';
+    return "Punjab National Bank";
   }
 
   canHandle(sender: string): boolean {
     const u = sender.toUpperCase();
     return (
-      u.includes('PUNJAB NATIONAL BANK') ||
-      u.includes('PNBBNK') ||
-      u.includes('PUNBN') ||
-      u.includes('PNBSMS') ||
+      u.includes("PUNJAB NATIONAL BANK") ||
+      u.includes("PNBBNK") ||
+      u.includes("PUNBN") ||
+      u.includes("PNBSMS") ||
       /^[A-Z]{2}-PNBBNK-S$/.test(u) ||
       /^[A-Z]{2}-PNB-S$/.test(u) ||
       /^[A-Z]{2}-PNBBNK$/.test(u) ||
       /^[A-Z]{2}-PNB$/.test(u) ||
-      u === 'PNBBNK' ||
-      u === 'PNB'
+      u === "PNBBNK" ||
+      u === "PNB"
     );
   }
 
   private normalizeUnicodeText(text: string): string {
-    return text
-      .normalize('NFKD')
-      // Control-char range (0x00-0x1F) is intentional here — this strips
-      // any non-ASCII byte, control characters included, while keeping the
-      // real-world currency symbols banks actually send.
-      // oxlint-disable-next-line no-control-regex
-      .replace(/[^\x00-\x7F₹$€£¥]/g, '');
+    return (
+      text
+        .normalize("NFKD")
+        // Control-char range (0x00-0x1F) is intentional here — this strips
+        // any non-ASCII byte, control characters included, while keeping the
+        // real-world currency symbols banks actually send.
+        // oxlint-disable-next-line no-control-regex
+        .replace(/[^\x00-\x7F₹$€£¥]/g, "")
+    );
   }
 
   override parse(smsBody: string, sender: string, timestamp: number): ParsedTransaction | null {
@@ -47,16 +49,19 @@ export class PNBBankParser extends BankParser {
     for (const pattern of patterns) {
       const m = pattern.exec(message);
       if (m?.[1]) {
-        const val = parseFloat(m[1].replace(/,/g, ''));
+        const val = parseFloat(m[1].replace(/,/g, ""));
         if (!isNaN(val)) return val;
       }
     }
 
-    const creditMatch = /(?:(?:Rs\.?|INR)\s*([0-9,]+(?:\.\d{2})?)\s+(?:has\s+been\s+)?credited|credited\s+(?:with\s+)?(?:Rs\.?|INR)\s*([0-9,]+(?:\.\d{2})?))/i.exec(message);
+    const creditMatch =
+      /(?:(?:Rs\.?|INR)\s*([0-9,]+(?:\.\d{2})?)\s+(?:has\s+been\s+)?credited|credited\s+(?:with\s+)?(?:Rs\.?|INR)\s*([0-9,]+(?:\.\d{2})?))/i.exec(
+        message,
+      );
     if (creditMatch) {
       const str = creditMatch[1] || creditMatch[2];
       if (str) {
-        const val = parseFloat(str.replace(/,/g, ''));
+        const val = parseFloat(str.replace(/,/g, ""));
         if (!isNaN(val)) return val;
       }
     }
@@ -66,12 +71,13 @@ export class PNBBankParser extends BankParser {
 
   protected override extractTransactionType(message: string): TransactionType | null {
     const lower = message.toLowerCase();
-    if (lower.includes('auto pay facility') || lower.includes('upi-mandate')) return 'EXPENSE';
+    if (lower.includes("auto pay facility") || lower.includes("upi-mandate")) return "EXPENSE";
     return super.extractTransactionType(message);
   }
 
   protected override extractMerchant(message: string, sender: string): string | null {
-    const fromAutoPayMatch = /auto\s+pay.*?activated.*?from\s+([^.]+?)(?:\s+An\s+initial|\.|$)/i.exec(message);
+    const fromAutoPayMatch =
+      /auto\s+pay.*?activated.*?from\s+([^.]+?)(?:\s+An\s+initial|\.|$)/i.exec(message);
     if (fromAutoPayMatch?.[1]) return fromAutoPayMatch[1].trim();
 
     const towardsMatch = /UPI-Mandate.*towards\s+([^\s]+)\s+for/i.exec(message);
@@ -86,9 +92,9 @@ export class PNBBankParser extends BankParser {
       if (this.isValidMerchantName(m)) return m;
     }
 
-    if (message.includes('PNB ATM')) return 'PNB ATM Withdrawal';
-    if (message.includes('NEFT')) return 'NEFT Transfer';
-    if (message.includes('UPI')) return 'UPI Transaction';
+    if (message.includes("PNB ATM")) return "PNB ATM Withdrawal";
+    if (message.includes("NEFT")) return "NEFT Transfer";
+    if (message.includes("UPI")) return "UPI Transaction";
 
     return super.extractMerchant(message, sender);
   }
@@ -110,15 +116,18 @@ export class PNBBankParser extends BankParser {
   }
 
   protected override extractBalance(message: string): number | null {
-    const m1 = /(?:Aval\s+Bal|Avl\s+Bal|Bal)\s*(?:INR\s*|Rs\.?\s*)?([0-9,]+(?:\.\d{2})?)(?:\s+(?:CR|DR))?/i.exec(message);
+    const m1 =
+      /(?:Aval\s+Bal|Avl\s+Bal|Bal)\s*(?:INR\s*|Rs\.?\s*)?([0-9,]+(?:\.\d{2})?)(?:\s+(?:CR|DR))?/i.exec(
+        message,
+      );
     if (m1?.[1]) {
-      const val = parseFloat(m1[1].replace(/,/g, ''));
+      const val = parseFloat(m1[1].replace(/,/g, ""));
       if (!isNaN(val)) return val;
     }
 
     const m2 = /Bal\s*([0-9,]+(?:\.\d{2})?)\s+(?:CR|DR)/i.exec(message);
     if (m2?.[1]) {
-      const val = parseFloat(m2[1].replace(/,/g, ''));
+      const val = parseFloat(m2[1].replace(/,/g, ""));
       if (!isNaN(val)) return val;
     }
 
@@ -127,9 +136,9 @@ export class PNBBankParser extends BankParser {
 
   protected override isTransactionMessage(message: string): boolean {
     const lower = message.toLowerCase();
-    if (lower.includes('auto pay facility') && lower.includes('debited')) return true;
-    if (lower.includes('upi-mandate') && lower.includes('successfully created')) return true;
-    if (lower.includes('register for e-statement')) return true;
+    if (lower.includes("auto pay facility") && lower.includes("debited")) return true;
+    if (lower.includes("upi-mandate") && lower.includes("successfully created")) return true;
+    if (lower.includes("register for e-statement")) return true;
     return super.isTransactionMessage(message);
   }
 }

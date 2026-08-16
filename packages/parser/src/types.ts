@@ -1,12 +1,12 @@
-import { createHash } from 'node:crypto';
+import { createHash } from "node:crypto";
 
 export type TransactionType =
-  | 'INCOME'
-  | 'EXPENSE'
-  | 'CREDIT'
-  | 'TRANSFER'
-  | 'INVESTMENT'
-  | 'BALANCE_UPDATE';
+  | "INCOME"
+  | "EXPENSE"
+  | "CREDIT"
+  | "TRANSFER"
+  | "INVESTMENT"
+  | "BALANCE_UPDATE";
 
 export interface ParsedTransaction {
   amount: number;
@@ -53,10 +53,7 @@ export type ParseResult = ParsedTransaction | null;
 
 export function generateTransactionId(tx: ParsedTransaction): string {
   const normalizedAmount = tx.amount.toFixed(2);
-  const smsBodyHash = createHash('sha256')
-    .update(tx.smsBody)
-    .digest('hex')
-    .slice(0, 16);
+  const smsBodyHash = createHash("sha256").update(tx.smsBody).digest("hex").slice(0, 16);
   const data = `${tx.sender}|${normalizedAmount}|${smsBodyHash}`;
-  return createHash('sha256').update(data).digest('hex');
+  return createHash("sha256").update(data).digest("hex");
 }

@@ -1,8 +1,8 @@
-import type { SeedData } from './types';
+import type { SeedData } from "./types";
 
-const P1 = /\{([^}]*)\}(.*)/;   // {N:types}restToken
-const P2 = /(.*)<(.*)>(.*)/;    // token<multiplier>rest
-const P3 = /(.*)\[(.*)\]/;      // token[tag,...]
+const P1 = /\{([^}]*)\}(.*)/; // {N:types}restToken
+const P2 = /(.*)<(.*)>(.*)/; // token<multiplier>rest
+const P3 = /(.*)\[(.*)\]/; // token[tag,...]
 
 export interface GrammarEntry {
   skipCount: number;
@@ -17,24 +17,31 @@ export interface CompiledLayer {
   pairMap: Map<string, GrammarEntry>;
 }
 
-function parseResultKey(key: string): { type: string; attrs: Record<string, string>; multiplier: number } {
+function parseResultKey(key: string): {
+  type: string;
+  attrs: Record<string, string>;
+  multiplier: number;
+} {
   let s = key;
   let multiplier = 1;
   const m2 = P2.exec(s);
-  if (m2) { s = ((m2[1] ?? '') + (m2[3] ?? '')).trim(); multiplier = Number(m2[2]) || 1; }
+  if (m2) {
+    s = ((m2[1] ?? "") + (m2[3] ?? "")).trim();
+    multiplier = Number(m2[2]) || 1;
+  }
   const m3 = P3.exec(s);
   const attrs: Record<string, string> = {};
   if (m3) {
-    s = (m3[1] ?? '').trim();
-    for (const attr of (m3[2] ?? '').split(',')) {
+    s = (m3[1] ?? "").trim();
+    for (const attr of (m3[2] ?? "").split(",")) {
       const trimmed = attr.trim();
       if (!trimmed) continue;
-      const eq = trimmed.indexOf('=');
+      const eq = trimmed.indexOf("=");
       if (eq !== -1) {
         attrs[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
       } else {
         // positional tag like [trx] or [bal] — store as _tag
-        attrs['_tag'] = trimmed;
+        attrs["_tag"] = trimmed;
       }
     }
   }
@@ -47,29 +54,37 @@ export function compileLayer(grmrLayer: Record<string, string>): CompiledLayer {
   for (const [resultKey, rulesStr] of Object.entries(grmrLayer)) {
     const { type: resultType, attrs, multiplier } = parseResultKey(resultKey);
 
-    for (const rule of rulesStr.split(',')) {
+    for (const rule of rulesStr.split(",")) {
       const parts = rule.trim().split(/\s+/).filter(Boolean);
       if (parts.length < 2) continue;
 
-      let prev = '';
+      let prev = "";
       let i = 0;
 
       while (i < parts.length) {
-        const part = parts[i] ?? '';
+        const part = parts[i] ?? "";
 
-        if (part.startsWith('{')) {
+        if (part.startsWith("{")) {
           const m = P1.exec(part);
-          if (!m) { i++; continue; }
-          const skipSpec = m[1] ?? '';
-          const nextToken = m[2] ?? '';
+          if (!m) {
+            i++;
+            continue;
+          }
+          const skipSpec = m[1] ?? "";
+          const nextToken = m[2] ?? "";
 
-          const colonIdx = skipSpec.indexOf(':');
+          const colonIdx = skipSpec.indexOf(":");
           let skipCount = 0;
           let types: string[] | null = null;
           if (colonIdx !== -1) {
             skipCount = parseInt(skipSpec.slice(0, colonIdx), 10) || 0;
             const typeStr = skipSpec.slice(colonIdx + 1);
-            types = typeStr ? typeStr.split(';').map(t => t.trim()).filter(Boolean) : null;
+            types = typeStr
+              ? typeStr
+                  .split(";")
+                  .map((t) => t.trim())
+                  .filter(Boolean)
+              : null;
           } else {
             skipCount = parseInt(skipSpec, 10) || 0;
           }
@@ -86,7 +101,13 @@ export function compileLayer(grmrLayer: Record<string, string>): CompiledLayer {
           if (prev) {
             const mapKey = `${prev}-${part}`;
             if (!pairMap.has(mapKey)) {
-              pairMap.set(mapKey, { skipCount: 0, types: null, resultType, resultAttrs: attrs, multiplier });
+              pairMap.set(mapKey, {
+                skipCount: 0,
+                types: null,
+                resultType,
+                resultAttrs: attrs,
+                multiplier,
+              });
             }
           }
           prev = part;
@@ -103,14 +124,20 @@ export function compileLayer(grmrLayer: Record<string, string>): CompiledLayer {
 // These fill gaps in the base grammar without altering the seed's intent.
 const EXTRA_PAIRS: Array<[string, GrammarEntry]> = [
   // "A/c no. XX1234" — NO token between INS and INSTRNO/IDVAL
-  ['INS-INSTRNO', { skipCount: 1, types: null, resultType: 'INSTR', resultAttrs: { _tag: 'acc' }, multiplier: 1 }],
-  ['INS-IDVAL',   { skipCount: 1, types: null, resultType: 'INSTR', resultAttrs: { _tag: 'acc' }, multiplier: 1 }],
+  [
+    "INS-INSTRNO",
+    { skipCount: 1, types: null, resultType: "INSTR", resultAttrs: { _tag: "acc" }, multiplier: 1 },
+  ],
+  [
+    "INS-IDVAL",
+    { skipCount: 1, types: null, resultType: "INSTR", resultAttrs: { _tag: "acc" }, multiplier: 1 },
+  ],
 ];
 
 export function compileSeed(seed: SeedData, category: string): CompiledLayer[] {
   const grammarEntry = seed.GRAMMAR[category];
   if (!grammarEntry) return [];
-  const layers = grammarEntry.GRMR.map(layer => compileLayer(layer));
+  const layers = grammarEntry.GRMR.map((layer) => compileLayer(layer));
   // Augment layer 0 with extra pairs (only if not already defined by the seed grammar)
   if (layers[0]) {
     for (const [key, entry] of EXTRA_PAIRS) {

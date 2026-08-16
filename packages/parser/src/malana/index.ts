@@ -1,11 +1,20 @@
-import seeddataRaw from './data/seeddata.json';
-import { MalanaEngine } from './malana';
-import { parseSeedData } from './asset-schemas';
+import seeddataRaw from "./data/seeddata.json";
+import { MalanaEngine } from "./malana";
+import { parseSeedData } from "./asset-schemas";
 
-export { MalanaEngine } from './malana';
-export type { SeedData, MalanaResult, Token } from './types';
-export { detectBank, detectMerchantCategory, detectSubcategory, detectBrand, grammarForSender, detectUpiHandle, isMandateCancelled, extractMandateMerchant } from './enrichment';
-export type { BrandMatch } from './enrichment';
+export { MalanaEngine } from "./malana";
+export type { SeedData, MalanaResult, Token } from "./types";
+export {
+  detectBank,
+  detectMerchantCategory,
+  detectSubcategory,
+  detectBrand,
+  grammarForSender,
+  detectUpiHandle,
+  isMandateCancelled,
+  extractMandateMerchant,
+} from "./enrichment";
+export type { BrandMatch } from "./enrichment";
 
 // The compiled grammar/token/classifier seed pulled from the Truecaller APK
 // (resources/assets/malanaSeed/seeddata.json), bundled as a package asset so

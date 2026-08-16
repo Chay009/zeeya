@@ -1,24 +1,24 @@
 // Exact 1:1 port of CentralBankOfIndiaParser.kt from Cashiro parser-core
-import { BankParser } from '../base-parser.js';
-import type { TransactionType } from '../types.js';
+import { BankParser } from "../base-parser.js";
+import type { TransactionType } from "../types.js";
 
 function parseNum(str: string): number | null {
-  const n = parseFloat(str.replace(/,/g, ''));
+  const n = parseFloat(str.replace(/,/g, ""));
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 export class CentralBankOfIndiaParser extends BankParser {
   getBankName(): string {
-    return 'Central Bank of India';
+    return "Central Bank of India";
   }
 
   canHandle(sender: string): boolean {
     const u = sender.toUpperCase();
     return (
-      u.includes('CENTBK') ||
-      u.includes('CBOI') ||
-      u.includes('CENTRALBANK') ||
-      u.includes('CENTRAL') ||
+      u.includes("CENTBK") ||
+      u.includes("CBOI") ||
+      u.includes("CENTRALBANK") ||
+      u.includes("CENTRAL") ||
       /^[A-Z]{2}-CENTBK-[A-Z]$/.test(u) ||
       /^[A-Z]{2}-CBOI-[A-Z]$/.test(u)
     );
@@ -48,8 +48,8 @@ export class CentralBankOfIndiaParser extends BankParser {
     if (fromMatch?.[1]) {
       const merchant = fromMatch[1].trim();
       // Handle masked UPI IDs
-      if (merchant.toUpperCase().includes('X')) {
-        return 'UPI Transfer';
+      if (merchant.toUpperCase().includes("X")) {
+        return "UPI Transfer";
       }
       return this.cleanMerchantName(merchant);
     }
@@ -64,8 +64,8 @@ export class CentralBankOfIndiaParser extends BankParser {
     // Pattern 3: via UPI
     if (/via UPI/i.test(message)) {
       const lower = message.toLowerCase();
-      if (lower.includes('credited')) return 'UPI Credit';
-      if (lower.includes('debited')) return 'UPI Payment';
+      if (lower.includes("credited")) return "UPI Credit";
+      if (lower.includes("debited")) return "UPI Payment";
     }
 
     return super.extractMerchant(message, sender);
@@ -87,20 +87,20 @@ export class CentralBankOfIndiaParser extends BankParser {
     // Pattern 1: Total Bal Rs.0000.99 CR/DR
     const totalBalMatch = /Total\s+Bal\s+Rs\.?\s*([\d,]+(?:\.\d{2})?)\s+(CR|DR)/i.exec(message);
     if (totalBalMatch?.[1] && totalBalMatch?.[2]) {
-      const balStr = totalBalMatch[1].replace(/,/g, '');
+      const balStr = totalBalMatch[1].replace(/,/g, "");
       const val = parseFloat(balStr);
       if (!isNaN(val)) {
-        return totalBalMatch[2].toUpperCase() === 'DR' ? -val : val;
+        return totalBalMatch[2].toUpperCase() === "DR" ? -val : val;
       }
     }
 
     // Pattern 2: Clear Bal Rs.XXX CR/DR
     const clearBalMatch = /Clear\s+Bal\s+Rs\.?\s*([\d,]+(?:\.\d{2})?)\s+(CR|DR)/i.exec(message);
     if (clearBalMatch?.[1] && clearBalMatch?.[2]) {
-      const balStr = clearBalMatch[1].replace(/,/g, '');
+      const balStr = clearBalMatch[1].replace(/,/g, "");
       const val = parseFloat(balStr);
       if (!isNaN(val)) {
-        return clearBalMatch[2].toUpperCase() === 'DR' ? -val : val;
+        return clearBalMatch[2].toUpperCase() === "DR" ? -val : val;
       }
     }
 
@@ -116,12 +116,12 @@ export class CentralBankOfIndiaParser extends BankParser {
 
   protected override extractTransactionType(message: string): TransactionType | null {
     const lower = message.toLowerCase();
-    if (lower.includes('credited')) return 'INCOME';
-    if (lower.includes('deposited')) return 'INCOME';
-    if (lower.includes('received')) return 'INCOME';
-    if (lower.includes('debited')) return 'EXPENSE';
-    if (lower.includes('withdrawn')) return 'EXPENSE';
-    if (lower.includes('paid')) return 'EXPENSE';
+    if (lower.includes("credited")) return "INCOME";
+    if (lower.includes("deposited")) return "INCOME";
+    if (lower.includes("received")) return "INCOME";
+    if (lower.includes("debited")) return "EXPENSE";
+    if (lower.includes("withdrawn")) return "EXPENSE";
+    if (lower.includes("paid")) return "EXPENSE";
     return super.extractTransactionType(message);
   }
 
@@ -129,16 +129,13 @@ export class CentralBankOfIndiaParser extends BankParser {
     const lower = message.toLowerCase();
 
     // CBoI-specific: "credited by" or "debited by" combined with "bal"
-    if (
-      (lower.includes('credited by') || lower.includes('debited by')) &&
-      lower.includes('bal')
-    ) {
+    if ((lower.includes("credited by") || lower.includes("debited by")) && lower.includes("bal")) {
       return true;
     }
 
     // CBoI signature suffix
-    if (lower.includes('-cboi')) {
-      return lower.includes('credited') || lower.includes('debited');
+    if (lower.includes("-cboi")) {
+      return lower.includes("credited") || lower.includes("debited");
     }
 
     return super.isTransactionMessage(message);

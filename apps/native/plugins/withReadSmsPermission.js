@@ -12,9 +12,9 @@
 // PermissionsAndroid.request), and also puts the app in scope for Google
 // Play's SMS/Call Log permissions policy — apps requesting READ_SMS must
 // have it as a core, disclosed feature to pass Play Store review.
-const { AndroidConfig, withAndroidManifest } = require('expo/config-plugins');
+const { AndroidConfig, withAndroidManifest } = require("expo/config-plugins");
 
-const READ_SMS = 'android.permission.READ_SMS';
+const READ_SMS = "android.permission.READ_SMS";
 
 function withReadSmsPermission(config) {
   return withAndroidManifest(config, (config) => {

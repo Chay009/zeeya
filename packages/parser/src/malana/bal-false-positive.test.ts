@@ -14,25 +14,25 @@
  * trusted when the actual matched pair touches one of BAL[bal]'s own
  * balance-indicating token types, not just any amount+auxiliary-verb pair.
  */
-import { describe, it, expect } from 'vitest';
-import { MalanaEngine, deriveBalanceIndicatorTypes } from './malana.js';
-import { seedData } from './index.js';
+import { describe, it, expect } from "vitest";
+import { MalanaEngine, deriveBalanceIndicatorTypes } from "./malana.js";
+import { seedData } from "./index.js";
 
 const engine = new MalanaEngine(seedData);
 
-describe('bal false positive — amount+auxiliary-verb is not a balance statement', () => {
-  it('UPI mandate creation notice: amount is the mandate value, not a balance', () => {
+describe("bal false positive — amount+auxiliary-verb is not a balance statement", () => {
+  it("UPI mandate creation notice: amount is the mandate value, not a balance", () => {
     const r = engine.parse(
-      'Your UPI-Mandater for  Rs.1999.00   is successfully created towards OpenAI LLC for 1999.00 from A/c No.XXXXXX7521. UMN:c7969215595642979e8ed5da1152758e@axl -SBI',
-      'VA-SBIUPI-S',
+      "Your UPI-Mandater for  Rs.1999.00   is successfully created towards OpenAI LLC for 1999.00 from A/c No.XXXXXX7521. UMN:c7969215595642979e8ed5da1152758e@axl -SBI",
+      "VA-SBIUPI-S",
     );
     expect(r.bal).toBeNull();
   });
 
-  it('still recognizes a real balance statement', () => {
+  it("still recognizes a real balance statement", () => {
     const r = engine.parse(
-      'Your A/c XX1234 has been debited with Rs.500.00. Available Balance: Rs.4500.00',
-      'VM-TESTBK',
+      "Your A/c XX1234 has been debited with Rs.500.00. Available Balance: Rs.4500.00",
+      "VM-TESTBK",
     );
     expect(r.bal).not.toBeNull();
   });
@@ -43,17 +43,17 @@ describe('bal false positive — amount+auxiliary-verb is not a balance statemen
 // it turned out to already be incomplete (missed GRM_BANK's separate
 // INSUFFBAL[bal] rule, contributing "insufficient"). deriveBalanceIndicatorTypes
 // parses every [bal]-tagged rule in the real seed instead of hand-listing them.
-describe('deriveBalanceIndicatorTypes', () => {
+describe("deriveBalanceIndicatorTypes", () => {
   const derived = deriveBalanceIndicatorTypes(seedData);
 
-  it('includes every real semantic balance word from the seed', () => {
-    for (const type of ['BLNC', 'AVBL', 'BAL', 'CURR', 'TOTAL', 'CLRNC', 'INSUFF']) {
+  it("includes every real semantic balance word from the seed", () => {
+    for (const type of ["BLNC", "AVBL", "BAL", "CURR", "TOTAL", "CLRNC", "INSUFF"]) {
       expect(derived.has(type)).toBe(true);
     }
   });
 
-  it('excludes generic leaf-value and grammatical function-word types', () => {
-    for (const type of ['AMT', 'NUM', 'AUX']) {
+  it("excludes generic leaf-value and grammatical function-word types", () => {
+    for (const type of ["AMT", "NUM", "AUX"]) {
       expect(derived.has(type)).toBe(false);
     }
   });

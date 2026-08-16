@@ -1,46 +1,46 @@
 // 1:1 port of AMEXBankParser.kt from Cashiro parser-core
-import { BankParser } from '../base-parser.js';
-import type { ParsedTransaction, TransactionType } from '../types.js';
+import { BankParser } from "../base-parser.js";
+import type { ParsedTransaction, TransactionType } from "../types.js";
 
 export class AMEXBankParser extends BankParser {
   getBankName(): string {
-    return 'American Express';
+    return "American Express";
   }
 
   canHandle(sender: string): boolean {
     const u = sender.toUpperCase();
     return (
-      u.includes('AMEX') ||
-      u.includes('AMEXIN') ||
+      u.includes("AMEX") ||
+      u.includes("AMEXIN") ||
       /^[A-Z]{2}-AMEXIN-S$/.test(u) ||
       /^[A-Z]{2}-AMEX-S$/.test(u) ||
       /^[A-Z]{2}-AMEXIN-[TPG]$/.test(u) ||
       /^[A-Z]{2}-AMEX-[TPG]$/.test(u) ||
       /^[A-Z]{2}-AMEXIN$/.test(u) ||
       /^[A-Z]{2}-AMEX$/.test(u) ||
-      u === 'AMEXIN' ||
-      u === 'AMEX'
+      u === "AMEXIN" ||
+      u === "AMEX"
     );
   }
 
   override parse(smsBody: string, sender: string, timestamp: number): ParsedTransaction | null {
     const parsed = super.parse(smsBody, sender, timestamp);
     if (!parsed) return null;
-    return { ...parsed, type: 'CREDIT' as TransactionType };
+    return { ...parsed, type: "CREDIT" as TransactionType };
   }
 
   protected override extractAmount(message: string): number | null {
     // "You've spent INR 1,017.70 on"
     const spentMatch = /spent\s+INR\s+([0-9,]+(?:\.\d{2})?)\s+on/i.exec(message);
     if (spentMatch?.[1]) {
-      const val = parseFloat(spentMatch[1].replace(/,/g, ''));
+      const val = parseFloat(spentMatch[1].replace(/,/g, ""));
       if (isFinite(val)) return val;
     }
 
     // "INR 1,017.70 spent"
     const altMatch = /INR\s+([0-9,]+(?:\.\d{2})?)\s+spent/i.exec(message);
     if (altMatch?.[1]) {
-      const val = parseFloat(altMatch[1].replace(/,/g, ''));
+      const val = parseFloat(altMatch[1].replace(/,/g, ""));
       if (isFinite(val)) return val;
     }
 
@@ -77,11 +77,11 @@ export class AMEXBankParser extends BankParser {
     const lower = message.toLowerCase();
 
     if (
-      lower.includes('offer') ||
-      lower.includes('reward') ||
-      lower.includes('membership') ||
-      lower.includes('statement') ||
-      lower.includes('due date')
+      lower.includes("offer") ||
+      lower.includes("reward") ||
+      lower.includes("membership") ||
+      lower.includes("statement") ||
+      lower.includes("due date")
     ) {
       return false;
     }

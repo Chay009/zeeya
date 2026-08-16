@@ -1,26 +1,42 @@
-import type { Token, SeedData, MalanaResult, TrxTypeRich } from './types';
-import { regexTokenize } from './regex-tokenizer';
-import { KeywordTokenizer } from './keyword-tokenizer';
-import { compileSeed } from './grammar-compiler';
-import { runGrammar } from './grammar-runner';
-import { compilePatterns, runPatterns } from './pattern-extractor';
-import { detectBank, detectMerchantCategory, detectSubcategory, detectBrand, grammarForSender, detectUpiHandle, detectSpam, detectAirports, detectLocation, detectOfferCategory, isMandateCancelled, extractMandateMerchant } from './enrichment';
+import type { Token, SeedData, MalanaResult, TrxTypeRich } from "./types";
+import { regexTokenize } from "./regex-tokenizer";
+import { KeywordTokenizer } from "./keyword-tokenizer";
+import { compileSeed } from "./grammar-compiler";
+import { runGrammar } from "./grammar-runner";
+import { compilePatterns, runPatterns } from "./pattern-extractor";
+import {
+  detectBank,
+  detectMerchantCategory,
+  detectSubcategory,
+  detectBrand,
+  grammarForSender,
+  detectUpiHandle,
+  detectSpam,
+  detectAirports,
+  detectLocation,
+  detectOfferCategory,
+  isMandateCancelled,
+  extractMandateMerchant,
+} from "./enrichment";
 
 // ── Grammar auto-routing ───────────────────────────────────────────────────────
 // Token types produced by the keyword tokenizer that identify a specific grammar.
 // Priority order: earlier rows win (OTP before TRAVEL before DELIVERY, etc.)
 const GRAMMAR_ROUTING: Array<[readonly string[], string]> = [
-  [['OTP', 'PINCODE'], 'GRM_OTP'],
-  [['FLIGHT', 'PNR', 'TICKET', 'TICKETNO', 'TRIPCODE', 'BUSNO', 'BOOKINGID', 'MTICKET', 'FLTID'], 'GRM_TRAVEL'],
-  [['ORDERID', 'TRACKINGID', 'ORDER', 'TRACK'], 'GRM_DELIVERY'],
-  [['OFFER', 'OFFERSINTRX', 'OFFERCODE', 'USECODE', 'OFFERS'], 'GRM_OFFERS'],
-  [['STOCKEXCHNG', 'STOCKTRADE', 'STOCKUNITS'], 'GRM_STOCKUPDATES'],
+  [["OTP", "PINCODE"], "GRM_OTP"],
+  [
+    ["FLIGHT", "PNR", "TICKET", "TICKETNO", "TRIPCODE", "BUSNO", "BOOKINGID", "MTICKET", "FLTID"],
+    "GRM_TRAVEL",
+  ],
+  [["ORDERID", "TRACKINGID", "ORDER", "TRACK"], "GRM_DELIVERY"],
+  [["OFFER", "OFFERSINTRX", "OFFERCODE", "USECODE", "OFFERS"], "GRM_OFFERS"],
+  [["STOCKEXCHNG", "STOCKTRADE", "STOCKUNITS"], "GRM_STOCKUPDATES"],
 ];
 
 function routeGrammar(tokens: Token[], defaultCategory: string): string {
-  const types = new Set(tokens.map(t => t.type));
+  const types = new Set(tokens.map((t) => t.type));
   for (const [markers, grammar] of GRAMMAR_ROUTING) {
-    if (markers.some(m => types.has(m))) return grammar;
+    if (markers.some((m) => types.has(m))) return grammar;
   }
   return defaultCategory;
 }
@@ -44,7 +60,7 @@ function mergeTokens(regexTokens: Token[], keywordTokens: Token[], message: stri
     const idx = lower.indexOf(t.text.toLowerCase(), searchFrom);
     if (idx === -1) continue;
     const end = idx + t.text.length;
-    const overlaps = positioned.some(p => idx < p.end && end > p.pos);
+    const overlaps = positioned.some((p) => idx < p.end && end > p.pos);
     if (!overlaps) {
       positioned.push({ token: t, pos: idx, end });
     }
@@ -52,34 +68,34 @@ function mergeTokens(regexTokens: Token[], keywordTokens: Token[], message: stri
   }
 
   positioned.sort((a, b) => a.pos - b.pos);
-  return positioned.map(p => p.token);
+  return positioned.map((p) => p.token);
 }
 
 // ── Tag value selection ────────────────────────────────────────────────────────
 // Pick the most meaningful value for a given tag type.
 function pickTagValue(tag: string, values: Record<string, string>): string {
   switch (tag) {
-    case 'trx':
-    case 'bal':
-    case 'waladd':
-    case 'walsub':
-    case 'crdlmt':
-    case 'totcrdlmt':
-    case 'incrdlmt':
-    case 'chqamt':
-    case 'subsidy':
-      return values['amount'] || '';
-    case 'acc':
-    case 'beneacc':
-      return values['instrno'] || values['idval'] || '';
-    case 'ref':
-      return values['instrno'] || values['idval'] || '';
-    case 'trxcatg':
-    case 'bene':
-    case 'beneadd':
-      return values['idval'] || '';
+    case "trx":
+    case "bal":
+    case "waladd":
+    case "walsub":
+    case "crdlmt":
+    case "totcrdlmt":
+    case "incrdlmt":
+    case "chqamt":
+    case "subsidy":
+      return values["amount"] || "";
+    case "acc":
+    case "beneacc":
+      return values["instrno"] || values["idval"] || "";
+    case "ref":
+      return values["instrno"] || values["idval"] || "";
+    case "trxcatg":
+    case "bene":
+    case "beneadd":
+      return values["idval"] || "";
     default:
-      return values['amount'] || values['instrno'] || values['idval'] || '';
+      return values["amount"] || values["instrno"] || values["idval"] || "";
   }
 }
 
@@ -88,7 +104,7 @@ function pickTagValue(tag: string, values: Record<string, string>): string {
 // — reused across dozens of unrelated rules, never balance-specific on their
 // own. Mirrors that function's own type list; kept separate here rather than
 // importing it since inheritLeafValues checks types inline, not via a set.
-const LEAF_VALUE_TYPES = new Set(['AMT', 'NUM', 'INSTRNO', 'IDVAL', 'DATE', 'DATETIME']);
+const LEAF_VALUE_TYPES = new Set(["AMT", "NUM", "INSTRNO", "IDVAL", "DATE", "DATETIME"]);
 
 // A token type is a grammatical function word (not a semantic keyword) when
 // its own seed.TOKENS entry carries a [_pos=...] marker — the same marker
@@ -96,7 +112,7 @@ const LEAF_VALUE_TYPES = new Set(['AMT', 'NUM', 'INSTRNO', 'IDVAL', 'DATE', 'DAT
 // entry is 'AUX[_pos=aux]' (excluded), while BLNC/AVBL/CURR/TOTAL/CLRNC have
 // plain entries with no such marker (included).
 function isGrammaticalFunctionWord(type: string, seed: SeedData): boolean {
-  return Object.keys(seed.TOKENS).some(k => k.startsWith(`${type}[_pos=`));
+  return Object.keys(seed.TOKENS).some((k) => k.startsWith(`${type}[_pos=`));
 }
 
 // Derives every real balance-indicating token type by parsing the literal
@@ -111,12 +127,13 @@ export function deriveBalanceIndicatorTypes(seed: SeedData): Set<string> {
   for (const category of Object.values(seed.GRAMMAR)) {
     for (const layer of category.GRMR ?? []) {
       for (const [resultKey, rulesStr] of Object.entries(layer)) {
-        if (!resultKey.endsWith('[bal]')) continue;
-        for (const rule of rulesStr.split(',')) {
+        if (!resultKey.endsWith("[bal]")) continue;
+        for (const rule of rulesStr.split(",")) {
           for (const part of rule.trim().split(/\s+/).filter(Boolean)) {
             const gapMatch = /^\{[^}]*\}(.+)$/.exec(part);
             const type = gapMatch ? gapMatch[1] : part;
-            if (!type || LEAF_VALUE_TYPES.has(type) || isGrammaticalFunctionWord(type, seed)) continue;
+            if (!type || LEAF_VALUE_TYPES.has(type) || isGrammaticalFunctionWord(type, seed))
+              continue;
             result.add(type);
           }
         }
@@ -127,12 +144,15 @@ export function deriveBalanceIndicatorTypes(seed: SeedData): Set<string> {
 }
 
 function baseType(t: string): string {
-  return t.replace(/\d+$/, '');
+  return t.replace(/\d+$/, "");
 }
 
-function isBalanceIndicatorPair(values: Record<string, string>, balanceIndicatorTypes: Set<string>): boolean {
-  const prev = values['_prevType'];
-  const next = values['_nextType'];
+function isBalanceIndicatorPair(
+  values: Record<string, string>,
+  balanceIndicatorTypes: Set<string>,
+): boolean {
+  const prev = values["_prevType"];
+  const next = values["_nextType"];
   return (
     (!!prev && balanceIndicatorTypes.has(baseType(prev))) ||
     (!!next && balanceIndicatorTypes.has(baseType(next)))
@@ -142,7 +162,7 @@ function isBalanceIndicatorPair(values: Record<string, string>, balanceIndicator
 // ── Rich type derivation ───────────────────────────────────────────────────────
 // Transfer methods: these override 'debit' direction in the grammar (grammar-runner PAYMENT_METHODS).
 // When trxType is one of these, money definitely left the account → TRANSFER.
-const TRANSFER_METHODS = new Set(['neft', 'imps', 'rtgs', 'aeps']);
+const TRANSFER_METHODS = new Set(["neft", "imps", "rtgs", "aeps"]);
 
 function deriveRichType(tags: Record<string, string>, kwToks: Token[]): TrxTypeRich | null {
   // Plan validity/expiry notice (rechrgnumexp — "plan expires on X" / "validity ends"). This
@@ -152,46 +172,47 @@ function deriveRichType(tags: Record<string, string>, kwToks: Token[]): TrxTypeR
   // `INTENT{2}RECHRG` sub-pattern purely from the word "recharge" appearing near an
   // intent-shaped word, with no actual recharge having happened. An expiry notice is never
   // itself a completed transaction, so it's checked first and overrides everything below.
-  if (tags['rechrgnumexp']) return null;
+  if (tags["rechrgnumexp"]) return null;
 
   // Investment (MF, SIP, equity, stocks)
-  if (tags['navval'] || tags['folio'] || tags['equity']) return 'INVESTMENT';
+  if (tags["navval"] || tags["folio"] || tags["equity"]) return "INVESTMENT";
 
   // Wallet operations — checked BEFORE balance-only because wallet SMS often also show balance
-  if (tags['waladd']) return 'WALLET_CREDIT';
-  if (tags['walsub']) return 'WALLET_DEBIT';
+  if (tags["waladd"]) return "WALLET_CREDIT";
+  if (tags["walsub"]) return "WALLET_DEBIT";
 
   // Balance-only: balance present but no transaction amount and no other specific type detected
-  if (tags['bal'] && !tags['trx']) return 'BALANCE_UPDATE';
+  if (tags["bal"] && !tags["trx"]) return "BALANCE_UPDATE";
 
   // Recharge (rechrgsucc = confirmed recharge amount tag)
-  if (tags['rechrgsucc'] || (tags['rechrg'] && tags['trx'])) return 'RECHARGE';
+  if (tags["rechrgsucc"] || (tags["rechrg"] && tags["trx"])) return "RECHARGE";
 
   // Salary / wages — check keyword token since 'salary' is not a grammar tag
-  const hasSalaryKw = kwToks.some(t => t.type === 'SALARY');
-  if (hasSalaryKw && (tags['trx'] || (tags['type'] ?? '').toLowerCase() === 'credit')) return 'SALARY';
+  const hasSalaryKw = kwToks.some((t) => t.type === "SALARY");
+  if (hasSalaryKw && (tags["trx"] || (tags["type"] ?? "").toLowerCase() === "credit"))
+    return "SALARY";
 
   // Auto-debit / autopay keyword + active transaction
-  const hasAutDbtKw = kwToks.some(t => t.type === 'AUTDBT');
-  if (hasAutDbtKw && tags['trx']) return 'AUTO_DEBIT';
+  const hasAutDbtKw = kwToks.some((t) => t.type === "AUTDBT");
+  if (hasAutDbtKw && tags["trx"]) return "AUTO_DEBIT";
 
   // ATM withdrawal — ATM/ATMWDL keyword token + active transaction
-  const hasAtmKw = kwToks.some(t => t.type === 'ATM' || t.type === 'ATMWDL');
-  if (hasAtmKw && tags['trx']) return 'ATM_WITHDRAWAL';
+  const hasAtmKw = kwToks.some((t) => t.type === "ATM" || t.type === "ATMWDL");
+  if (hasAtmKw && tags["trx"]) return "ATM_WITHDRAWAL";
 
-  const t = (tags['type'] ?? '').toLowerCase();
-  if (TRANSFER_METHODS.has(t)) return 'TRANSFER';
-  if (t === 'debit' || t === 'upi' || t === '') {
+  const t = (tags["type"] ?? "").toLowerCase();
+  if (TRANSFER_METHODS.has(t)) return "TRANSFER";
+  if (t === "debit" || t === "upi" || t === "") {
     // TRANSFER keyword (_norm=neft/imps/rtgs/aeps) present alongside a debit direction → TRANSFER
     // The keyword token carries _norm but NOT a 'type' key, so tags['type'] stays 'debit'.
     // We check kwToks here to avoid mutating the raw tags that the benchmark reads.
     const hasTransferMethod = kwToks.some(
-      tok => tok.type === 'TRANSFER' && TRANSFER_METHODS.has(tok.values['_norm'] ?? '')
+      (tok) => tok.type === "TRANSFER" && TRANSFER_METHODS.has(tok.values["_norm"] ?? ""),
     );
-    if (hasTransferMethod && (t === 'debit' || t === '')) return 'TRANSFER';
-    if (t === 'debit' || t === 'upi') return 'EXPENSE';
+    if (hasTransferMethod && (t === "debit" || t === "")) return "TRANSFER";
+    if (t === "debit" || t === "upi") return "EXPENSE";
   }
-  if (t === 'credit') return 'INCOME';
+  if (t === "credit") return "INCOME";
   return null;
 }
 
@@ -200,45 +221,55 @@ function deriveRichType(tags: Record<string, string>, kwToks: Token[]): TrxTypeR
 // CRNCY[crncy] → normalised value (e.g. 'usd', 'eur', 's$', 'lkr', 'ksh', 'cny', …)
 // kwToks (pre-merge) retains CRNCY tokens even when they overlap with AMT regex tokens.
 const CRNCY_TO_ISO: Record<string, string> = {
-  rs: 'INR', inr: 'INR',
-  usd: 'USD', '$': 'USD',
-  cad: 'CAD',
-  eur: 'EUR',
-  gbp: 'GBP',
-  aed: 'AED',
-  jpy: 'JPY',
-  aud: 'AUD',
-  's$': 'SGD',
-  lkr: 'LKR',
-  ksh: 'KES',
-  kr: 'SEK',   // Scandinavian kr family (SEK / NOK / DKK) — SEK as default
-  cny: 'CNY',
-  egp: 'EGP',
-  ghc: 'GHS',  // Ghana Cedi (seed normalises both ghc and ghs → ghc)
+  rs: "INR",
+  inr: "INR",
+  usd: "USD",
+  $: "USD",
+  cad: "CAD",
+  eur: "EUR",
+  gbp: "GBP",
+  aed: "AED",
+  jpy: "JPY",
+  aud: "AUD",
+  s$: "SGD",
+  lkr: "LKR",
+  ksh: "KES",
+  kr: "SEK", // Scandinavian kr family (SEK / NOK / DKK) — SEK as default
+  cny: "CNY",
+  egp: "EGP",
+  ghc: "GHS", // Ghana Cedi (seed normalises both ghc and ghs → ghc)
 };
 
 // Fallback for currency prefixes attached directly to digits (e.g. "S$50", "A$100").
 // The keyword tokenizer requires a word boundary after the prefix, so "S$50" is missed.
 const ATTACHED_CURR_RE = /\b(S\$|A\$|C\$|HK\$|NZ\$|€|£|\$|¥|₹)\d/;
 const ATTACHED_CURR_MAP: Record<string, string> = {
-  'S$': 'SGD', 'A$': 'AUD', 'C$': 'CAD', 'HK$': 'HKD', 'NZ$': 'NZD',
-  '€': 'EUR', '£': 'GBP', '$': 'USD', '¥': 'JPY', '₹': 'INR',
+  S$: "SGD",
+  A$: "AUD",
+  C$: "CAD",
+  HK$: "HKD",
+  NZ$: "NZD",
+  "€": "EUR",
+  "£": "GBP",
+  $: "USD",
+  "¥": "JPY",
+  "₹": "INR",
 };
 
 function detectCurrency(kwToks: Token[], message: string): string {
   for (const t of kwToks) {
-    if (t.type !== 'CRNCY') continue;
-    const norm = t.values['crncy'] ?? '';
+    if (t.type !== "CRNCY") continue;
+    const norm = t.values["crncy"] ?? "";
     const iso = CRNCY_TO_ISO[norm];
     if (iso) return iso;
   }
   // Fallback: currency symbol directly attached to digit (no word boundary)
   const m = message.match(ATTACHED_CURR_RE);
   if (m) {
-    const iso = ATTACHED_CURR_MAP[m[1] ?? ''];
+    const iso = ATTACHED_CURR_MAP[m[1] ?? ""];
     if (iso) return iso;
   }
-  return 'INR';
+  return "INR";
 }
 
 export class MalanaEngine {
@@ -262,10 +293,7 @@ export class MalanaEngine {
   private getPatternsFor(category: string) {
     if (this.patternCache.has(category)) return this.patternCache.get(category)!;
     const grammarEntry = this.seed.GRAMMAR[category];
-    const allPatterns = [
-      ...(grammarEntry?.PATTERN ?? []),
-      ...(grammarEntry?.STRUCT ?? []),
-    ];
+    const allPatterns = [...(grammarEntry?.PATTERN ?? []), ...(grammarEntry?.STRUCT ?? [])];
     const compiled = compilePatterns(allPatterns);
     this.patternCache.set(category, compiled);
     return compiled;
@@ -279,7 +307,7 @@ export class MalanaEngine {
     return compiled;
   }
 
-  parse(message: string, sender = '', defaultCategory = 'GRM_BANK'): MalanaResult {
+  parse(message: string, sender = "", defaultCategory = "GRM_BANK"): MalanaResult {
     // Step 1: Tokenize
     const regexToks = regexTokenize(message);
     const kwToks = this.keywordTokenizer.tokenize(message);
@@ -288,7 +316,7 @@ export class MalanaEngine {
     // Step 2: Auto-route to the correct grammar category.
     // Token-type routing wins (OTP/PNR/ORDER tokens are strongest signal — banks also send OTPs).
     // Sender addr.json lookup is the fallback when no specific token type is detected.
-    const tokenCategory = routeGrammar(allTokens, '');
+    const tokenCategory = routeGrammar(allTokens, "");
     const senderGrammar = grammarForSender(sender);
     const category = tokenCategory || senderGrammar || defaultCategory;
 
@@ -305,7 +333,7 @@ export class MalanaEngine {
 
     for (const token of processed) {
       if (!token.matched) continue;
-      const tag = token.values['_tag'];
+      const tag = token.values["_tag"];
       if (tag) {
         // BAL[bal]'s grammar rules (BLNC AMT, AVBL BAL, AMT AUX BLNC, ...) all
         // require a real balance-indicating word — but the compiler reduces
@@ -318,7 +346,8 @@ export class MalanaEngine {
         // trusting it, so e.g. "Rs.1999.00 is successfully created..." (an
         // amount followed by any auxiliary verb) can't masquerade as a
         // balance statement.
-        const trustworthy = tag !== 'bal' || isBalanceIndicatorPair(token.values, this.balanceIndicatorTypes);
+        const trustworthy =
+          tag !== "bal" || isBalanceIndicatorPair(token.values, this.balanceIndicatorTypes);
         if (trustworthy) {
           const tagValue = pickTagValue(tag, token.values);
           if (tagValue) tags[tag] = tagValue;
@@ -326,9 +355,9 @@ export class MalanaEngine {
         }
       }
       for (const [k, v] of Object.entries(token.values)) {
-        if (k.startsWith('_') || !v) continue;
-        if (k === 'amount' && tags['trx']) continue;
-        if ((k === 'acc' || k === 'instrno') && tags[k]) continue;
+        if (k.startsWith("_") || !v) continue;
+        if (k === "amount" && tags["trx"]) continue;
+        if ((k === "acc" || k === "instrno") && tags[k]) continue;
         tags[k] = v;
       }
     }
@@ -336,12 +365,12 @@ export class MalanaEngine {
     // ── Fallbacks for common Indian bank SMS patterns ──────────────────────────
 
     // 1. Direction from unmatched TRX/TRANS tokens (e.g. "debited FOR Rs.X")
-    if (!tags['type']) {
+    if (!tags["type"]) {
       for (const token of processed) {
         if (token.matched) continue;
-        const t = token.values['type'] || token.values['_norm'];
-        if (t === 'debit' || t === 'credit') {
-          tags['type'] = t;
+        const t = token.values["type"] || token.values["_norm"];
+        if (t === "debit" || t === "credit") {
+          tags["type"] = t;
           if (!detectedCategory) detectedCategory = category;
           break;
         }
@@ -349,16 +378,16 @@ export class MalanaEngine {
     }
 
     // 2. INCRDLMT from PREP+AMT pairs (e.g. "debited WITH Rs.5000")
-    if (!tags['trx'] && tags['incrdlmt'] && tags['type']) {
-      tags['trx'] = tags['incrdlmt'];
+    if (!tags["trx"] && tags["incrdlmt"] && tags["type"]) {
+      tags["trx"] = tags["incrdlmt"];
       if (!detectedCategory) detectedCategory = category;
     }
 
     // 3. Transaction amount from first unmatched AMT when direction is known
-    if (!tags['trx'] && tags['type']) {
+    if (!tags["trx"] && tags["type"]) {
       for (const token of processed) {
-        if (!token.matched && token.type === 'AMT') {
-          tags['trx'] = token.text || token.raw;
+        if (!token.matched && token.type === "AMT") {
+          tags["trx"] = token.text || token.raw;
           if (!detectedCategory) detectedCategory = category;
           break;
         }
@@ -366,17 +395,17 @@ export class MalanaEngine {
     }
 
     // 4. BAL immediately before unmatched TRX holds the transaction amount
-    if (!tags['trx']) {
+    if (!tags["trx"]) {
       for (let i = 0; i < processed.length - 1; i++) {
         const tok = processed[i]!;
         const nxt = processed[i + 1]!;
-        if (tok.matched && tok.type === 'BAL' && !nxt.matched) {
-          const dir = nxt.values['type'] || nxt.values['_norm'];
-          if (dir === 'debit' || dir === 'credit') {
-            const amt = tok.values['amount'];
+        if (tok.matched && tok.type === "BAL" && !nxt.matched) {
+          const dir = nxt.values["type"] || nxt.values["_norm"];
+          if (dir === "debit" || dir === "credit") {
+            const amt = tok.values["amount"];
             if (amt) {
-              tags['trx'] = amt;
-              if (!tags['type']) tags['type'] = dir;
+              tags["trx"] = amt;
+              if (!tags["type"]) tags["type"] = dir;
               if (!detectedCategory) detectedCategory = category;
               break;
             }
@@ -386,12 +415,12 @@ export class MalanaEngine {
     }
 
     // 5. Balance-only message: BLNC keyword present but no bal/trx — grab first unmatched AMT as bal
-    if (!tags['bal'] && !tags['trx']) {
-      const hasBlnc = kwToks.some(t => t.type === 'BLNC');
+    if (!tags["bal"] && !tags["trx"]) {
+      const hasBlnc = kwToks.some((t) => t.type === "BLNC");
       if (hasBlnc) {
         for (const token of processed) {
-          if (!token.matched && token.type === 'AMT') {
-            tags['bal'] = token.text || token.raw;
+          if (!token.matched && token.type === "AMT") {
+            tags["bal"] = token.text || token.raw;
             if (!detectedCategory) detectedCategory = category;
             break;
           }
@@ -402,10 +431,10 @@ export class MalanaEngine {
     // 6. MANDATEID — always an unmatched leaf token (no grammar rule consumes it,
     // see regex-tokenizer.ts), so pull its value directly the same way other
     // unmatched-token fallbacks above do.
-    if (!tags['mandateid']) {
+    if (!tags["mandateid"]) {
       for (const token of processed) {
-        if (!token.matched && token.type === 'MANDATEID') {
-          tags['mandateid'] = token.text || token.raw;
+        if (!token.matched && token.type === "MANDATEID") {
+          tags["mandateid"] = token.text || token.raw;
           break;
         }
       }
@@ -419,24 +448,31 @@ export class MalanaEngine {
     }
 
     // Step 7: Brand enrichment — check extracted merchant text first, then fall back to raw message
-    const merchantText = tags['bene'] || tags['vendor'] || tags['billvendor'] || tags['merchant'] || tags['item'] || '';
+    const merchantText =
+      tags["bene"] ||
+      tags["vendor"] ||
+      tags["billvendor"] ||
+      tags["merchant"] ||
+      tags["item"] ||
+      "";
     const brandMatch = detectBrand(merchantText) ?? detectBrand(message);
 
     // Step 8: UPI handle detection — if bene/vendor looks like a VPA, confirm handle
-    const vpaText = tags['bene'] || tags['vendor'] || '';
+    const vpaText = tags["bene"] || tags["vendor"] || "";
     const upiHandle = detectUpiHandle(vpaText);
 
     // Step 9: Derived rich fields
     const trxTypeRich = deriveRichType(tags, kwToks);
     const currency = detectCurrency(kwToks, message);
-    const isFromCard = kwToks.some(t =>
-      t.type === 'INS' && ['card', 'creditcard', 'debitcard'].includes(t.values['_norm'] ?? '')
+    const isFromCard = kwToks.some(
+      (t) =>
+        t.type === "INS" && ["card", "creditcard", "debitcard"].includes(t.values["_norm"] ?? ""),
     );
     const spam = detectSpam(message);
     // Only run the mandate merchant/amount extractor when a mandateId is
     // already confirmed present — its "towards X for Y" anchor isn't scoped
     // to mandate messages specifically and could false-match unrelated text.
-    const mandateMerchantMatch = tags['mandateid'] ? extractMandateMerchant(message) : null;
+    const mandateMerchantMatch = tags["mandateid"] ? extractMandateMerchant(message) : null;
 
     // Build typed result
     const result: MalanaResult = {
@@ -449,66 +485,70 @@ export class MalanaEngine {
       subcategory: detectSubcategory(tags),
 
       // Bank fields
-      trx: tags['trx'] || null,
-      bal: tags['bal'] || null,
-      acc: tags['acc'] || tags['instrno'] || null,
-      trxType: tags['type'] || null,
+      trx: tags["trx"] || null,
+      bal: tags["bal"] || null,
+      acc: tags["acc"] || tags["instrno"] || null,
+      trxType: tags["type"] || null,
       trxTypeRich,
       currency,
       isFromCard,
-      creditLimit: tags['crdlmt'] || null,
-      ref: tags['ref'] || null,
-      bene: tags['bene'] || null,
-      beneAcc: tags['beneacc'] || null,
-      vendor: tags['vendor'] || tags['billvendor'] || tags['merchant'] || null,
-      location: tags['location'] || detectLocation(message),
+      creditLimit: tags["crdlmt"] || null,
+      ref: tags["ref"] || null,
+      bene: tags["bene"] || null,
+      beneAcc: tags["beneacc"] || null,
+      vendor: tags["vendor"] || tags["billvendor"] || tags["merchant"] || null,
+      location: tags["location"] || detectLocation(message),
 
       // OTP fields
-      otp: tags['otp'] || tags['pin'] || tags['code'] || null,
-      otpExpiry: tags['expire'] || null,
+      otp: tags["otp"] || tags["pin"] || tags["code"] || null,
+      otpExpiry: tags["expire"] || null,
 
       // Travel fields
-      pnr: tags['pnr'] || null,
-      flight: tags['flt'] || tags['flight_name'] || null,
-      departure: tags['dept'] || null,
-      arrival: tags['arrv'] || null,
-      fare: tags['fare'] || null,
-      trainBusNo: tags['train'] || tags['bus'] || null,
-      boardingGate: tags['boardgate'] || null,
-      departureCode: detectAirports(tags['from_loc'] || '')[0]?.code ?? null,
-      arrivalCode: detectAirports(tags['to_loc'] || '')[0]?.code ?? null,
+      pnr: tags["pnr"] || null,
+      flight: tags["flt"] || tags["flight_name"] || null,
+      departure: tags["dept"] || null,
+      arrival: tags["arrv"] || null,
+      fare: tags["fare"] || null,
+      trainBusNo: tags["train"] || tags["bus"] || null,
+      boardingGate: tags["boardgate"] || null,
+      departureCode: detectAirports(tags["from_loc"] || "")[0]?.code ?? null,
+      arrivalCode: detectAirports(tags["to_loc"] || "")[0]?.code ?? null,
 
       // Delivery fields
-      orderNo: tags['order'] || null,
-      trackingId: tags['tracking'] || null,
-      deliveryStatus: tags['delivery'] || tags['ordstatus'] || null,
-      item: tags['item'] || null,
+      orderNo: tags["order"] || null,
+      trackingId: tags["tracking"] || null,
+      deliveryStatus: tags["delivery"] || tags["ordstatus"] || null,
+      item: tags["item"] || null,
 
       // Bill fields
-      billAmount: tags['bill'] || null,
-      emiAmount: tags['emi'] || null,
-      dueDate: tags['due'] || null,
-      policyNo: tags['policy'] || null,
-      rechargeAmount: tags['rechrg'] || tags['rechrgsucc'] || null,
-      mandateAmount: mandateMerchantMatch?.amount || tags['mandate'] || null,
-      mandateId: tags['mandateid'] || null,
-      mandateEvent: tags['mandateid'] ? (isMandateCancelled(kwToks) ? 'cancelled' : 'active') : null,
+      billAmount: tags["bill"] || null,
+      emiAmount: tags["emi"] || null,
+      dueDate: tags["due"] || null,
+      policyNo: tags["policy"] || null,
+      rechargeAmount: tags["rechrg"] || tags["rechrgsucc"] || null,
+      mandateAmount: mandateMerchantMatch?.amount || tags["mandate"] || null,
+      mandateId: tags["mandateid"] || null,
+      mandateEvent: tags["mandateid"]
+        ? isMandateCancelled(kwToks)
+          ? "cancelled"
+          : "active"
+        : null,
       mandateMerchant: mandateMerchantMatch?.merchant ?? null,
 
       // Offer fields
-      cashback: tags['cashback'] || null,
-      discount: tags['discount'] || null,
-      offerCode: tags['code'] || null,
+      cashback: tags["cashback"] || null,
+      discount: tags["discount"] || null,
+      offerCode: tags["code"] || null,
       offerCategory: detectOfferCategory(sender),
 
       // Telecom fields
-      dataLeft: tags['left'] || null,
-      packBalance: tags['packbal'] || null,
+      dataLeft: tags["left"] || null,
+      packBalance: tags["packbal"] || null,
 
       // Stocks fields
-      navValue: tags['navval'] || null,
-      folio: tags['folio'] || null,
-      marginAmount: tags['margin'] || null,
+      navValue: tags["navval"] || null,
+      folio: tags["folio"] || null,
+      marginAmount: tags["margin"] || null,
 
       // Brand fields
       brandName: brandMatch?.brand ?? null,

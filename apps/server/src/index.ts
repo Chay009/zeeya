@@ -82,10 +82,7 @@ app.get("/", (c) => {
 export default {
   fetch: app.fetch.bind(app),
 
-  async queue(
-    batch: MessageBatch<SmsQueueMessage>,
-    _env: Env,
-  ): Promise<void> {
+  async queue(batch: MessageBatch<SmsQueueMessage>, _env: Env): Promise<void> {
     const db = createDb();
 
     const rows = batch.messages.flatMap((msg) => {
@@ -119,10 +116,7 @@ export default {
     });
 
     if (rows.length > 0) {
-      await db
-        .insert(transaction)
-        .values(rows)
-        .onConflictDoNothing({ target: transaction.id });
+      await db.insert(transaction).values(rows).onConflictDoNothing({ target: transaction.id });
     }
 
     batch.ackAll();

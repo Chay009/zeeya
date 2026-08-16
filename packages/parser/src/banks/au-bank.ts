@@ -1,42 +1,42 @@
 // 1:1 port of AUBankParser.kt from Cashiro parser-core
-import { BankParser } from '../base-parser.js';
-import type { TransactionType } from '../types.js';
+import { BankParser } from "../base-parser.js";
+import type { TransactionType } from "../types.js";
 
 export class AUBankParser extends BankParser {
   getBankName(): string {
-    return 'AU Small Finance Bank';
+    return "AU Small Finance Bank";
   }
 
   canHandle(sender: string): boolean {
-    return sender.toUpperCase().includes('AUBANK');
+    return sender.toUpperCase().includes("AUBANK");
   }
 
   protected override extractAmount(message: string): number | null {
     // Pattern 1: Credited INR XXX to
     const creditedMatch = /Credited\s+INR\s+([0-9,]+(?:\.\d{2})?)\s+to/i.exec(message);
     if (creditedMatch?.[1]) {
-      const val = parseFloat(creditedMatch[1].replace(/,/g, ''));
+      const val = parseFloat(creditedMatch[1].replace(/,/g, ""));
       if (isFinite(val)) return val;
     }
 
     // Pattern 2: Debited INR XXX from
     const debitedMatch = /Debited\s+INR\s+([0-9,]+(?:\.\d{2})?)\s+from/i.exec(message);
     if (debitedMatch?.[1]) {
-      const val = parseFloat(debitedMatch[1].replace(/,/g, ''));
+      const val = parseFloat(debitedMatch[1].replace(/,/g, ""));
       if (isFinite(val)) return val;
     }
 
     // Pattern 3: INR XXX spent
     const spentMatch = /INR\s+([0-9,]+(?:\.\d{2})?)\s+spent/i.exec(message);
     if (spentMatch?.[1]) {
-      const val = parseFloat(spentMatch[1].replace(/,/g, ''));
+      const val = parseFloat(spentMatch[1].replace(/,/g, ""));
       if (isFinite(val)) return val;
     }
 
     // Pattern 4: withdrawn INR XXX
     const withdrawnMatch = /withdrawn\s+INR\s+([0-9,]+(?:\.\d{2})?)/i.exec(message);
     if (withdrawnMatch?.[1]) {
-      const val = parseFloat(withdrawnMatch[1].replace(/,/g, ''));
+      const val = parseFloat(withdrawnMatch[1].replace(/,/g, ""));
       if (isFinite(val)) return val;
     }
 
@@ -74,7 +74,7 @@ export class AUBankParser extends BankParser {
 
     // Pattern 4: ATM transactions
     if (/ATM/i.test(message) || /withdrawn/i.test(message)) {
-      return 'ATM Withdrawal';
+      return "ATM Withdrawal";
     }
 
     // Pattern 5: General to/from
@@ -89,15 +89,15 @@ export class AUBankParser extends BankParser {
 
   protected override extractTransactionType(message: string): TransactionType | null {
     const lower = message.toLowerCase();
-    if (lower.includes('credit card')) return 'CREDIT';
-    if (lower.includes('credited')) return 'INCOME';
-    if (lower.includes('received')) return 'INCOME';
-    if (lower.includes('deposited')) return 'INCOME';
-    if (lower.includes('refund')) return 'INCOME';
-    if (lower.includes('debited')) return 'EXPENSE';
-    if (lower.includes('withdrawn')) return 'EXPENSE';
-    if (lower.includes('spent')) return 'EXPENSE';
-    if (lower.includes('paid')) return 'EXPENSE';
+    if (lower.includes("credit card")) return "CREDIT";
+    if (lower.includes("credited")) return "INCOME";
+    if (lower.includes("received")) return "INCOME";
+    if (lower.includes("deposited")) return "INCOME";
+    if (lower.includes("refund")) return "INCOME";
+    if (lower.includes("debited")) return "EXPENSE";
+    if (lower.includes("withdrawn")) return "EXPENSE";
+    if (lower.includes("spent")) return "EXPENSE";
+    if (lower.includes("paid")) return "EXPENSE";
     return super.extractTransactionType(message);
   }
 
@@ -120,7 +120,7 @@ export class AUBankParser extends BankParser {
     // "Bal INR XXX"
     const m = /Bal\s+INR\s+([0-9,]+(?:\.\d{2})?)/i.exec(message);
     if (m?.[1]) {
-      const val = parseFloat(m[1].replace(/,/g, ''));
+      const val = parseFloat(m[1].replace(/,/g, ""));
       if (isFinite(val)) return val;
     }
     return super.extractBalance(message);
@@ -130,14 +130,21 @@ export class AUBankParser extends BankParser {
     const lower = message.toLowerCase();
 
     if (
-      lower.includes('otp') ||
-      lower.includes('one time password') ||
-      lower.includes('verification code')
+      lower.includes("otp") ||
+      lower.includes("one time password") ||
+      lower.includes("verification code")
     ) {
       return false;
     }
 
-    const keywords = ['credited inr', 'debited inr', 'withdrawn inr', 'bal inr', 'ref upi', 'spent'];
+    const keywords = [
+      "credited inr",
+      "debited inr",
+      "withdrawn inr",
+      "bal inr",
+      "ref upi",
+      "spent",
+    ];
     if (keywords.some((k) => lower.includes(k))) return true;
 
     return super.isTransactionMessage(message);

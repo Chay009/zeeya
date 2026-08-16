@@ -1,14 +1,14 @@
-import { BankParser } from '../base-parser.js';
-import type { BalanceUpdateInfo, TransactionType } from '../types.js';
+import { BankParser } from "../base-parser.js";
+import type { BalanceUpdateInfo, TransactionType } from "../types.js";
 
 export class IndusIndBankParser extends BankParser {
   getBankName(): string {
-    return 'IndusInd Bank';
+    return "IndusInd Bank";
   }
 
   canHandle(sender: string): boolean {
     const s = sender.toUpperCase();
-    if (s === 'INDUSB' || s === 'INDUSIND' || s.includes('INDUSIND BANK')) return true;
+    if (s === "INDUSB" || s === "INDUSIND" || s.includes("INDUSIND BANK")) return true;
     if (/^[A-Z]{2}-INDUSB(?:-[A-Z])?$/.test(s)) return true;
     if (/^[A-Z]{2}-INDUSIND(?:-[A-Z])?$/.test(s)) return true;
     if (/^[A-Z]{2}-INDUS(?:[A-Z]{2,})?-[A-Z]$/.test(s)) return true;
@@ -17,19 +17,19 @@ export class IndusIndBankParser extends BankParser {
 
   protected extractTransactionType(message: string): TransactionType | null {
     const lower = message.toLowerCase();
-    if (lower.includes('spent')) return 'EXPENSE';
-    if (lower.includes('debited')) return 'EXPENSE';
-    if (lower.includes('purchase')) return 'EXPENSE';
-    if (lower.includes('deposit')) return 'INVESTMENT';
-    if (lower.includes('fd')) return 'INVESTMENT';
-    if (lower.includes('ach')) return 'INVESTMENT';
+    if (lower.includes("spent")) return "EXPENSE";
+    if (lower.includes("debited")) return "EXPENSE";
+    if (lower.includes("purchase")) return "EXPENSE";
+    if (lower.includes("deposit")) return "INVESTMENT";
+    if (lower.includes("fd")) return "INVESTMENT";
+    if (lower.includes("ach")) return "INVESTMENT";
     return super.extractTransactionType(message);
   }
 
   protected detectIsCard(message: string): boolean {
     const lower = message.toLowerCase();
     const isAchOrNach =
-      lower.includes('ach db') || lower.includes('ach cr') || lower.includes('nach');
+      lower.includes("ach db") || lower.includes("ach cr") || lower.includes("nach");
     if (isAchOrNach) return false;
     return super.detectIsCard(message);
   }
@@ -37,14 +37,14 @@ export class IndusIndBankParser extends BankParser {
   isBalanceUpdateNotification(message: string): boolean {
     const lower = message.toLowerCase();
     const hasBalanceCue =
-      lower.includes('avl bal') ||
-      lower.includes('available bal') ||
-      lower.includes('account balance') ||
-      lower.includes('a/c balance');
-    const hasTxnVerb = ['debited', 'credited', 'withdrawn', 'spent', 'transferred'].some(v =>
-      lower.includes(v)
+      lower.includes("avl bal") ||
+      lower.includes("available bal") ||
+      lower.includes("account balance") ||
+      lower.includes("a/c balance");
+    const hasTxnVerb = ["debited", "credited", "withdrawn", "spent", "transferred"].some((v) =>
+      lower.includes(v),
     );
-    return hasBalanceCue && lower.includes('as on') && !hasTxnVerb;
+    return hasBalanceCue && lower.includes("as on") && !hasTxnVerb;
   }
 
   parseBalanceUpdate(message: string): BalanceUpdateInfo | null {
@@ -56,14 +56,17 @@ export class IndusIndBankParser extends BankParser {
 
     const p1 = /Avl\s*BAL\s+of\s+INR\s*([0-9,]+(?:\.\d{2})?)/i.exec(message);
     if (p1) {
-      const val = parseFloat(p1[1]!.replace(/,/g, ''));
+      const val = parseFloat(p1[1]!.replace(/,/g, ""));
       if (!isNaN(val)) balance = val;
     }
 
     if (balance === null) {
-      const p2 = /(?:Avl\s*BAL|Available\s+Balance(?:\s+is)?|Bal)[:\s]+INR\s*([0-9,]+(?:\.\d{2})?)/i.exec(message);
+      const p2 =
+        /(?:Avl\s*BAL|Available\s+Balance(?:\s+is)?|Bal)[:\s]+INR\s*([0-9,]+(?:\.\d{2})?)/i.exec(
+          message,
+        );
       if (p2) {
-        const val = parseFloat(p2[1]!.replace(/,/g, ''));
+        const val = parseFloat(p2[1]!.replace(/,/g, ""));
         if (!isNaN(val)) balance = val;
       }
     }
@@ -80,14 +83,17 @@ export class IndusIndBankParser extends BankParser {
 
   protected isTransactionMessage(message: string): boolean {
     const lower = message.toLowerCase();
-    if (lower.includes('net interest') && lower.includes('deposit no')) return false;
+    if (lower.includes("net interest") && lower.includes("deposit no")) return false;
     return super.isTransactionMessage(message);
   }
 
   protected extractAmount(message: string): number | null {
-    const verbAmountM = /(?:INR|Rs\.?|₹)\s*([0-9,]+(?:\.\d{2})?)\s+(?:debited|credited|spent|withdrawn|paid|purchase)/i.exec(message);
+    const verbAmountM =
+      /(?:INR|Rs\.?|₹)\s*([0-9,]+(?:\.\d{2})?)\s+(?:debited|credited|spent|withdrawn|paid|purchase)/i.exec(
+        message,
+      );
     if (verbAmountM) {
-      const val = parseFloat(verbAmountM[1]!.replace(/,/g, ''));
+      const val = parseFloat(verbAmountM[1]!.replace(/,/g, ""));
       if (!isNaN(val)) return val;
     }
     return super.extractAmount(message);
@@ -96,25 +102,25 @@ export class IndusIndBankParser extends BankParser {
   protected extractMerchant(message: string, sender: string): string | null {
     const towardsM = /towards\s+(\S+)/i.exec(message);
     if (towardsM) {
-      let m = towardsM[1]!.trim().replace(/[.,;]+$/, '');
-      if (m.includes('/')) m = m.split('/')[0]!;
-      if (m.includes('@')) m = m.split('@')[0]!.trim();
+      let m = towardsM[1]!.trim().replace(/[.,;]+$/, "");
+      if (m.includes("/")) m = m.split("/")[0]!;
+      if (m.includes("@")) m = m.split("@")[0]!.trim();
       if (m.length > 0) return this.cleanMerchantName(m);
     }
 
     const fromAccountM = /from\s+account\s+[^\s/]+\/([^\s(]+)/i.exec(message);
     if (fromAccountM) {
-      const merchant = fromAccountM[1]!.trim().replace(/[.,;)]+$/, '');
+      const merchant = fromAccountM[1]!.trim().replace(/[.,;)]+$/, "");
       if (merchant.length > 0) return this.cleanMerchantName(merchant);
     }
 
     const fromM = /from\s+(\S+)/i.exec(message);
     if (fromM) {
-      const token = fromM[1]!.trim().replace(/[.,;]+$/, '');
+      const token = fromM[1]!.trim().replace(/[.,;]+$/, "");
       let m = token;
-      if (m.includes('/')) m = m.split('/')[0]!;
-      if (m.includes('@')) {
-        m = m.split('@')[0]!.trim();
+      if (m.includes("/")) m = m.split("/")[0]!;
+      if (m.includes("@")) {
+        m = m.split("@")[0]!.trim();
         if (m.length > 0) return this.cleanMerchantName(m);
       }
     }
@@ -148,7 +154,7 @@ export class IndusIndBankParser extends BankParser {
     }
 
     const lower = message.toLowerCase();
-    if (lower.includes('ach db') || lower.includes('ach cr') || lower.includes('nach')) return null;
+    if (lower.includes("ach db") || lower.includes("ach cr") || lower.includes("nach")) return null;
 
     return super.extractAccountLast4(message);
   }
@@ -156,13 +162,16 @@ export class IndusIndBankParser extends BankParser {
   protected extractBalance(message: string): number | null {
     const p1 = /Avl\s*BAL\s+of\s+INR\s*([0-9,]+(?:\.\d{2})?)/i.exec(message);
     if (p1) {
-      const val = parseFloat(p1[1]!.replace(/,/g, ''));
+      const val = parseFloat(p1[1]!.replace(/,/g, ""));
       if (!isNaN(val)) return val;
     }
 
-    const p2 = /(?:Avl\s*BAL|Available\s+Balance(?:\s+is)?|Bal)[:\s]+INR\s*([0-9,]+(?:\.\d{2})?)/i.exec(message);
+    const p2 =
+      /(?:Avl\s*BAL|Available\s+Balance(?:\s+is)?|Bal)[:\s]+INR\s*([0-9,]+(?:\.\d{2})?)/i.exec(
+        message,
+      );
     if (p2) {
-      const val = parseFloat(p2[1]!.replace(/,/g, ''));
+      const val = parseFloat(p2[1]!.replace(/,/g, ""));
       if (!isNaN(val)) return val;
     }
 

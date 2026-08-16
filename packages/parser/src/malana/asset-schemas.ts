@@ -7,7 +7,7 @@
 // corrupted or incompatible asset should fail loudly at startup, not load
 // quietly and misbehave downstream on data the engine was never built for.
 
-import { z } from 'zod';
+import { z } from "zod";
 
 // ── seeddata.json ────────────────────────────────────────────────────────────
 //
@@ -17,9 +17,9 @@ import { z } from 'zod';
 // keyword dictionary, currency handling) is India-specific by construction —
 // loading a seed for a different country would silently misclassify
 // everything, not just miss a few edge cases.
-const SUPPORTED_REPOVERSIONS = ['1.0.72'];
-const SUPPORTED_VERSIONS = ['1.1.36'];
-const SUPPORTED_COUNTRIES = ['IN'];
+const SUPPORTED_REPOVERSIONS = ["1.0.72"];
+const SUPPORTED_VERSIONS = ["1.1.36"];
+const SUPPORTED_COUNTRIES = ["IN"];
 
 const GrammarCategorySchema = z.object({
   GRMR: z.array(z.record(z.string(), z.string())),
@@ -28,14 +28,14 @@ const GrammarCategorySchema = z.object({
 });
 
 export const SeedDataSchema = z.object({
-  REPOVERSION: z.string().refine(v => SUPPORTED_REPOVERSIONS.includes(v), {
-    message: `Unsupported seeddata.json REPOVERSION (expected one of: ${SUPPORTED_REPOVERSIONS.join(', ')})`,
+  REPOVERSION: z.string().refine((v) => SUPPORTED_REPOVERSIONS.includes(v), {
+    message: `Unsupported seeddata.json REPOVERSION (expected one of: ${SUPPORTED_REPOVERSIONS.join(", ")})`,
   }),
-  VERSION: z.string().refine(v => SUPPORTED_VERSIONS.includes(v), {
-    message: `Unsupported seeddata.json VERSION (expected one of: ${SUPPORTED_VERSIONS.join(', ')})`,
+  VERSION: z.string().refine((v) => SUPPORTED_VERSIONS.includes(v), {
+    message: `Unsupported seeddata.json VERSION (expected one of: ${SUPPORTED_VERSIONS.join(", ")})`,
   }),
-  COUNTRY: z.string().refine(v => SUPPORTED_COUNTRIES.includes(v), {
-    message: `Unsupported seeddata.json COUNTRY — this engine's grammar is India-specific (expected one of: ${SUPPORTED_COUNTRIES.join(', ')})`,
+  COUNTRY: z.string().refine((v) => SUPPORTED_COUNTRIES.includes(v), {
+    message: `Unsupported seeddata.json COUNTRY — this engine's grammar is India-specific (expected one of: ${SUPPORTED_COUNTRIES.join(", ")})`,
   }),
   TOKENS: z.record(z.string(), z.string()),
   // Real shape confirmed directly against the seed: { CLS_ID: string[] } —
@@ -72,7 +72,12 @@ export function parseSeedData(raw: unknown): SeedData {
 const SUPPORTED_CATEGORIZER_VERSIONS = [17];
 
 const ProbabilityTupleSchema = z.tuple([
-  z.number(), z.number(), z.number(), z.number(), z.number(), z.number(),
+  z.number(),
+  z.number(),
+  z.number(),
+  z.number(),
+  z.number(),
+  z.number(),
 ]);
 
 const CategorizerEntrySchema = z.object({
@@ -81,15 +86,23 @@ const CategorizerEntrySchema = z.object({
 });
 
 const MetaTupleSchema = z.tuple([
-  z.number(), z.number(), z.number(), z.number(), z.number(),
-  z.number(), z.number(), z.number(), z.number(), z.number(),
+  z.number(),
+  z.number(),
+  z.number(),
+  z.number(),
+  z.number(),
+  z.number(),
+  z.number(),
+  z.number(),
+  z.number(),
+  z.number(),
 ]);
 
 export const CategorizerDataSchema = z.object({
   probabilities: z.array(CategorizerEntrySchema),
   meta: MetaTupleSchema,
-  version: z.number().refine(v => SUPPORTED_CATEGORIZER_VERSIONS.includes(v), {
-    message: `Unsupported categorizer.json version (expected one of: ${SUPPORTED_CATEGORIZER_VERSIONS.join(', ')})`,
+  version: z.number().refine((v) => SUPPORTED_CATEGORIZER_VERSIONS.includes(v), {
+    message: `Unsupported categorizer.json version (expected one of: ${SUPPORTED_CATEGORIZER_VERSIONS.join(", ")})`,
   }),
 });
 

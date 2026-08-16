@@ -1,36 +1,38 @@
 // Exact 1:1 port of DOPBankParser.kt from Cashiro parser-core
-import { BankParser } from '../base-parser.js';
-import type { ParsedTransaction, TransactionType } from '../types.js';
+import { BankParser } from "../base-parser.js";
+import type { ParsedTransaction, TransactionType } from "../types.js";
 
 function parseNum(str: string): number | null {
-  const n = parseFloat(str.replace(/,/g, ''));
+  const n = parseFloat(str.replace(/,/g, ""));
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 function normalizeUnicodeText(text: string): string {
-  return text
-    .normalize('NFKD')
-    // Control-char range (0x00-0x1F) is intentional — strips any non-ASCII
-    // byte, control characters included, same as the other bank parsers.
-    // oxlint-disable-next-line no-control-regex
-    .replace(/[^\x00-\x7F]/g, ' ') // Replace non-ASCII with space
-    .replace(/\s+/g, ' ')           // Collapse multiple spaces
-    .trim();
+  return (
+    text
+      .normalize("NFKD")
+      // Control-char range (0x00-0x1F) is intentional — strips any non-ASCII
+      // byte, control characters included, same as the other bank parsers.
+      // oxlint-disable-next-line no-control-regex
+      .replace(/[^\x00-\x7F]/g, " ") // Replace non-ASCII with space
+      .replace(/\s+/g, " ") // Collapse multiple spaces
+      .trim()
+  );
 }
 
 export class DOPBankParser extends BankParser {
   getBankName(): string {
-    return 'Department of Post';
+    return "Department of Post";
   }
 
   canHandle(sender: string): boolean {
     const u = sender.toUpperCase();
     return (
-      u.includes('DOPBNK') ||
-      u.includes('DEPARTMENT OF POST') ||
-      u.includes('DOP-') ||
-      u.endsWith('-DOP') ||
-      u === 'DOP'
+      u.includes("DOPBNK") ||
+      u.includes("DEPARTMENT OF POST") ||
+      u.includes("DOP-") ||
+      u.endsWith("-DOP") ||
+      u === "DOP"
     );
   }
 
@@ -60,8 +62,8 @@ export class DOPBankParser extends BankParser {
 
   protected override extractTransactionType(message: string): TransactionType | null {
     const lower = message.toLowerCase();
-    if (lower.includes('credit')) return 'INCOME';
-    if (lower.includes('debit')) return 'EXPENSE';
+    if (lower.includes("credit")) return "INCOME";
+    if (lower.includes("debit")) return "EXPENSE";
     return super.extractTransactionType(message);
   }
 
@@ -87,12 +89,8 @@ export class DOPBankParser extends BankParser {
   protected override isTransactionMessage(message: string): boolean {
     const lower = message.toLowerCase();
     const hasKeyKeywords =
-      lower.includes('account') ||
-      lower.includes('a/c') ||
-      lower.includes('dop');
-    const hasType =
-      lower.includes('credit') ||
-      lower.includes('debit');
+      lower.includes("account") || lower.includes("a/c") || lower.includes("dop");
+    const hasType = lower.includes("credit") || lower.includes("debit");
     return hasKeyKeywords && hasType;
   }
 }

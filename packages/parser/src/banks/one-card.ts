@@ -1,45 +1,45 @@
 // Exact 1:1 port of OneCardParser.kt from Cashiro parser-core
-import { BankParser } from '../base-parser.js';
-import type { TransactionType } from '../types.js';
+import { BankParser } from "../base-parser.js";
+import type { TransactionType } from "../types.js";
 
 export class OneCardParser extends BankParser {
   getBankName(): string {
-    return 'OneCard';
+    return "OneCard";
   }
 
   canHandle(sender: string): boolean {
     const u = sender.toUpperCase();
-    return u.includes('ONECRD') || u.includes('ONECAD') || u.includes('ONECARD');
+    return u.includes("ONECRD") || u.includes("ONECAD") || u.includes("ONECARD");
   }
 
   protected override isTransactionMessage(message: string): boolean {
     const lower = message.toLowerCase();
 
     // Negative filters
-    if (lower.includes('otp')) return false;
-    if (lower.includes('pin')) return false;
-    if (lower.includes('password')) return false;
-    if (lower.includes('block')) return false;
+    if (lower.includes("otp")) return false;
+    if (lower.includes("pin")) return false;
+    if (lower.includes("password")) return false;
+    if (lower.includes("block")) return false;
 
     // Positive keywords specific to OneCard
-    if (lower.includes('onecard')) return true;
-    if (lower.includes('avl limit')) return true;
-    if (lower.includes('avl lmt')) return true;
-    if (lower.includes('available limit')) return true;
+    if (lower.includes("onecard")) return true;
+    if (lower.includes("avl limit")) return true;
+    if (lower.includes("avl lmt")) return true;
+    if (lower.includes("available limit")) return true;
 
     return super.isTransactionMessage(message);
   }
 
   protected override extractTransactionType(_message: string): TransactionType | null {
     // OneCard is a credit card — all spend transactions are CREDIT type
-    return 'CREDIT';
+    return "CREDIT";
   }
 
   protected override extractAmount(message: string): number | null {
     // "Rs.500.00" / "Rs.1,234.56" / "Rs 500" patterns
     const rsPattern = /(?:Rs\.?|INR)\s*([0-9,]+(?:\.\d{2})?)/i.exec(message);
     if (rsPattern?.[1]) {
-      const val = parseFloat((rsPattern[1] ?? '').replace(/,/g, ''));
+      const val = parseFloat((rsPattern[1] ?? "").replace(/,/g, ""));
       if (!isNaN(val)) return val;
     }
     return super.extractAmount(message);
@@ -49,21 +49,21 @@ export class OneCardParser extends BankParser {
     // "at MERCHANT on DD" or "at MERCHANT." or "at MERCHANT NAME on"
     const atMerchantMatch = /\bat\s+([A-Za-z0-9][^.]+?)\s+on\s+\d/i.exec(message);
     if (atMerchantMatch?.[1]) {
-      const m = this.cleanMerchantName((atMerchantMatch[1] ?? '').trim());
+      const m = this.cleanMerchantName((atMerchantMatch[1] ?? "").trim());
       if (this.isValidMerchantName(m)) return m;
     }
 
     // "at MERCHANT." (end of sentence)
     const atMerchantDotMatch = /\bat\s+([A-Za-z0-9][^.]+?)\./i.exec(message);
     if (atMerchantDotMatch?.[1]) {
-      const m = this.cleanMerchantName((atMerchantDotMatch[1] ?? '').trim());
+      const m = this.cleanMerchantName((atMerchantDotMatch[1] ?? "").trim());
       if (this.isValidMerchantName(m)) return m;
     }
 
     // "at MERCHANT NAME" at end of message
     const atMerchantEndMatch = /\bat\s+([A-Za-z0-9][^.]+?)(?:\s*$)/i.exec(message);
     if (atMerchantEndMatch?.[1]) {
-      const m = this.cleanMerchantName((atMerchantEndMatch[1] ?? '').trim());
+      const m = this.cleanMerchantName((atMerchantEndMatch[1] ?? "").trim());
       if (this.isValidMerchantName(m)) return m;
     }
 
@@ -74,7 +74,7 @@ export class OneCardParser extends BankParser {
     // "OneCard ending XXXX" — "ending" followed by 4 digits
     const endingMatch = /ending\s+([Xx*]*\d{4})/i.exec(message);
     if (endingMatch?.[1]) {
-      const digits = (endingMatch[1] ?? '').replace(/\D/g, '');
+      const digits = (endingMatch[1] ?? "").replace(/\D/g, "");
       return digits.length >= 4 ? digits.slice(-4) : null;
     }
 
@@ -104,7 +104,7 @@ export class OneCardParser extends BankParser {
     for (const pattern of patterns) {
       const match = pattern.exec(message);
       if (match?.[1]) {
-        const val = parseFloat((match[1] ?? '').replace(/,/g, ''));
+        const val = parseFloat((match[1] ?? "").replace(/,/g, ""));
         if (!isNaN(val)) return val;
       }
     }

@@ -101,7 +101,10 @@ export function deriveDashboard(messages: ParsedSms[]): Dashboard {
   const accountsByKey = new Map<string, AccountBalance>();
   let monthIncome = 0;
   let monthExpense = 0;
-  const subscriptionCandidates = new Map<string, { amount: number; count: number; lastDate: number }>();
+  const subscriptionCandidates = new Map<
+    string,
+    { amount: number; count: number; lastDate: number }
+  >();
   const mandatesById = new Map<string, Mandate>();
   const recognized: ParsedSms[] = [];
 

@@ -1,37 +1,37 @@
 // Exact 1:1 port of SBIBankParser.kt from Cashiro parser-core
-import { BankParser } from '../base-parser.js';
-import type { ParsedTransaction, BalanceUpdateInfo, TransactionType } from '../types.js';
+import { BankParser } from "../base-parser.js";
+import type { ParsedTransaction, BalanceUpdateInfo, TransactionType } from "../types.js";
 
 function parseNum(str: string): number | null {
-  const n = parseFloat(str.replace(/,/g, ''));
+  const n = parseFloat(str.replace(/,/g, ""));
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 export class SBIBankParser extends BankParser {
   getBankName(): string {
-    return 'State Bank of India';
+    return "State Bank of India";
   }
 
   canHandle(sender: string): boolean {
     const u = sender.toUpperCase();
     return (
-      u.includes('SBI') ||
-      u.includes('SBIINB') ||
-      u.includes('SBIUPI') ||
-      u.includes('SBICRD') ||
-      u.includes('ATMSBI') ||
-      u === 'SBIBK' ||
-      u === 'SBIBNK' ||
+      u.includes("SBI") ||
+      u.includes("SBIINB") ||
+      u.includes("SBIUPI") ||
+      u.includes("SBICRD") ||
+      u.includes("ATMSBI") ||
+      u === "SBIBK" ||
+      u === "SBIBNK" ||
       /^[A-Z]{2}-SBIBK-S$/.test(u) ||
       /^[A-Z]{2}-SBIBK-[TPG]$/.test(u) ||
       /^[A-Z]{2}-SBIBK$/.test(u) ||
       /^[A-Z]{2}-SBI$/.test(u) ||
-      u.includes('CBSSBI')
+      u.includes("CBSSBI")
     );
   }
 
   private isCreditCardMessage(sender: string): boolean {
-    return sender.toUpperCase().includes('SBICRD');
+    return sender.toUpperCase().includes("SBICRD");
   }
 
   private extractCreditCardLast4(message: string): string | null {
@@ -48,10 +48,10 @@ export class SBIBankParser extends BankParser {
       const creditLimit = this.extractAvailableLimit(smsBody) ?? parsed.creditLimit;
       const lower = smsBody.toLowerCase();
       const transactionType: TransactionType =
-        lower.includes('payment of') && lower.includes('credited to your sbi credit card')
-          ? 'INCOME'
-          : 'CREDIT';
-      const merchant = lower.includes('via bbps') ? 'BBPS Payment' : parsed.merchant;
+        lower.includes("payment of") && lower.includes("credited to your sbi credit card")
+          ? "INCOME"
+          : "CREDIT";
+      const merchant = lower.includes("via bbps") ? "BBPS Payment" : parsed.merchant;
       return {
         ...parsed,
         accountLast4: cardLast4,
@@ -112,19 +112,19 @@ export class SBIBankParser extends BankParser {
 
   protected override extractTransactionType(message: string): TransactionType | null {
     const lower = message.toLowerCase();
-    if (lower.includes('debited for')) return 'EXPENSE';
-    if (lower.includes('is debited')) return 'EXPENSE';
-    if (lower.includes('withdrawn')) return 'EXPENSE';
-    if (lower.includes('transferred')) return 'EXPENSE';
-    if (lower.includes('transfer')) return 'EXPENSE';
-    if (lower.includes('debit')) return 'EXPENSE';
-    if (lower.includes('paid to')) return 'EXPENSE';
-    if (lower.includes('atm withdrawal')) return 'EXPENSE';
-    if (lower.includes('by sbi debit card')) return 'EXPENSE';
-    if (lower.includes('received transfer')) return 'INCOME';
-    if (lower.includes('credited')) return 'INCOME';
-    if (lower.includes('has credit for')) return 'INCOME';
-    if (lower.includes('has a credit by')) return 'INCOME';
+    if (lower.includes("debited for")) return "EXPENSE";
+    if (lower.includes("is debited")) return "EXPENSE";
+    if (lower.includes("withdrawn")) return "EXPENSE";
+    if (lower.includes("transferred")) return "EXPENSE";
+    if (lower.includes("transfer")) return "EXPENSE";
+    if (lower.includes("debit")) return "EXPENSE";
+    if (lower.includes("paid to")) return "EXPENSE";
+    if (lower.includes("atm withdrawal")) return "EXPENSE";
+    if (lower.includes("by sbi debit card")) return "EXPENSE";
+    if (lower.includes("received transfer")) return "INCOME";
+    if (lower.includes("credited")) return "INCOME";
+    if (lower.includes("has credit for")) return "INCOME";
+    if (lower.includes("has a credit by")) return "INCOME";
     return super.extractTransactionType(message);
   }
 
@@ -195,13 +195,13 @@ export class SBIBankParser extends BankParser {
     if (debitCardMatch?.[1]) {
       const cardInfo = debitCardMatch[1];
       if (/^\d{4}$/.test(cardInfo)) return cardInfo;
-      const digits = cardInfo.replace(/\D/g, '');
+      const digits = cardInfo.replace(/\D/g, "");
       return digits.length >= 4 ? digits.slice(-4) : cardInfo;
     }
 
     const pattern1Match = /A\/c\s+(?:no\.?\s+)?([X*]*\d+)/i.exec(message);
     if (pattern1Match?.[1]) {
-      const digits = pattern1Match[1].replace(/\D/g, '');
+      const digits = pattern1Match[1].replace(/\D/g, "");
       return digits.length >= 4 ? digits.slice(-4) : digits;
     }
 
@@ -210,7 +210,7 @@ export class SBIBankParser extends BankParser {
 
     const pattern2aMatch = /AC\s+[X*]*(\d+)/i.exec(message);
     if (pattern2aMatch?.[1]) {
-      const digits = pattern2aMatch[1].replace(/\D/g, '');
+      const digits = pattern2aMatch[1].replace(/\D/g, "");
       return digits.length >= 4 ? digits.slice(-4) : digits;
     }
 
@@ -224,7 +224,10 @@ export class SBIBankParser extends BankParser {
     const p1 = /Avl\s+Bal\s+(?:Rs\.?|INR)\s*([0-9,]+(?:\.\d{2})?)/i.exec(message);
     if (p1?.[1]) return parseNum(p1[1]);
 
-    const p2 = /Your\s+updated\s+available\s+balance\s+is\s+(?:Rs\.?|INR)\s*([0-9,]+(?:\.\d{2})?)/i.exec(message);
+    const p2 =
+      /Your\s+updated\s+available\s+balance\s+is\s+(?:Rs\.?|INR)\s*([0-9,]+(?:\.\d{2})?)/i.exec(
+        message,
+      );
     if (p2?.[1]) return parseNum(p2[1]);
 
     const p3 = /Available\s+Balance:?\s+(?:Rs\.?|INR)\s*([0-9,]+(?:\.\d{2})?)/i.exec(message);
@@ -254,38 +257,40 @@ export class SBIBankParser extends BankParser {
 
   protected override isTransactionMessage(message: string): boolean {
     const lower = message.toLowerCase();
-    if (lower.includes('e-statement of sbi credit card')) return false;
-    if (lower.includes('is due for')) return false;
+    if (lower.includes("e-statement of sbi credit card")) return false;
+    if (lower.includes("is due for")) return false;
     if (
-      lower.includes('sbi card application') ||
-      lower.includes('process your app.no') ||
-      lower.includes('track your application status')
-    ) return false;
+      lower.includes("sbi card application") ||
+      lower.includes("process your app.no") ||
+      lower.includes("track your application status")
+    )
+      return false;
     if (this.isUPIMandateNotification(message)) return false;
-    if (lower.includes('by sbi debit card')) return true;
+    if (lower.includes("by sbi debit card")) return true;
     if (
-      lower.includes('debit') ||
-      lower.includes('transfer') ||
-      lower.includes('credit') ||
-      lower.includes('credited')
-    ) return true;
+      lower.includes("debit") ||
+      lower.includes("transfer") ||
+      lower.includes("credit") ||
+      lower.includes("credited")
+    )
+      return true;
     return super.isTransactionMessage(message);
   }
 
   isUPIMandateNotification(message: string): boolean {
     const lower = message.toLowerCase();
-    return lower.includes('upi-mandate') && lower.includes('successfully created');
+    return lower.includes("upi-mandate") && lower.includes("successfully created");
   }
 
   override isBalanceUpdateNotification(message: string): boolean {
     const lower = message.toLowerCase();
     const isStatement =
-      lower.includes('statement is generated') ||
-      (lower.includes('statement') && lower.includes('generated'));
+      lower.includes("statement is generated") ||
+      (lower.includes("statement") && lower.includes("generated"));
     const hasAmountDue =
-      lower.includes('total amount due') ||
-      lower.includes('total due') ||
-      lower.includes('minimum amount due');
+      lower.includes("total amount due") ||
+      lower.includes("total due") ||
+      lower.includes("minimum amount due");
     return isStatement && hasAmountDue;
   }
 

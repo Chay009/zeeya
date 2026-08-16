@@ -1,20 +1,20 @@
 // Exact 1:1 port of UCOBankParser.kt from Cashiro parser-core
-import { BankParser } from '../base-parser.js';
-import type { TransactionType } from '../types.js';
+import { BankParser } from "../base-parser.js";
+import type { TransactionType } from "../types.js";
 
 function parseNum(str: string): number | null {
-  const n = parseFloat(str.replace(/,/g, ''));
+  const n = parseFloat(str.replace(/,/g, ""));
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 export class UCOBankParser extends BankParser {
   getBankName(): string {
-    return 'UCO Bank';
+    return "UCO Bank";
   }
 
   canHandle(sender: string): boolean {
     const u = sender.toUpperCase();
-    return u.includes('UCOBNK') || u.includes('UCOBKS') || u.includes('UCOBANK');
+    return u.includes("UCOBNK") || u.includes("UCOBKS") || u.includes("UCOBANK");
   }
 
   protected override extractAmount(message: string): number | null {
@@ -39,8 +39,8 @@ export class UCOBankParser extends BankParser {
 
   protected override extractTransactionType(message: string): TransactionType | null {
     const lower = message.toLowerCase();
-    if (lower.includes('debited with')) return 'EXPENSE';
-    if (lower.includes('credited with')) return 'INCOME';
+    if (lower.includes("debited with")) return "EXPENSE";
+    if (lower.includes("credited with")) return "INCOME";
     return super.extractTransactionType(message);
   }
 
@@ -93,13 +93,13 @@ export class UCOBankParser extends BankParser {
   protected override isTransactionMessage(message: string): boolean {
     const lower = message.toLowerCase();
 
-    if (lower.includes('otp') || lower.includes('password') || lower.includes('pin')) {
+    if (lower.includes("otp") || lower.includes("password") || lower.includes("pin")) {
       return false;
     }
 
     if (
-      (lower.includes('debited') || lower.includes('credited')) &&
-      (lower.includes('uco') || lower.includes('a/c') || lower.includes('account'))
+      (lower.includes("debited") || lower.includes("credited")) &&
+      (lower.includes("uco") || lower.includes("a/c") || lower.includes("account"))
     ) {
       return true;
     }

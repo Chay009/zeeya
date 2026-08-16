@@ -1,9 +1,9 @@
 // Exact 1:1 port of JupiterBankParser.kt from Cashiro parser-core
-import { BankParser } from '../base-parser.js';
+import { BankParser } from "../base-parser.js";
 
 export class JupiterBankParser extends BankParser {
   getBankName(): string {
-    return 'Jupiter';
+    return "Jupiter";
   }
 
   canHandle(sender: string): boolean {
@@ -20,14 +20,14 @@ export class JupiterBankParser extends BankParser {
     // Pattern 1: "Rs.130.00 debited"
     const debitMatch = /Rs\.?\s*([0-9,]+(?:\.\d{2})?)\s+debited/i.exec(message);
     if (debitMatch?.[1]) {
-      const val = parseFloat((debitMatch[1] ?? '').replace(/,/g, ''));
+      const val = parseFloat((debitMatch[1] ?? "").replace(/,/g, ""));
       if (!isNaN(val)) return val;
     }
 
     // Pattern 2: "Rs.XXX credited"
     const creditMatch = /Rs\.?\s*([0-9,]+(?:\.\d{2})?)\s+credited/i.exec(message);
     if (creditMatch?.[1]) {
-      const val = parseFloat((creditMatch[1] ?? '').replace(/,/g, ''));
+      const val = parseFloat((creditMatch[1] ?? "").replace(/,/g, ""));
       if (!isNaN(val)) return val;
     }
 
@@ -37,12 +37,12 @@ export class JupiterBankParser extends BankParser {
   protected override extractMerchant(message: string, sender: string): string | null {
     const lower = message.toLowerCase();
 
-    if (lower.includes('edge csb bank rupay credit card')) return 'Credit Card Payment';
-    if (lower.includes('jupiter csb edge')) return 'Credit Card Payment';
-    if (lower.includes('credit card')) return 'Credit Card Payment';
-    if (lower.includes('upi')) return 'UPI Transaction';
+    if (lower.includes("edge csb bank rupay credit card")) return "Credit Card Payment";
+    if (lower.includes("jupiter csb edge")) return "Credit Card Payment";
+    if (lower.includes("credit card")) return "Credit Card Payment";
+    if (lower.includes("upi")) return "UPI Transaction";
 
-    return super.extractMerchant(message, sender) ?? 'Jupiter Transaction';
+    return super.extractMerchant(message, sender) ?? "Jupiter Transaction";
   }
 
   protected override extractAccountLast4(message: string): string | null {
@@ -69,12 +69,12 @@ export class JupiterBankParser extends BankParser {
     const lower = message.toLowerCase();
 
     // Skip dispute instructions (not a transaction)
-    if (lower.includes('to dispute') && lower.includes('call')) {
+    if (lower.includes("to dispute") && lower.includes("call")) {
       // This is just instruction text, don't skip the entire message
     }
 
     // Check for Jupiter-specific transaction keywords
-    if (lower.includes('jupiter') || lower.includes('csb')) {
+    if (lower.includes("jupiter") || lower.includes("csb")) {
       // If it's from Jupiter/CSB and has transaction keywords, it's likely valid
       return super.isTransactionMessage(message);
     }

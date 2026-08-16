@@ -1,7 +1,7 @@
 // Exact 1:1 port of UtkarshBankParser.kt from Cashiro parser-core
-import { BankParser } from '../base-parser.js';
-import { CompiledPatterns } from '../patterns.js';
-import type { TransactionType } from '../types.js';
+import { BankParser } from "../base-parser.js";
+import { CompiledPatterns } from "../patterns.js";
+import type { TransactionType } from "../types.js";
 
 /**
  * Parser for Utkarsh Small Finance Bank (SFBL) SuperCard credit card transactions.
@@ -9,16 +9,12 @@ import type { TransactionType } from '../types.js';
  */
 export class UtkarshBankParser extends BankParser {
   getBankName(): string {
-    return 'Utkarsh Bank';
+    return "Utkarsh Bank";
   }
 
   canHandle(sender: string): boolean {
     const u = sender.toUpperCase();
-    return (
-      u.includes('UTKSPR') ||
-      u.includes('UTKARSH') ||
-      u.includes('UTKSFB')
-    );
+    return u.includes("UTKSPR") || u.includes("UTKARSH") || u.includes("UTKSFB");
   }
 
   protected override extractAmount(message: string): number | null {
@@ -29,7 +25,7 @@ export class UtkarshBankParser extends BankParser {
     // and works correctly when the transaction amount itself starts with Rs.).
     const inrMatch = CompiledPatterns.Amount.INR_PATTERN.exec(message);
     if (inrMatch?.[1]) {
-      const val = parseFloat(inrMatch[1].replace(/,/g, ''));
+      const val = parseFloat(inrMatch[1].replace(/,/g, ""));
       if (!isNaN(val)) return val;
     }
     return super.extractAmount(message);
@@ -52,28 +48,25 @@ export class UtkarshBankParser extends BankParser {
     const forGroup = /for\s+([^0-9][^\s]+?)(?:\s+on\s+|\s+at\s+|$)/i.exec(message)?.[1];
     if (forGroup !== undefined) {
       const merchant = forGroup.trim();
-      if (
-        merchant.toLowerCase() !== 'upi' &&
-        merchant.toLowerCase() !== 'inr'
-      ) {
+      if (merchant.toLowerCase() !== "upi" && merchant.toLowerCase() !== "inr") {
         return this.cleanMerchantName(merchant);
       }
     }
 
     // Check for specific patterns
-    if (lowerMessage.includes('supercard') && lowerMessage.includes('upi')) {
-      return 'UPI Payment';
+    if (lowerMessage.includes("supercard") && lowerMessage.includes("upi")) {
+      return "UPI Payment";
     }
 
     // Do not delegate to super.extractMerchant — base FROM/AT patterns would
     // spuriously match "from Utkarsh Bank SuperCard xxNNNN on …" and return
     // the card description as a merchant name.
-    return 'Utkarsh SuperCard';
+    return "Utkarsh SuperCard";
   }
 
   protected override extractTransactionType(_message: string): TransactionType | null {
     // Utkarsh SuperCard is a credit card product, all transactions are credit
-    return 'CREDIT';
+    return "CREDIT";
   }
 
   protected override extractAccountLast4(message: string): string | null {

@@ -36,10 +36,10 @@
 // branch and the Jaro-Winkler formula preserved exactly as found.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import vendorSeedRaw      from './data/vendor_seed.json';
-import vendorBanksRaw     from './data/vendor_banks.json';
-import vendorBrandsRaw    from './data/vendor_brands.json';
-import vendorOperatorsRaw from './data/vendor_operators.json';
+import vendorSeedRaw from "./data/vendor_seed.json";
+import vendorBanksRaw from "./data/vendor_banks.json";
+import vendorBrandsRaw from "./data/vendor_brands.json";
+import vendorOperatorsRaw from "./data/vendor_operators.json";
 
 // ── Laa3/bar — operator trie node ──────────────────────────────────────────
 // Root node holds char '*' (0x2a), matching the real constructor
@@ -62,7 +62,7 @@ function newTrieNode(char: string): TrieNode {
 }
 
 function buildOperatorTrie(operators: string[]): TrieNode {
-  const root = newTrieNode('*');
+  const root = newTrieNode("*");
   for (const op of operators) {
     let node = root;
     for (const ch of op) {
@@ -87,7 +87,9 @@ function buildOperatorTrie(operators: string[]): TrieNode {
 function descend(node: TrieNode, ch: string): TrieNode {
   const next = node.children.get(ch);
   if (!next) {
-    throw new Error(`vendor-category-matcher: operator trie has no child '${ch}' from node '${node.char}'`);
+    throw new Error(
+      `vendor-category-matcher: operator trie has no child '${ch}' from node '${node.char}'`,
+    );
   }
   return next;
 }
@@ -110,8 +112,8 @@ const OPERATOR_TRIE = buildOperatorTrie((vendorOperatorsRaw as string[]).filter(
 export function tokenizeByOperators(rawText: string): string[] {
   const text = rawText.toLowerCase();
   const words: string[] = [];
-  let currentWord = '';
-  let operatorBuf = '';
+  let currentWord = "";
+  let operatorBuf = "";
   let node = OPERATOR_TRIE;
   let inOperatorMatch = false;
 
@@ -122,8 +124,8 @@ export function tokenizeByOperators(rawText: string): string[] {
       // Operator fully matched with no further extension possible — consume
       // it as a separator and flush the word accumulated before it.
       if (currentWord.length > 0) words.push(currentWord);
-      currentWord = '';
-      operatorBuf = '';
+      currentWord = "";
+      operatorBuf = "";
 
       if (OPERATOR_TRIE.children.has(c)) {
         operatorBuf = c;
@@ -154,13 +156,13 @@ export function tokenizeByOperators(rawText: string): string[] {
       // The walk so far WAS a complete, valid operator — commit the word
       // that preceded it; the operator itself is discarded (separator).
       if (currentWord.length > 0) words.push(currentWord);
-      currentWord = '';
+      currentWord = "";
     } else {
       // The walk broke before reaching a valid operator — not a real
       // separator, fold the buffered characters back in as literal text.
       currentWord += operatorBuf;
     }
-    operatorBuf = '';
+    operatorBuf = "";
 
     if (OPERATOR_TRIE.children.has(c)) {
       operatorBuf = c;
@@ -177,7 +179,7 @@ export function tokenizeByOperators(rawText: string): string[] {
   }
 
   const tokens: string[] = [];
-  for (const w of words) tokens.push(...w.split(' '));
+  for (const w of words) tokens.push(...w.split(" "));
   return tokens.filter(Boolean);
 }
 
@@ -230,8 +232,8 @@ function jaroWinkler(a: string, b: string): number {
 
   if (matches === 0) return 0;
 
-  const aMatchedChars = a.split('').filter((_, i) => aMatched[i]);
-  const bMatchedChars = b.split('').filter((_, i) => bMatched[i]);
+  const aMatchedChars = a.split("").filter((_, i) => aMatched[i]);
+  const bMatchedChars = b.split("").filter((_, i) => bMatched[i]);
   let diffs = 0;
   for (let i = 0; i < matches; i++) {
     if (aMatchedChars[i] !== bMatchedChars[i]) diffs++;
@@ -288,7 +290,7 @@ export function fuzzyMatchTags(tokens: string[], tagMap: Map<string, string[]>):
 
   for (const token of tokens) {
     const localTags = new Set<string>();
-    let bestKeyword = '';
+    let bestKeyword = "";
     let bestScore = 0;
 
     for (const keyword of keys) {
@@ -324,7 +326,10 @@ export function fuzzyMatchTags(tokens: string[], tagMap: Map<string, string[]>):
 const CATEGORY_TAG_MAP = buildTagMap(vendorSeedRaw as Record<string, string[]>);
 const BANK_TAG_MAP = buildTagMap(vendorBanksRaw as Record<string, string[]>);
 
-interface BrandEntry { tokens: string[]; tags: string[] }
+interface BrandEntry {
+  tokens: string[];
+  tags: string[];
+}
 const brandsRaw = vendorBrandsRaw as Record<string, BrandEntry>;
 const BRAND_TOKEN_MAP = new Map<string, string[]>();
 const BRAND_TAGS: Record<string, string[]> = {};

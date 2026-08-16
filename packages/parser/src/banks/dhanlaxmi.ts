@@ -1,17 +1,17 @@
 // 1:1 port of DhanlaxmiBankParser.kt from Cashiro parser-core
-import { BankParser } from '../base-parser.js';
-import type { TransactionType } from '../types.js';
+import { BankParser } from "../base-parser.js";
+import type { TransactionType } from "../types.js";
 
 export class DhanlaxmiBankParser extends BankParser {
   getBankName(): string {
-    return 'Dhanlaxmi Bank';
+    return "Dhanlaxmi Bank";
   }
 
   canHandle(sender: string): boolean {
     const u = sender.toUpperCase();
     return (
-      u.includes('DHANBK') ||
-      u.includes('DHANLAXMI') ||
+      u.includes("DHANBK") ||
+      u.includes("DHANLAXMI") ||
       /^[A-Z]{2}-DHANBK-?[A-Z]?$/.test(u) ||
       /^[A-Z]{2}-DHANBK$/.test(u)
     );
@@ -21,14 +21,14 @@ export class DhanlaxmiBankParser extends BankParser {
     // Pattern 1: "INR 20.00 is debited" or "INR 10.00 is credited"
     const inrPattern = /INR\s+([0-9,]+(?:\.\d{2})?)\s+is\s+(?:debited|credited)/i.exec(message);
     if (inrPattern?.[1]) {
-      const val = parseFloat(inrPattern[1].replace(/,/g, ''));
+      const val = parseFloat(inrPattern[1].replace(/,/g, ""));
       if (isFinite(val)) return val;
     }
 
     // Pattern 2: "credited for Rs.10.00" or "debited for Rs.10.00"
     const rsPattern = /(?:credited|debited)\s+for\s+Rs\.?\s*([0-9,]+(?:\.\d{2})?)/i.exec(message);
     if (rsPattern?.[1]) {
-      const val = parseFloat(rsPattern[1].replace(/,/g, ''));
+      const val = parseFloat(rsPattern[1].replace(/,/g, ""));
       if (isFinite(val)) return val;
     }
 
@@ -37,11 +37,11 @@ export class DhanlaxmiBankParser extends BankParser {
 
   protected override extractTransactionType(message: string): TransactionType | null {
     const lower = message.toLowerCase();
-    if (lower.includes('is debited')) return 'EXPENSE';
-    if (lower.includes('is credited')) return 'INCOME';
-    if (lower.includes('debited from')) return 'EXPENSE';
-    if (lower.includes('credited to')) return 'INCOME';
-    if (lower.includes('credited for')) return 'INCOME';
+    if (lower.includes("is debited")) return "EXPENSE";
+    if (lower.includes("is credited")) return "INCOME";
+    if (lower.includes("debited from")) return "EXPENSE";
+    if (lower.includes("credited to")) return "INCOME";
+    if (lower.includes("credited for")) return "INCOME";
     return super.extractTransactionType(message);
   }
 
@@ -61,7 +61,7 @@ export class DhanlaxmiBankParser extends BankParser {
     // Pattern: "Aval Bal is INR 26,578.49"
     const m = /Aval\s+Bal\s+is\s+INR\s+([0-9,]+(?:\.\d{2})?)/i.exec(message);
     if (m?.[1]) {
-      const val = parseFloat(m[1].replace(/,/g, ''));
+      const val = parseFloat(m[1].replace(/,/g, ""));
       if (isFinite(val)) return val;
     }
     return super.extractBalance(message);
@@ -83,11 +83,11 @@ export class DhanlaxmiBankParser extends BankParser {
         if (this.isValidMerchantName(merchant)) return merchant;
       }
 
-      return 'UPI Payment';
+      return "UPI Payment";
     }
 
     if (/debited from a\/c/i.test(message) && /credited/i.test(message)) {
-      return 'Internal Transfer';
+      return "Internal Transfer";
     }
 
     return super.extractMerchant(message, sender);
@@ -109,14 +109,14 @@ export class DhanlaxmiBankParser extends BankParser {
     const lower = message.toLowerCase();
 
     if (
-      lower.includes('otp') ||
-      lower.includes('one time password') ||
-      lower.includes('verification code')
+      lower.includes("otp") ||
+      lower.includes("one time password") ||
+      lower.includes("verification code")
     ) {
       return false;
     }
 
-    const keywords = ['is debited from', 'is credited to', 'credited for', 'debited from a/c'];
+    const keywords = ["is debited from", "is credited to", "credited for", "debited from a/c"];
     if (keywords.some((k) => lower.includes(k))) return true;
 
     return super.isTransactionMessage(message);

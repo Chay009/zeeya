@@ -1,26 +1,26 @@
 // Exact 1:1 port of CanaraBankParser.kt from Cashiro parser-core
-import { BankParser } from '../base-parser.js';
+import { BankParser } from "../base-parser.js";
 
 export class CanaraBankParser extends BankParser {
   getBankName(): string {
-    return 'Canara Bank';
+    return "Canara Bank";
   }
 
   canHandle(sender: string): boolean {
     const u = sender.toUpperCase();
-    return u.includes('CANBNK') || u.includes('CANARA');
+    return u.includes("CANBNK") || u.includes("CANARA");
   }
 
   protected override extractAmount(message: string): number | null {
     const m1 = /Rs\.?\s*([\d,]+(?:\.\d{2})?)\s+paid/i.exec(message);
     if (m1?.[1]) {
-      const val = parseFloat(m1[1].replace(/,/g, ''));
+      const val = parseFloat(m1[1].replace(/,/g, ""));
       if (!isNaN(val)) return val;
     }
 
     const m2 = /INR\s+([\d,]+(?:\.\d{2})?)\s+has\s+been\s+DEBITED/i.exec(message);
     if (m2?.[1]) {
-      const val = parseFloat(m2[1].replace(/,/g, ''));
+      const val = parseFloat(m2[1].replace(/,/g, ""));
       if (!isNaN(val)) return val;
     }
 
@@ -34,7 +34,7 @@ export class CanaraBankParser extends BankParser {
       if (this.isValidMerchantName(merchant)) return merchant;
     }
 
-    if (/DEBITED/i.test(message)) return 'Canara Bank Debit';
+    if (/DEBITED/i.test(message)) return "Canara Bank Debit";
 
     return super.extractMerchant(message, sender);
   }
@@ -48,7 +48,7 @@ export class CanaraBankParser extends BankParser {
   protected override extractBalance(message: string): number | null {
     const m = /(?:Total\s+)?Avail\.?bal\s+INR\s+([\d,]+(?:\.\d{2})?)/i.exec(message);
     if (m?.[1]) {
-      const val = parseFloat(m[1].replace(/,/g, ''));
+      const val = parseFloat(m[1].replace(/,/g, ""));
       if (!isNaN(val)) return val;
     }
     return super.extractBalance(message);
@@ -62,12 +62,13 @@ export class CanaraBankParser extends BankParser {
 
   protected override isTransactionMessage(message: string): boolean {
     const lower = message.toLowerCase();
-    if (lower.includes('failed due to')) return false;
+    if (lower.includes("failed due to")) return false;
     if (
-      lower.includes('paid thru') ||
-      lower.includes('has been debited') ||
-      lower.includes('has been credited')
-    ) return true;
+      lower.includes("paid thru") ||
+      lower.includes("has been debited") ||
+      lower.includes("has been credited")
+    )
+      return true;
     return super.isTransactionMessage(message);
   }
 }

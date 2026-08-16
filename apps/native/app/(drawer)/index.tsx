@@ -156,8 +156,8 @@ export default function Home() {
                   Connect your SMS inbox
                 </Text>
                 <Text style={{ color: t.textMuted, fontSize: 13, marginBottom: 14 }}>
-                  zeeya reads your bank and transaction messages on-device to build this
-                  dashboard. Nothing ever leaves your phone.
+                  zeeya reads your bank and transaction messages on-device to build this dashboard.
+                  Nothing ever leaves your phone.
                 </Text>
                 <Pressable
                   onPress={connect}
@@ -283,13 +283,7 @@ export default function Home() {
   );
 }
 
-function Card({
-  children,
-  style,
-}: {
-  children: React.ReactNode;
-  style?: StyleProp<ViewStyle>;
-}) {
+function Card({ children, style }: { children: React.ReactNode; style?: StyleProp<ViewStyle> }) {
   return (
     <View
       style={[
@@ -312,8 +306,18 @@ function StatRow({ income, expense }: { income: number; expense: number }) {
   const net = income - expense;
   return (
     <Card style={{ marginBottom: 16, flexDirection: "row", gap: 16 }}>
-      <Stat label="Income" value={formatMoney(income, "INR")} color={t.positive} icon="trending-up" />
-      <Stat label="Expenses" value={formatMoney(expense, "INR")} color={t.negative} icon="trending-down" />
+      <Stat
+        label="Income"
+        value={formatMoney(income, "INR")}
+        color={t.positive}
+        icon="trending-up"
+      />
+      <Stat
+        label="Expenses"
+        value={formatMoney(expense, "INR")}
+        color={t.negative}
+        icon="trending-down"
+      />
       <Stat
         label="Net"
         value={formatMoney(net, "INR")}
@@ -363,10 +367,7 @@ function AccountCard({ account }: { account: AccountBalance }) {
       {older.length > 0 && (
         <View style={{ marginTop: 10, gap: 4 }}>
           {older.map((r) => (
-            <View
-              key={r.asOf}
-              style={{ flexDirection: "row", justifyContent: "space-between" }}
-            >
+            <View key={r.asOf} style={{ flexDirection: "row", justifyContent: "space-between" }}>
               <Text style={{ color: t.textMuted, fontSize: 11 }}>
                 {formatDateTimeFull(r.asOf)} · {r.sender}
               </Text>
@@ -393,7 +394,10 @@ function MerchantMandateGroup({ group }: { group: MerchantMandates }) {
       <Text style={{ color: t.textPrimary, fontSize: 13, fontWeight: "600" }}>
         {group.merchant}
         {multi ? (
-          <Text style={{ color: t.textMuted, fontWeight: "400" }}> · {group.mandates.length} mandates</Text>
+          <Text style={{ color: t.textMuted, fontWeight: "400" }}>
+            {" "}
+            · {group.mandates.length} mandates
+          </Text>
         ) : null}
       </Text>
       <View style={{ marginTop: 4, paddingLeft: multi ? 10 : 0, gap: 6 }}>
@@ -420,7 +424,8 @@ function MandateRow({ mandate }: { mandate: Mandate }) {
             }}
           />
           <Text style={{ color: t.textMuted, fontSize: 12 }}>
-            {mandate.status === "active" ? "Active" : "Cancelled"} · {formatDate(mandate.lastUpdated)}
+            {mandate.status === "active" ? "Active" : "Cancelled"} ·{" "}
+            {formatDate(mandate.lastUpdated)}
           </Text>
         </View>
         <Text style={{ color: t.textMuted, fontSize: 13 }}>

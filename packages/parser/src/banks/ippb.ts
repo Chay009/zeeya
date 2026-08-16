@@ -1,15 +1,15 @@
 // Exact 1:1 port of IPPBParser.kt from Cashiro parser-core
-import { BankParser } from '../base-parser.js';
-import type { TransactionType } from '../types.js';
+import { BankParser } from "../base-parser.js";
+import type { TransactionType } from "../types.js";
 
 function parseNum(str: string): number | null {
-  const n = parseFloat(str.replace(/,/g, ''));
+  const n = parseFloat(str.replace(/,/g, ""));
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 export class IPPBParser extends BankParser {
   getBankName(): string {
-    return 'India Post Payments Bank';
+    return "India Post Payments Bank";
   }
 
   canHandle(sender: string): boolean {
@@ -33,9 +33,7 @@ export class IPPBParser extends BankParser {
     const m = /[Aa]\/[Cc]\s+X?(\d+)/i.exec(message);
     if (m?.[1]) {
       const accountNumber = m[1];
-      return accountNumber.length >= 4
-        ? accountNumber.slice(-4)
-        : accountNumber;
+      return accountNumber.length >= 4 ? accountNumber.slice(-4) : accountNumber;
     }
     return super.extractAccountLast4(message);
   }
@@ -54,13 +52,13 @@ export class IPPBParser extends BankParser {
     const lowerMessage = message.toLowerCase();
 
     // Pattern 1: "for UPI to john@superyes" (Debit)
-    if (lowerMessage.includes('debit')) {
+    if (lowerMessage.includes("debit")) {
       const toMatch = /to\s+([^\s]+(?:@[^\s]+)?)/i.exec(message);
       if (toMatch?.[1]) {
         const merchant = toMatch[1].trim();
         // Clean up UPI ID if needed
-        if (merchant.includes('@')) {
-          const name = merchant.split('@')[0] ?? merchant;
+        if (merchant.includes("@")) {
+          const name = merchant.split("@")[0] ?? merchant;
           return this.cleanMerchantName(name);
         } else {
           return this.cleanMerchantName(merchant);
@@ -68,13 +66,13 @@ export class IPPBParser extends BankParser {
       }
 
       // Fallback: "for UPI" without specific merchant
-      if (lowerMessage.includes('for upi')) {
-        return 'UPI Payment';
+      if (lowerMessage.includes("for upi")) {
+        return "UPI Payment";
       }
     }
 
     // Pattern 2: "from john doe thru IPPB" (Credit)
-    if (lowerMessage.includes('received a payment')) {
+    if (lowerMessage.includes("received a payment")) {
       const fromMatch = /from\s+(.+?)\s+thru/i.exec(message);
       if (fromMatch?.[1]) {
         const senderName = fromMatch[1].trim();
@@ -104,9 +102,10 @@ export class IPPBParser extends BankParser {
   protected override extractTransactionType(message: string): TransactionType | null {
     const lowerMessage = message.toLowerCase();
 
-    if (lowerMessage.includes('debit')) return 'EXPENSE';
-    if (lowerMessage.includes('received a payment')) return 'INCOME';
-    if (lowerMessage.includes('credit') && lowerMessage.includes('info: upi/credit')) return 'INCOME';
+    if (lowerMessage.includes("debit")) return "EXPENSE";
+    if (lowerMessage.includes("received a payment")) return "INCOME";
+    if (lowerMessage.includes("credit") && lowerMessage.includes("info: upi/credit"))
+      return "INCOME";
     return super.extractTransactionType(message);
   }
 
@@ -115,9 +114,9 @@ export class IPPBParser extends BankParser {
 
     // Check for IPPB-specific transaction keywords
     if (
-      lowerMessage.includes('debit rs') ||
-      lowerMessage.includes('received a payment') ||
-      (lowerMessage.includes('info: upi') && lowerMessage.includes('credit'))
+      lowerMessage.includes("debit rs") ||
+      lowerMessage.includes("received a payment") ||
+      (lowerMessage.includes("info: upi") && lowerMessage.includes("credit"))
     ) {
       return true;
     }

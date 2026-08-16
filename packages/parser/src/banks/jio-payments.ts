@@ -1,19 +1,19 @@
 // Exact 1:1 port of JioPaymentsBankParser.kt from Cashiro parser-core
-import { BankParser } from '../base-parser.js';
-import type { TransactionType } from '../types.js';
+import { BankParser } from "../base-parser.js";
+import type { TransactionType } from "../types.js";
 
 function parseNum(str: string): number | null {
-  const n = parseFloat(str.replace(/,/g, ''));
+  const n = parseFloat(str.replace(/,/g, ""));
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 export class JioPaymentsBankParser extends BankParser {
   getBankName(): string {
-    return 'Jio Payments Bank';
+    return "Jio Payments Bank";
   }
 
   canHandle(sender: string): boolean {
-    return sender.toUpperCase().includes('JIOPBS');
+    return sender.toUpperCase().includes("JIOPBS");
   }
 
   protected override extractAmount(message: string): number | null {
@@ -51,9 +51,9 @@ export class JioPaymentsBankParser extends BankParser {
 
     // If no specific merchant found, check transaction type
     const lower = message.toLowerCase();
-    if (lower.includes('upi/cr')) return 'UPI Credit';
-    if (lower.includes('upi/dr')) return 'UPI Payment';
-    if (lower.includes('sent from')) return 'Money Transfer';
+    if (lower.includes("upi/cr")) return "UPI Credit";
+    if (lower.includes("upi/dr")) return "UPI Payment";
+    if (lower.includes("sent from")) return "Money Transfer";
 
     return super.extractMerchant(message, sender);
   }
@@ -91,21 +91,21 @@ export class JioPaymentsBankParser extends BankParser {
 
   protected override extractTransactionType(message: string): TransactionType | null {
     const lower = message.toLowerCase();
-    if (lower.includes('credited')) return 'INCOME';
-    if (lower.includes('upi/cr')) return 'INCOME';
-    if (lower.includes('debited')) return 'EXPENSE';
-    if (lower.includes('upi/dr')) return 'EXPENSE';
-    if (lower.includes('sent from')) return 'EXPENSE';
+    if (lower.includes("credited")) return "INCOME";
+    if (lower.includes("upi/cr")) return "INCOME";
+    if (lower.includes("debited")) return "EXPENSE";
+    if (lower.includes("upi/dr")) return "EXPENSE";
+    if (lower.includes("sent from")) return "EXPENSE";
     return super.extractTransactionType(message);
   }
 
   protected override isTransactionMessage(message: string): boolean {
     const lower = message.toLowerCase();
     if (
-      lower.includes('jpb a/c') ||
-      lower.includes('upi/cr') ||
-      lower.includes('upi/dr') ||
-      lower.includes('sent from')
+      lower.includes("jpb a/c") ||
+      lower.includes("upi/cr") ||
+      lower.includes("upi/dr") ||
+      lower.includes("sent from")
     ) {
       return true;
     }

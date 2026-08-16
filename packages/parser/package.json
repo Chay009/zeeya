@@ -1,7 +1,7 @@
 {
   "name": "@zeeya/parser",
-  "type": "module",
   "version": "0.1.0",
+  "type": "module",
   "exports": {
     ".": {
       "default": "./src/index.ts"

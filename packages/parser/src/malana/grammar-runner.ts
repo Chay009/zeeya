@@ -1,5 +1,5 @@
-import type { Token } from './types';
-import type { CompiledLayer, GrammarEntry } from './grammar-compiler';
+import type { Token } from "./types";
+import type { CompiledLayer, GrammarEntry } from "./grammar-compiler";
 
 // Implements na3.bar.a() — token pair FSA matching
 // For each adjacent pair of tokens (with optional skipped tokens between),
@@ -10,12 +10,12 @@ import type { CompiledLayer, GrammarEntry } from './grammar-compiler';
 // Confirmed from ga3.baz.l() Dalvik bytecode: ([^0-9]*)([0-9]+) extracts group(1)=base type.
 // Both keyword-tokenizer and grammar-runner use the same strip to ensure consistent matching.
 function baseType(t: string): string {
-  return t.replace(/\d+$/, '');
+  return t.replace(/\d+$/, "");
 }
 
 // Payment method token types that override generic "debit" when merging attributes.
 // Confirmed from na3.bar.b() bytecode: special-cased values when raw == "neft"|"imps"|"upi"|"rtgs"|"aeps"
-const PAYMENT_METHODS = new Set(['neft', 'imps', 'upi', 'rtgs', 'aeps']);
+const PAYMENT_METHODS = new Set(["neft", "imps", "upi", "rtgs", "aeps"]);
 
 function findMatch(
   layer: CompiledLayer,
@@ -44,9 +44,7 @@ function findMatch(
     if (!entry) continue;
     if (between.length > entry.skipCount) continue;
     if (entry.types && between.length > 0) {
-      const allOk = between.every(t =>
-        entry.types!.some(rt => t.type === rt || t.raw === rt),
-      );
+      const allOk = between.every((t) => entry.types!.some((rt) => t.type === rt || t.raw === rt));
       if (!allOk) continue;
     }
     return entry;
@@ -65,42 +63,42 @@ function findMatch(
 function mergeChildAttrs(parent: Token, children: Token[]) {
   for (const child of children) {
     for (const [k, v] of Object.entries(child.values)) {
-      if (k === '_norm') {
+      if (k === "_norm") {
         // _norm carries normalized direction for TRANS1/TRANS2/TRANS3 and SEND tokens
         // that lack a [type,...] positional bracket — propagate as type when absent
-        if (!parent.values['type'] && (v === 'debit' || v === 'credit')) {
-          parent.values['type'] = v;
+        if (!parent.values["type"] && (v === "debit" || v === "credit")) {
+          parent.values["type"] = v;
         }
         continue;
       }
-      if (k.startsWith('_')) continue; // other internal metadata, don't propagate
+      if (k.startsWith("_")) continue; // other internal metadata, don't propagate
 
-      if (k === 'type') {
-        const existing = parent.values['type'];
+      if (k === "type") {
+        const existing = parent.values["type"];
         // If child carries a specific payment method and parent only has generic "debit", upgrade
-        if (PAYMENT_METHODS.has(v) && (!existing || existing === 'debit')) {
-          parent.values['type'] = v;
+        if (PAYMENT_METHODS.has(v) && (!existing || existing === "debit")) {
+          parent.values["type"] = v;
         } else if (!existing) {
-          parent.values['type'] = v;
+          parent.values["type"] = v;
         }
         continue;
       }
 
-      if (k === 'loc') {
-        if (!parent.values['from_loc']) parent.values['from_loc'] = v;
-        if (!parent.values['to_loc']) parent.values['to_loc'] = v;
+      if (k === "loc") {
+        if (!parent.values["from_loc"]) parent.values["from_loc"] = v;
+        if (!parent.values["to_loc"]) parent.values["to_loc"] = v;
         continue;
       }
 
-      if (k === 'airport') {
-        if (!parent.values['from_airport']) parent.values['from_airport'] = v;
-        if (!parent.values['to_airport']) parent.values['to_airport'] = v;
+      if (k === "airport") {
+        if (!parent.values["from_airport"]) parent.values["from_airport"] = v;
+        if (!parent.values["to_airport"]) parent.values["to_airport"] = v;
         continue;
       }
 
-      if (k === 'time') {
-        if (!parent.values['from_time']) parent.values['from_time'] = v;
-        if (!parent.values['to_time']) parent.values['to_time'] = v;
+      if (k === "time") {
+        if (!parent.values["from_time"]) parent.values["from_time"] = v;
+        if (!parent.values["to_time"]) parent.values["to_time"] = v;
         continue;
       }
 
@@ -108,8 +106,8 @@ function mergeChildAttrs(parent: Token, children: Token[]) {
     }
 
     // SEND token carries implicit debit direction (grammar rule SEND+AMT → INTENT)
-    if (child.type === 'SEND' && !parent.values['type']) {
-      parent.values['type'] = 'debit';
+    if (child.type === "SEND" && !parent.values["type"]) {
+      parent.values["type"] = "debit";
     }
 
     // Recurse into child's own children (na3.bar.b() processes entire child subtree)
@@ -148,7 +146,7 @@ export function runLayer(tokens: Token[], layer: CompiledLayer): Token[] {
         const merged: Token = {
           type: entry.resultType,
           raw: entry.resultType,
-          text: sliceText.map(t => t.text).join(' '),
+          text: sliceText.map((t) => t.text).join(" "),
           values: {
             ...entry.resultAttrs,
             _prevType: prev.type,
@@ -181,22 +179,22 @@ export function runLayer(tokens: Token[], layer: CompiledLayer): Token[] {
 // These appear as first-class extraction targets in the Malana result.
 function inheritLeafValues(merged: Token, sources: Token[]) {
   for (const src of sources) {
-    if (src.type === 'AMT' || src.type === 'NUM') {
-      if (!merged.values['amount']) merged.values['amount'] = src.text || src.raw;
+    if (src.type === "AMT" || src.type === "NUM") {
+      if (!merged.values["amount"]) merged.values["amount"] = src.text || src.raw;
     }
-    if (src.type === 'INSTRNO') {
-      if (!merged.values['instrno']) merged.values['instrno'] = src.text || src.raw;
+    if (src.type === "INSTRNO") {
+      if (!merged.values["instrno"]) merged.values["instrno"] = src.text || src.raw;
     }
     // When an INSTR result absorbs a NUM child (e.g. INS + NUM → INSTR[acc]), treat the
     // number as the account/instrument number, not a financial amount.
-    if (merged.type === 'INSTR' && src.type === 'NUM') {
-      if (!merged.values['instrno']) merged.values['instrno'] = src.text || src.raw;
+    if (merged.type === "INSTR" && src.type === "NUM") {
+      if (!merged.values["instrno"]) merged.values["instrno"] = src.text || src.raw;
     }
-    if (src.type === 'IDVAL') {
-      if (!merged.values['idval']) merged.values['idval'] = src.text || src.raw;
+    if (src.type === "IDVAL") {
+      if (!merged.values["idval"]) merged.values["idval"] = src.text || src.raw;
     }
-    if (src.type === 'DATE' || src.type === 'DATETIME') {
-      if (!merged.values['date']) merged.values['date'] = src.text || src.raw;
+    if (src.type === "DATE" || src.type === "DATETIME") {
+      if (!merged.values["date"]) merged.values["date"] = src.text || src.raw;
     }
     // Recurse into children that may hold typed leaves
     if (src.children.length > 0) {

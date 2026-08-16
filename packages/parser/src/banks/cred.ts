@@ -1,10 +1,10 @@
 // 1:1 port of CredParser.kt from Cashiro parser-core
-import { BankParser } from '../base-parser.js';
-import type { TransactionType } from '../types.js';
+import { BankParser } from "../base-parser.js";
+import type { TransactionType } from "../types.js";
 
 export class CredParser extends BankParser {
   getBankName(): string {
-    return 'CRED';
+    return "CRED";
   }
 
   canHandle(sender: string): boolean {
@@ -13,8 +13,8 @@ export class CredParser extends BankParser {
       /^[A-Z]{2}-CREDIN-S$/.test(u) ||
       /^[A-Z]{2}-CRED-[TPG]$/.test(u) ||
       /^[A-Z]{2}-CRED-S$/.test(u) ||
-      u === 'CRED' ||
-      u === 'CREDIN'
+      u === "CRED" ||
+      u === "CREDIN"
     );
   }
 
@@ -22,7 +22,7 @@ export class CredParser extends BankParser {
     // "Rs.XX,XXX" or "Rs. XX,XXX"
     const m = /Rs\.?\s*([0-9,]+(?:\.\d{2})?)/.exec(message);
     if (m?.[1]) {
-      const val = parseFloat(m[1].replace(/,/g, ''));
+      const val = parseFloat(m[1].replace(/,/g, ""));
       if (isFinite(val)) return val;
     }
     return super.extractAmount(message);
@@ -35,16 +35,16 @@ export class CredParser extends BankParser {
       const cardName = m[1].trim();
       if (cardName.length > 0) return `${cardName} Credit Card`;
     }
-    return super.extractMerchant(message, sender) ?? 'CRED';
+    return super.extractMerchant(message, sender) ?? "CRED";
   }
 
   protected override extractTransactionType(_message: string): TransactionType | null {
-    return 'TRANSFER';
+    return "TRANSFER";
   }
 
   protected override isTransactionMessage(message: string): boolean {
     const lower = message.toLowerCase();
-    if (lower.includes('payment of') && lower.includes('credited towards your')) return true;
+    if (lower.includes("payment of") && lower.includes("credited towards your")) return true;
     return super.isTransactionMessage(message);
   }
 }

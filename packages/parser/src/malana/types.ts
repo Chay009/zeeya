@@ -25,45 +25,45 @@ export interface CompiledGrammar {
 // would drift from what's actually validated at load time). Re-exported
 // under this name since every other file in malana/ imports SeedData from
 // here.
-export type { SeedData } from './asset-schemas';
+export type { SeedData } from "./asset-schemas";
 
 export type TrxTypeRich =
-  | 'EXPENSE'          // money leaving the account (debit, UPI pay, card spend)
-  | 'INCOME'           // money arriving (credit, refund)
-  | 'TRANSFER'         // inter-bank move: NEFT / IMPS / RTGS / AEPS
-  | 'INVESTMENT'       // MF / SIP / stocks / equity
-  | 'BALANCE_UPDATE'   // balance notification with no transaction amount
-  | 'SALARY'           // salary / wage credit
-  | 'AUTO_DEBIT'       // autopay / standing instruction debit
-  | 'RECHARGE'         // mobile / DTH / utility recharge
-  | 'WALLET_CREDIT'    // wallet top-up or load
-  | 'WALLET_DEBIT'     // wallet spend or deduction
-  | 'ATM_WITHDRAWAL';  // ATM cash withdrawal
+  | "EXPENSE" // money leaving the account (debit, UPI pay, card spend)
+  | "INCOME" // money arriving (credit, refund)
+  | "TRANSFER" // inter-bank move: NEFT / IMPS / RTGS / AEPS
+  | "INVESTMENT" // MF / SIP / stocks / equity
+  | "BALANCE_UPDATE" // balance notification with no transaction amount
+  | "SALARY" // salary / wage credit
+  | "AUTO_DEBIT" // autopay / standing instruction debit
+  | "RECHARGE" // mobile / DTH / utility recharge
+  | "WALLET_CREDIT" // wallet top-up or load
+  | "WALLET_DEBIT" // wallet spend or deduction
+  | "ATM_WITHDRAWAL"; // ATM cash withdrawal
 
 export interface MalanaResult {
-  category: string | null;       // GRM_BANK | GRM_OTP | GRM_TRAVEL | GRM_BILL | GRM_DELIVERY | etc.
-  tags: Record<string, string>;  // all grammar tags: trx, bal, acc, type, ref, bene, etc.
+  category: string | null; // GRM_BANK | GRM_OTP | GRM_TRAVEL | GRM_BILL | GRM_DELIVERY | etc.
+  tags: Record<string, string>; // all grammar tags: trx, bal, acc, type, ref, bene, etc.
   tokens: Token[];
 
   // ── Derived convenience fields ─────────────────────────────────────────────
-  bankName: string | null;           // from vendor_banks sender match + message body fallback
-  merchantCategory: string | null;   // from vendor_seed: food, travel, fuel, medical, etc.
-  subcategory: string | null;        // upi | neft | imps | autdbt | cheque | wallet | etc.
+  bankName: string | null; // from vendor_banks sender match + message body fallback
+  merchantCategory: string | null; // from vendor_seed: food, travel, fuel, medical, etc.
+  subcategory: string | null; // upi | neft | imps | autdbt | cheque | wallet | etc.
 
   // ── Bank-specific (GRM_BANK) ───────────────────────────────────────────────
-  trx: string | null;                // transaction amount
-  bal: string | null;                // balance
-  acc: string | null;                // account (last4 or masked)
-  trxType: string | null;            // raw seed type: debit | credit | upi | neft | imps | rtgs | etc.
-  trxTypeRich: TrxTypeRich | null;   // enriched type derived from trxType + tag presence
-  currency: string | null;           // ISO 4217: INR | USD | EUR | GBP | AED | SGD …
-  isFromCard: boolean;               // true when the INS token was creditcard or debitcard
-  creditLimit: string | null;        // available credit limit (from crdlmt tag)
-  ref: string | null;                // reference number
-  bene: string | null;               // beneficiary name
-  beneAcc: string | null;            // beneficiary account
-  vendor: string | null;             // extracted merchant/vendor name (from PATTERN)
-  location: string | null;           // location (from PATTERN)
+  trx: string | null; // transaction amount
+  bal: string | null; // balance
+  acc: string | null; // account (last4 or masked)
+  trxType: string | null; // raw seed type: debit | credit | upi | neft | imps | rtgs | etc.
+  trxTypeRich: TrxTypeRich | null; // enriched type derived from trxType + tag presence
+  currency: string | null; // ISO 4217: INR | USD | EUR | GBP | AED | SGD …
+  isFromCard: boolean; // true when the INS token was creditcard or debitcard
+  creditLimit: string | null; // available credit limit (from crdlmt tag)
+  ref: string | null; // reference number
+  bene: string | null; // beneficiary name
+  beneAcc: string | null; // beneficiary account
+  vendor: string | null; // extracted merchant/vendor name (from PATTERN)
+  location: string | null; // location (from PATTERN)
 
   // ── OTP (GRM_OTP) ─────────────────────────────────────────────────────────
   otp: string | null;
@@ -71,20 +71,20 @@ export interface MalanaResult {
 
   // ── Travel (GRM_TRAVEL) ───────────────────────────────────────────────────
   pnr: string | null;
-  flight: string | null;             // flight number/name
-  departure: string | null;          // departure time/station
-  arrival: string | null;            // arrival time/station
-  fare: string | null;               // ticket fare amount
-  trainBusNo: string | null;         // train or bus number
+  flight: string | null; // flight number/name
+  departure: string | null; // departure time/station
+  arrival: string | null; // arrival time/station
+  fare: string | null; // ticket fare amount
+  trainBusNo: string | null; // train or bus number
   boardingGate: string | null;
-  departureCode: string | null;      // IATA code resolved from departure city (airport.json)
-  arrivalCode: string | null;        // IATA code resolved from arrival city (airport.json)
+  departureCode: string | null; // IATA code resolved from departure city (airport.json)
+  arrivalCode: string | null; // IATA code resolved from arrival city (airport.json)
 
   // ── Delivery (GRM_DELIVERY) ───────────────────────────────────────────────
   orderNo: string | null;
   trackingId: string | null;
   deliveryStatus: string | null;
-  item: string | null;               // item name (from PATTERN #item)
+  item: string | null; // item name (from PATTERN #item)
 
   // ── Bill / Subscription (GRM_BILL) ────────────────────────────────────────
   billAmount: string | null;
@@ -101,7 +101,7 @@ export interface MalanaResult {
   // Only "active"/"cancelled" — the real seed dictionary has a genuine keyword
   // signal for cancellation (RESCHE) but none for creation vs. execution, so
   // that distinction isn't invented. See enrichment.ts's isMandateCancelled.
-  mandateEvent: 'active' | 'cancelled' | null;
+  mandateEvent: "active" | "cancelled" | null;
   // The generic #vendor capture is unreliable on real mandate SMS (verified —
   // it captures the UMN itself or a stray keyword instead of the real
   // merchant). See enrichment.ts's extractMandateMerchant.
@@ -111,7 +111,7 @@ export interface MalanaResult {
   cashback: string | null;
   discount: string | null;
   offerCode: string | null;
-  offerCategory: string | null;      // sender-code category from offers.json (fashion, travel, etc.)
+  offerCategory: string | null; // sender-code category from offers.json (fashion, travel, etc.)
 
   // ── Telecom (GRM_TELECOM) ─────────────────────────────────────────────────
   dataLeft: string | null;
@@ -123,13 +123,13 @@ export interface MalanaResult {
   marginAmount: string | null;
 
   // ── Brand enrichment ──────────────────────────────────────────────────────
-  brandName: string | null;          // detected brand from vendor_brands.json
-  isOnlineBrand: boolean;            // true if brand is tagged "online"
+  brandName: string | null; // detected brand from vendor_brands.json
+  isOnlineBrand: boolean; // true if brand is tagged "online"
 
   // ── UPI ───────────────────────────────────────────────────────────────────────
-  upiHandle: string | null;          // UPI handle from bene VPA (e.g. "airtel", "paytm")
+  upiHandle: string | null; // UPI handle from bene VPA (e.g. "airtel", "paytm")
 
   // ── Spam detection (Naive Bayes classifier) ───────────────────────────────────
-  isSpam: boolean;                   // true when message scores as promotional/spam
-  spamScore: number;                 // log-likelihood ratio: positive = transactional, negative = spam
+  isSpam: boolean; // true when message scores as promotional/spam
+  spamScore: number; // log-likelihood ratio: positive = transactional, negative = spam
 }
