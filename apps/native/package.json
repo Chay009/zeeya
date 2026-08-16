@@ -9,7 +9,8 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "prebuild": "expo prebuild",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "test": "vitest run"
   },
   "dependencies": {
     "@better-auth/expo": "catalog:",
@@ -60,6 +61,7 @@
     "@types/node": "^26.0.1",
     "@types/react": "~19.2.17",
     "@zeeya/config": "workspace:*",
-    "typescript": "~6.0.3"
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.10"
   }
 }
