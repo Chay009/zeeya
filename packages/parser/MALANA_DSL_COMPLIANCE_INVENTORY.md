@@ -11,119 +11,153 @@ grammar categories or touch `subscriptions.ts`/`enrichment.ts` behavior yet.
 Every "architecture" statement below is flagged as a hypothesis requiring
 Java bytecode or Yuga-equivalent verification, not a conclusion.
 
+> **Revision note:** §1 and §4 of the first version of this document had two
+> modeling bugs, both caught in review and corrected here: (1) the
+> dependency graph counted an edge whenever *any* other category also
+> defined a referenced symbol, even when the consumer had a perfectly good
+> local producer of its own — inflating the edge count and the SCC size;
+> (2) reachability required *every* token referenced across *all* of a
+> rule's comma-separated alternatives to be reachable, instead of requiring
+> just one full alternative to work — so one exotic token anywhere in any
+> alternative could wrongly mark the whole symbol (including load-bearing
+> ones like `TRANSINTENT`/`INTENT`, confirmed reachable at runtime) as
+> unreachable. Both are fixed below; the original numbers (53 edges,
+> 11-category SCC, 169 unreachable) are superseded and should not be cited.
+
 ## 1. Category / GRM_VOID composition — dependency graph
 
-### 1a. The graph is not "GRM_VOID feeds everyone." It's a near-total mesh.
+### 1a. Dependency classification
 
-Built a directed graph where an edge `A → B` means some `GRMR` rule in
-category A references a result-symbol whose *only* producer(s) are in
-category B (symbol appears in >1 category's `GRMR`, or only in a different
-category than the consumer).
+For every `GRMR` rule's referenced token, classified per-category:
 
-- 13 categories (12 + `GRM_VOID`), **53 cross-category edges**.
-- Every one of the 13 categories both *produces for* and *consumes from* at
-  least one other category (see full edge list in §1c).
+| Classification | Count | Meaning |
+|---|---|---|
+| terminal | 672 | Satisfied by a `TOKENS`/regex-tokenizer type — no grammar dependency |
+| local | 211 | The consumer's *own* category also defines this symbol — no cross-category edge, even if other categories define it too (see §2 for those) |
+| required external | 97 | No local producer; exactly **one** other category defines it |
+| ambiguous external | 12 | No local producer; **multiple** other categories define it (all are candidate producers) |
+| undefined | 39 | Referenced, defined nowhere at all — not terminal, not any category's `GRMR` |
 
-### 1b. Strongly connected components
+(Counts are per unique (category, dep-symbol) pair, deduped across a
+symbol's multiple rule alternatives within one category.)
 
-```
-SCC 1 (size 11): GRM_APPOINTMENT, GRM_BANK, GRM_BILL, GRM_CALLALERTS,
-                 GRM_DELIVERY, GRM_EVENT, GRM_NOTIF, GRM_OFFERS,
-                 GRM_TELECOM, GRM_TRAVEL, GRM_VOID
-SCC 2 (size 1):  GRM_OTP          (consumes from others, nothing consumes from it)
-SCC 3 (size 1):  GRM_STOCKUPDATES (consumes from others, nothing consumes from it)
-```
+### 1b. Required cross-category edges (39 distinct category pairs, 97 symbol instances)
 
-**11 of 13 categories form one strongly connected component** — genuine
-cycles exist (e.g. `GRM_BANK ⇄ GRM_BILL`, `GRM_BANK ⇄ GRM_OFFERS`,
-`GRM_VOID ⇄ GRM_BANK`, `GRM_VOID ⇄ GRM_BILL`). A cycle cannot be resolved by
-"compile A, then compile B" in either order — this rules out a simple
-"prepend GRM_VOID" or "compile in category order" model. It's consistent
-with either (a) a flat/global symbol table where all categories' `GRMR`
-rules are compiled into one shared rule space and "category" only
-determines which output tags are extracted at the end, or (b) genuine
-recursive/fixed-point compilation. Distinguishing these needs bytecode
-tracing — this inventory only establishes that a simple staged-merge model
-is inconsistent with the data.
-
-`GRM_OTP` and `GRM_STOCKUPDATES` have **zero in-edges** — nothing depends on
-symbols they produce. Consistent with them being narrow, terminal-only
-categories.
-
-### 1c. Full cross-category edge list (consumer → producer : symbol count)
+An edge only exists when the consuming category has **no local producer**
+and **exactly one** external category can supply the symbol:
 
 ```
-GRM_APPOINTMENT -> GRM_EVENT (4): APPNTMENTDATE, APPNTMENTID, APPNTMENTSTATUS, APPNTMENTTIME
-GRM_BANK -> GRM_BILL (8): AUTOPAYRQSTAMNT, BILLPRCS, INSTR, POLNUM, REFNO, TRANSINTENT, TRFREQ, TRXID
-GRM_BANK -> GRM_NOTIF (1): TRFREQ
-GRM_BANK -> GRM_OFFERS (3): CASHBACKVALUE, TRANSINTENT, WORTHAMT
-GRM_BANK -> GRM_TRAVEL (1): REFNO
+GRM_APPOINTMENT -> GRM_EVENT (1): APPNTMENTSTATUS
+GRM_BANK -> GRM_BILL (3): AUTOPAYRQSTAMNT, BILLPRCS, POLNUM
+GRM_BANK -> GRM_OFFERS (2): CASHBACKVALUE, WORTHAMT
 GRM_BANK -> GRM_VOID (3): AVBLINACCNT, LINKADHRURL, NUMBER
-GRM_BILL -> GRM_BANK (6): BAL, INSTR, INTENT, MOBILE, SUCCESSTRANS, TRANSINTENT
-GRM_BILL -> GRM_NOTIF (5): MOBPACKNUMB, RECHRGPACK, REVTOTALDUE, TRFREQ, USELINK
-GRM_BILL -> GRM_OFFERS (3): EXPDATE, MINPURCHASE, TRANSINTENT
+GRM_BILL -> GRM_BANK (2): INTENT, SUCCESSTRANS
+GRM_BILL -> GRM_NOTIF (4): MOBPACKNUMB, RECHRGPACK, REVTOTALDUE, USELINK
+GRM_BILL -> GRM_OFFERS (1): MINPURCHASE
 GRM_BILL -> GRM_TELECOM (1): MOBPACK
 GRM_BILL -> GRM_VOID (9): CASHMEMONUM, LINKACCNT, MOREINFOURL, NUMBER, PLSENSUR, PLSIGNORE, PLSPAY, RENTALAMT, UPTOAMT
 GRM_CALLALERTS -> GRM_VOID (2): CALLNO, MOREINFOURL
-GRM_DELIVERY -> GRM_BANK (1): MOBILE
-GRM_DELIVERY -> GRM_BILL (2): MOBILE, SRVCERQST
+GRM_DELIVERY -> GRM_BILL (1): SRVCERQST
 GRM_DELIVERY -> GRM_OFFERS (1): THNXSHOPPING
-GRM_DELIVERY -> GRM_TRAVEL (1): ORDERIDVAL
 GRM_DELIVERY -> GRM_VOID (5): CALLNO, MAKESMILE, MOREINFOURL, NUMBER, NUMDAYS
-GRM_EVENT -> GRM_APPOINTMENT (3): APPNTMENTDATE, APPNTMENTID, APPNTMENTTIME
-GRM_EVENT -> GRM_TRAVEL (1): SEATNO
 GRM_EVENT -> GRM_VOID (1): GENDATE
-GRM_NOTIF -> GRM_BANK (6): CHQAMT, CHQFORPYMNT, CHQNO, INSTR, INTENT, TRANSINTENT
-GRM_NOTIF -> GRM_BILL (9): AUTPAYEMNDT, CONSUMERNUM, EXPDATE, INSTR, INTENTDUE, RECHRGAMT, TRANSINTENT, TRFREQ, TRFREQ_AMT
+GRM_NOTIF -> GRM_BANK (4): CHQAMT, CHQFORPYMNT, CHQNO, INTENT
+GRM_NOTIF -> GRM_BILL (5): AUTPAYEMNDT, CONSUMERNUM, INTENTDUE, RECHRGAMT, TRFREQ_AMT
 GRM_NOTIF -> GRM_DELIVERY (1): RESCHEORDER
-GRM_NOTIF -> GRM_OFFERS (3): EXPDATE, INKINDCASH, TRANSINTENT
+GRM_NOTIF -> GRM_OFFERS (1): INKINDCASH
 GRM_NOTIF -> GRM_TELECOM (2): CALLDURATION, MOBPACK
 GRM_NOTIF -> GRM_VOID (6): ELIGREFUND, NUMDAYS, PCTCHARGEONTRX, RENTALPLAN, SECREASON, UPTOAMT
-GRM_OFFERS -> GRM_BANK (6): ADDAMT, CASHBACKTOCARD, INSTR, INTENT, TRANSINTENT, WALADD
-GRM_OFFERS -> GRM_BILL (9): APRVEDAMT, EMIAMT, EXPDATE, INSTR, INTENTDUE, MINAMT, RECHRGAMT, TOTAMT, TRANSINTENT
+GRM_OFFERS -> GRM_BANK (4): ADDAMT, CASHBACKTOCARD, INTENT, WALADD
+GRM_OFFERS -> GRM_BILL (6): APRVEDAMT, EMIAMT, INTENTDUE, MINAMT, RECHRGAMT, TOTAMT
 GRM_OFFERS -> GRM_DELIVERY (1): ORDERSTATUS
 GRM_OFFERS -> GRM_NOTIF (1): LIMITTRXAMT
 GRM_OFFERS -> GRM_VOID (7): GETORDER, NEXTORDER, NUMDAYS, SALCUST, UPTOAMT, VALIDDAYS, VALIDUPTO
-GRM_OTP -> GRM_BANK (1): INSTR
-GRM_OTP -> GRM_BILL (1): INSTR
 GRM_OTP -> GRM_DELIVERY (1): CANCELDLVRY
 GRM_OTP -> GRM_OFFERS (1): USECODE
 GRM_OTP -> GRM_VOID (2): LINKACCNT, NUMBER
-GRM_STOCKUPDATES -> GRM_BANK (1): BAL
-GRM_STOCKUPDATES -> GRM_BILL (3): BAL, FOLIONUM, TOTAMT
+GRM_STOCKUPDATES -> GRM_BILL (2): FOLIONUM, TOTAMT
 GRM_STOCKUPDATES -> GRM_NOTIF (1): CASHAMTALLOCTD
-GRM_TELECOM -> GRM_BANK (1): BAL
-GRM_TELECOM -> GRM_BILL (2): BAL, RECHRGAMT
+GRM_TELECOM -> GRM_BILL (1): RECHRGAMT
 GRM_TELECOM -> GRM_NOTIF (2): CALLCHARGE, CURRPACK
-GRM_TRAVEL -> GRM_BANK (1): REFNO
-GRM_TRAVEL -> GRM_BILL (1): REFNO
-GRM_TRAVEL -> GRM_DELIVERY (1): ORDERIDVAL
-GRM_TRAVEL -> GRM_EVENT (2): BKNGID, SEATNO
 GRM_TRAVEL -> GRM_VOID (3): BKNGNUM, MOREINFOURL, NUMBER
-GRM_VOID -> GRM_BANK (6): CARDENDINGWD, INSTR, INTENT, MOBILE, TRANSINTENT, WALLETPYMNT
-GRM_VOID -> GRM_BILL (5): ACCPTRQST, INSTR, MOBILE, PAYBILLONLINE, TRANSINTENT
+GRM_VOID -> GRM_BANK (3): CARDENDINGWD, INTENT, WALLETPYMNT
+GRM_VOID -> GRM_BILL (2): ACCPTRQST, PAYBILLONLINE
 GRM_VOID -> GRM_CALLALERTS (1): MISSEDCALL
 GRM_VOID -> GRM_DELIVERY (1): ORDERSTATUS
 GRM_VOID -> GRM_NOTIF (2): LOGINURL, USELINK
-GRM_VOID -> GRM_OFFERS (2): CASHBACKVALUE, TRANSINTENT
+GRM_VOID -> GRM_OFFERS (1): CASHBACKVALUE
 ```
 
-### 1d. Producer/consumer layer-index relationship
+Note what dropped out versus the first pass: e.g. `GRM_BANK -> GRM_BILL`
+no longer lists `INSTR`, `REFNO`, `TRANSINTENT`, `TRXID` — `GRM_BANK`
+defines all four itself (confirmed in §2's multi-producer table), so
+referencing them is not evidence of a required dependency on `GRM_BILL`.
+`GRM_APPOINTMENT ⇄ GRM_EVENT` and `GRM_EVENT ⇄ GRM_TRAVEL` mostly
+disappeared the same way.
 
-For every cross-category dependency, compared the producer's `GRMR` layer
-index to the consumer's:
+### 1c. Ambiguous cross-category edges (18 distinct pairs, 26 symbol instances)
+
+No local producer, but more than one external category could supply it —
+can't say *which* one without knowing the real resolution order:
+
+```
+GRM_BANK -> GRM_BILL / GRM_NOTIF: TRFREQ
+GRM_DELIVERY -> GRM_BANK / GRM_BILL: MOBILE
+GRM_NOTIF -> GRM_BANK / GRM_BILL: INSTR, TRANSINTENT
+GRM_NOTIF -> GRM_BILL / GRM_OFFERS: EXPDATE, TRANSINTENT
+GRM_OFFERS -> GRM_BANK / GRM_BILL: INSTR
+GRM_OTP -> GRM_BANK / GRM_BILL: INSTR
+GRM_STOCKUPDATES -> GRM_BANK / GRM_BILL: BAL
+GRM_TELECOM -> GRM_BANK / GRM_BILL: BAL
+GRM_VOID -> GRM_BANK / GRM_BILL: INSTR, MOBILE, TRANSINTENT
+GRM_VOID -> GRM_OFFERS: TRANSINTENT
+```
+
+`TRANSINTENT` and `INSTR` account for most of the ambiguity — both are
+"multi-producer" symbols (§2) referenced from categories that have no local
+copy, so which producer's rule actually governs them is exactly the kind of
+question that needs the real Java resolution order, not a guess.
+
+### 1d. Strongly connected components (from required edges only)
+
+```
+SCC (size 8): GRM_BANK, GRM_BILL, GRM_CALLALERTS, GRM_DELIVERY, GRM_NOTIF,
+              GRM_OFFERS, GRM_TELECOM, GRM_VOID
+5 singleton categories (no required-edge cycle): GRM_APPOINTMENT, GRM_EVENT,
+              GRM_OTP, GRM_STOCKUPDATES, GRM_TRAVEL
+```
+
+Adding the 18 ambiguous edges on top doesn't change the SCC membership —
+still exactly these same 8 categories. **The core finding survives
+correction, at reduced and now-accurate scale: 8 of 13 categories form a
+genuine cycle using only dependencies that have no local fallback** (e.g.
+`GRM_BANK ⇄ GRM_BILL` via `AUTOPAYRQSTAMNT`/`INTENT`, `GRM_VOID ⇄ GRM_BANK`
+via `CARDENDINGWD`/`WALLETPYMNT`). A cycle still can't be resolved by
+"compile A, then compile B" in either order, so the conclusion that a
+simple staged/prepend model is inconsistent with the data still holds —
+just for a smaller, now correctly-identified set of categories.
+
+`GRM_APPOINTMENT`, `GRM_EVENT`, `GRM_OTP`, `GRM_STOCKUPDATES`, and
+`GRM_TRAVEL` were previously shown inside or adjacent to the big cycle
+largely because of the counting bug; with local producers correctly
+excluded, they only have outbound required/ambiguous dependencies (or
+none), not cyclic ones.
+
+### 1e. Producer/consumer layer-index relationship (required edges only)
 
 | Relationship | Count |
 |---|---|
-| producer's layer index is *later* than consumer's | 153 |
-| producer's layer index is the *same* as consumer's | 118 |
-| producer's layer index is *earlier* than consumer's | 47 |
+| producer's layer index is *later* than consumer's | 81 |
+| producer's layer index is the *same* as consumer's | 54 |
+| producer's layer index is *earlier* than consumer's | 19 |
 
-No consistent ordering exists — a producer is about as likely to be at a
-later layer index as an earlier one. **Layer index does not by itself
-encode a global execution order across categories.** This is more evidence
-against "layers merge in index order across categories" and leans toward a
-flat/global rule space (per §1b), but again — hypothesis, not conclusion.
+Still no consistent ordering — a producer is more often later than earlier,
+but both directions are common. Layer index alone still doesn't encode a
+global execution order across categories; this remains evidence against a
+simple staged-layer-merge, though the earlier "no pattern at all" framing
+is softened slightly (later is roughly 4x more common than earlier, not
+statistically flat) — worth keeping in mind during bytecode tracing rather
+than treated as fully random.
 
 ## 2. Symbols with multiple producers (19 found)
 
@@ -185,66 +219,93 @@ category's key gets inserted first silently wins on these 9 pairs, in a way
 that depends entirely on JS object key iteration order, not on any
 semantic priority.
 
+**Worth tracing together with multiplier semantics (§5):** three of the
+nine collisions pit rules with *different* `<N>` multipliers against each
+other on the same pair transition — `AMT-AUX` (`INTENTDUE<3>` vs.
+`TRXDECLINE<5>`), `TRANSINTENT-AUX` (`INTENTDUE<3>` vs. `TRXINIT<5>`), and
+`AUX-RESCHE` (`PNRALERT` — no multiplier — vs. `BILLRESCHE<2>` vs.
+`TRXDECLINE<5>`). If the real Java engine uses `<N>` for anything like
+priority, confidence weighting, or explicit collision resolution between
+competing rules on the same transition, these three collisions are exactly
+where that would be observable — a `<5>` rule consistently beating a `<3>`
+rule (or vice versa) across multiple collision sites would be a strong
+signal, a coincidence would suggest `<N>` is unrelated to collision
+resolution. Flagged as a specific, testable hypothesis for the bytecode
+pass rather than assumed either way.
+
 ## 4. Global reachability — "truly unreachable" symbols
 
-Computed a fixed point: starting from every terminal token type (784+380
-`TOKENS`-derived base types plus the 24 `regex-tokenizer.ts` output types,
-407 terminals total), repeatedly mark a `GRMR` result-symbol reachable once
-*all* of its referenced input types are reachable — allowing a symbol from
-*any* category to satisfy a dependency (the most generous possible
-"everything is globally merged, no collisions, no ordering issues"
-scenario).
+Computed a fixed point: starting from every terminal token **type**
+(383 distinct base type names from `TOKENS` keys, after stripping bracket
+attrs and the trailing-digit numbered-variant suffix the way
+`keyword-tokenizer.ts`'s `baseType()` does — this is a count of distinct
+*type names*, not the 1,167 keyword *phrase entries* tallied in §6, which
+is a different measurement of the same dictionary — plus 24
+`regex-tokenizer.ts` output types, 407 terminals total), then repeatedly
+mark a `GRMR` result-symbol reachable once **at least one of its
+comma-separated rule alternatives** has every referenced input type
+reachable (not "all tokens across every alternative combined" — the first
+pass's bug, corrected below), allowing a symbol from *any* category to
+satisfy a dependency (the most generous possible "everything is globally
+merged, no collisions, no ordering issues" scenario).
 
-- 512 distinct `GRMR` result-symbols total.
-- 343 reachable even in the maximally generous global-merge scenario.
-- **169 remain unreachable — even if every category's grammar were merged
-  with zero collisions.**
+- 512 distinct `GRMR` result-symbols total, across 1,232 rule alternatives.
+- **475 reachable** — including `TRANSINTENT` and `INTENT`, both confirmed
+  reachable, matching their observed runtime behavior directly (verified:
+  `engine.parse("Rs.500 debited...")` does produce a `TRANSINTENT`-derived
+  result in practice). The first pass's flat dependency-merge had wrongly
+  marked both unreachable because *some* alternative among several
+  referenced an exotic token — the fix requires only one full alternative
+  to work, matching how `grammar-runner.ts` actually evaluates rules.
+- **37 remain unreachable** even under the most generous global-merge
+  hypothesis (down from the erroneous 169).
 
-### Important qualification before trusting that 169 figure
+### Where the 37 actually cluster
 
-A large fraction of the blocking chain traces back to one symbol:
-**`IDVAL`**, which is referenced by `REFNO`, `TRXID`, `APPNTMENTID`,
-`BKNGID`, `PNRID`, `TICKETNUM`, `ORDERIDVAL`, `TRACKINGIDVAL`, `OTPIDVAL`,
-`TRIPCODEVAL`, `BUSID`, and more — but `IDVAL` itself is never defined as a
-`TOKENS` entry, a regex-tokenizer output, or a `GRMR` result in *any*
-category. That's suspicious on its face: `REFNO`/`TRXID`/`TICKETNUM` etc.
-are clearly load-bearing in a real transaction/travel/delivery parser.
+| Blocked on | Count | Symbols |
+|---|---|---|
+| `URL` | 18 direct (+3 more transitively, via a `URL`-blocked symbol) | `ACKNWLDGDLVRYURL`, `AVAILURL`, `CASHBCKURL`, `JOINURL`, `LINKADHRURL`, `LOGINURL`, `MANAGEDLVRYURL`, `MANAGEURL`, `MNGDATAURL`, `MOREINFOURL`, `ORDERURL`, `PAYLINK`, `RCHRGURL`, `RECEIPTURL`, `TRACKDLVRYURL`, `TRACKMISSEDCALLSURL`, `VIEWBRDINGPASSURL`, `WBCHKURL` (+ `CHECKTRXURL`, `FEEDBACKURL`, `PAYURL` transitively) |
+| `IDVAL` | 4 | `BKNGID`, `BUSID`, `OTPIDVAL`, `TICKETNUM` |
+| other (`SEATNUM`, `AIRPORT`, `LOCATION`, `VHRGID`, ...) | 15 | see appendix |
 
-**Hypothesis, not yet confirmed:** `CLASSIFIER.CLS_ID` — the field this
-audit's own item #7 already flagged as validated-but-unused — is
-`["BOOKINGID", "REF", "PNR", "TICKETNO", "TICKET", "FLIGHT", "TRIPCODE",
-"NO", "IDENTIFICATION", "BUSNO", "CODE", "OFFERCODE", "USECODE", "OFFER",
-"OFFERS", "TRANSID", "ORDERID", "TRACKINGID", "AUX", "ORDER", "BOOK",
-"STOCKEXCHNG"]`. The naming correspondence with the stuck symbols is
-striking: `REF`→`REFNO`, `PNR`→`PNRID`, `TICKETNO`/`TICKET`→`TICKETNUM`,
-`TRIPCODE`→`TRIPCODEVAL`, `BUSNO`→`BUSID`, `TRANSID`→`TRXID`,
-`ORDERID`→`ORDERIDVAL`, `TRACKINGID`→`TRACKINGIDVAL`,
-`BOOKINGID`→`BKNGID`. This strongly suggests `CLASSIFIER.CLS_ID` is the
-vocabulary for a generic "one of these identifier-marker words, followed by
-a generic alphanumeric/numeric string → `IDVAL`" mechanism that exists
-*outside* the `TOKENS`/`GRMR` pair-grammar entirely — which would explain
-both why it looks structurally unreachable in a `TOKENS`/`GRMR`-only
-analysis, and why the TS port (which never reads `CLASSIFIER.CLS_ID`,
-per item #7) can't produce it either.
+**New finding from the correction: `URL` is now the dominant blocker (21
+of 37, ~57%), not `IDVAL`.** Confirmed by direct inspection — there is no
+`TOKENS` key named `URL`, and grepping `regex-tokenizer.ts` for any
+URL-detection logic (`http`, `https`, `www`, a URL regex pattern) returns
+nothing. The Java engine almost certainly has a URL-matching rule (real
+bank/delivery/offer SMS routinely contain bit.ly-style or direct links)
+that the TS port's regex-tokenizer simply never implemented. Unlike the
+`IDVAL`/`CLASSIFIER.CLS_ID` connection below, this doesn't need bytecode
+tracing to be plausible — it's a concrete, well-defined, checkable gap:
+does `regex-tokenizer.ts` need a `TY_URL` pattern. Worth a quick check
+against real SMS samples containing links before assuming it's the
+explanation, but it's the more actionable of the two leads right now.
 
-**If confirmed**, this single mechanism would resolve `IDVAL` and cascade
-through roughly a third of the 169 "unreachable" list. This is the highest-value
-single item to trace against Java bytecode first — more consequential than
-tracing any individual grammar rule, since it's a shared primitive many
-categories depend on.
+**`IDVAL`/`CLASSIFIER.CLS_ID` remains a good hypothesis, at reduced
+scope.** `IDVAL` is referenced by `REFNO`, `TRXID`, `BKNGID`, `PNRID`,
+`TICKETNUM`, `ORDERIDVAL`, `TRACKINGIDVAL`, `OTPIDVAL`, `TRIPCODEVAL`,
+`BUSID` — but only 4 of those (`BKNGID`, `BUSID`, `OTPIDVAL`,
+`TICKETNUM`) are actually unreachable overall, because `REFNO`,
+`TRXID`, `ORDERIDVAL`, and `TRACKINGIDVAL` turned out to have *other*,
+already-reachable alternatives that don't need `IDVAL` at all — the exact
+kind of thing the alternative-level fix was needed to see correctly.
+`CLASSIFIER.CLS_ID`'s word list (`REF`, `PNR`, `TICKETNO`, `TRIPCODE`,
+`BUSNO`, `TRANSID`, `ORDERID`, `TRACKINGID`, `BOOKINGID`, ...) still lines
+up closely with the *remaining* stuck symbols, so the hypothesis that
+`CLASSIFIER.CLS_ID` drives a generic identifier-marker mechanism outside
+`TOKENS`/`GRMR` is retained — but the earlier claim that it would resolve
+"roughly a third of the 169" is withdrawn as unsupported. At the corrected
+scale it would resolve 4 of 37 symbols directly, plus whatever it
+transitively unblocks (not separately computed here).
 
-Two smaller anomalies inside the 169, flagged for manual review rather than
-folded into the main count (both are `{N:type}` skip-gap type-allowlists
-containing a bare English word instead of a token type name, most likely a
-seed-data quirk rather than a porting gap — needs Java-side confirmation):
-`APRVEDAMT: blocked on ['for']` and `CHQCLRING: blocked on ['for']` — both
-come from `"APPROVE {3:for}AMT"` / an equivalent `{3:for}` gap spec, where
-`for` is parsed as a required type inside the skip-window allowlist rather
-than a token type name — same fate either way (blocks a >0-length gap since
-no token is ever typed `"for"`), so it doesn't change any conclusion above,
-just isn't a "missing producer" in the same sense as the rest.
+Two smaller anomalies, unaffected by either correction (flagged for manual
+review, not folded into the main count): `APRVEDAMT` and `CHQCLRING` are
+each blocked by a `{N:type}` skip-gap allowlist containing the bare English
+word `for` instead of a token type name (from `"APPROVE {3:for}AMT"`) —
+most likely a seed-data quirk, not a porting gap, since no token is ever
+typed `"for"` regardless of how the graph is built.
 
-Full 169-symbol list with each one's specific blocking dependency is in the
+Full 37-symbol list with each one's specific blocking dependency is in the
 appendix at the bottom of this document.
 
 ## 5. `<N>` multiplier inventory
@@ -322,12 +383,34 @@ verb tokens (`debited`, `credited`, etc.). A `_negation` marker on exactly
 the transaction-verb token family strongly suggests the seed was designed
 to let the Java engine recognize a negated transaction statement — "amount
 was **not** debited", "transaction **failed** to complete" — and avoid
-treating it as a real transaction. If the TS port has no equivalent
-handling (confirmed: no negation-aware logic exists anywhere in
-`malana.ts`/`enrichment.ts`), this is a plausible source of false-positive
-transaction detection on negated/failed-transaction SMS, independent of any
-subscription-related question. Worth a targeted test against real negated
-messages before assuming it's purely academic.
+treating it as a real transaction.
+
+**Confirmed at runtime, not just statically.** Ran the actual engine
+against two negated messages:
+
+```
+"Rs.500 was not debited from A/c XX1234." -> trx: null, trxTypeRich: "EXPENSE"
+"Rs.500 was not credited to your account." -> trx: null, trxTypeRich: "INCOME"
+```
+
+`trxTypeRich` is wrong in both cases — the negation is dropped and the
+message is classified with a direction it doesn't have. **Practical impact
+is narrower than it first looks, though:** `trx` stays `null` in both
+cases (no amount pattern matches "not debited" the way it matches a real
+debit), and `apps/native/lib/dashboard.ts`'s totals/Recent-list/subscription
+logic all gate on `parseAmount(result.trx) !== null` before a message
+contributes anything — so this specific case doesn't reach monthly totals
+or the dashboard today. It's still semantically wrong at the parser layer
+(a negated/failed-transaction SMS reporting `trxTypeRich` at all is
+misleading for any future consumer, filter, or UI that trusts that field
+directly), just not currently a demonstrated source of corrupted totals.
+The metadata backs this up further: `seed.TOKENS` has a real
+`NEGATION[_negation=negater]` key with keywords `could'nt, wouldn't,
+couldnot, cannot, unable, not, don't, ...` — a dedicated negation-marker
+token type sitting right alongside `TRX`'s `_negation=negatable`. Two
+halves of a matched pair (`negater` finds a `negatable`) exist in the seed;
+the TS engine parses both `_negation` values into token `values` (per §7's
+opening) but nothing anywhere combines them.
 
 ## 8. Summary table
 
@@ -337,10 +420,12 @@ messages before assuming it's purely academic.
 | 2 | `phrase\|[a;b;c;d]` bracket annotation | Literal string, fields never decoded (2 entries) | Confirmed |
 | 2b | `phrase[a;b;c;d]` (no pipe) | Entire string becomes unmatchable keyword (1 entry) | Confirmed |
 | 3 | `_chunk`, `_context`, `_pos`, `_tense`, `_negation` | Parsed into `values`, never read downstream | Confirmed |
-| 4 | Cross-category grammar composition | 53 edges, 11-category SCC, 9 pair-map collisions if merged naively | Confirmed structure; correct resolution mechanism unconfirmed |
+| 4 | Cross-category grammar composition | 39 required + 18 ambiguous edges, 8-category SCC (`GRM_BANK`/`GRM_BILL`/`GRM_CALLALERTS`/`GRM_DELIVERY`/`GRM_NOTIF`/`GRM_OFFERS`/`GRM_TELECOM`/`GRM_VOID`), 9 pair-map collisions if merged naively | Confirmed structure (recomputed correctly excluding local producers); correct resolution mechanism unconfirmed |
 | 5 | `RECURR`/`SUBSCRPTN`/`AUTORENEW`/`EMANDATE`/`STNDNGINS`/`AUTDBT` | Only `RECURR` is grammar-unused; the rest are real seed-grammar inputs the TS engine doesn't specifically surface | Corrected this session — see below |
 | 6 | Pattern bounded backtracking | Not statically verified — needs Yuga-equivalent Java path or golden corpus, not the numeric/date Yuga JAR | Not evaluated |
-| 7 | `CLASSIFIER.CLS_ID` | Validated by schema, never read; plausibly the producer of `IDVAL` and everything downstream of it (§4) | Confirmed unused; production-mechanism hypothesis unconfirmed |
+| 7 | `CLASSIFIER.CLS_ID` | Validated by schema, never read; plausibly the producer of `IDVAL` (4 of 37 unreachable symbols) — `URL` (21 of 37) is now the bigger, more concrete lead | Confirmed unused; production-mechanism hypothesis unconfirmed, reduced scope after correction |
+| 8 | `URL` token type | No `TOKENS` entry, no regex-tokenizer rule — real bank/delivery/offer links in SMS have nowhere to match | New this pass — concrete, checkable without bytecode |
+| 9 | `TRX`/`NEGATION` negation pairing | Both halves exist in seed (`TRX[..._negation=negatable]`, `NEGATION[_negation=negater]`); TS parses both, combines neither. Runtime-confirmed: `trxTypeRich` set on a negated debit/credit SMS | Confirmed both statically and at runtime; `trx` stays null so today's dashboard totals aren't affected |
 
 ## Corrections applied during this pass
 
@@ -363,48 +448,68 @@ Re-verified directly against `GRMR`/`PATTERN`/`STRUCT`:
   `deriveRichType` (`kwToks.some(t => t.type === "AUTDBT")`) to derive
   `AUTO_DEBIT`. Real, and the one member of this family already surfaced.
 
-None of these were re-tested for reachability given the cross-category
-dependency finding (§1/§4) — `AUTOPAYRQSTAMNT`, `AUTPAYEMNDT`, `DUEAMT`, and
-`RENTALBILL` all sit inside the giant SCC and several are in the 169-symbol
-unreachable list, so "the token is a real grammar input" and "the rule that
-consumes it can currently fire" are separate questions this document keeps
-separate on purpose.
+Checked against the corrected reachability analysis (§4): `AUTOPAYRQSTAMNT`,
+`AUTPAYEMNDT`, `DUEAMT`, and `RENTALBILL` are all **reachable** under the
+global-merge hypothesis (none appear in the corrected 37-symbol
+unreachable list) — the earlier framing here, written before the
+reachability bug was found and fixed, incorrectly implied several of them
+might not be. "The token is a real grammar input" and "the rule that
+consumes it can currently fire in the TS engine today" remain two separate
+questions in general (reachability here assumes a hypothetical global
+merge that doesn't exist in the TS port yet — see §1's caution about the
+8-category SCC), but for these four specific symbols the concern doesn't
+apply.
 
 ---
 
-## Appendix: full 169-symbol unreachable list
+## Appendix: full corrected 37-symbol unreachable list
+
+Each symbol's *best* (fewest-missing-dependency) alternative is shown —
+i.e. even its most promising rule alternative still can't be satisfied
+under the most generous global-merge hypothesis.
 
 ```
-ACKNWLDGDLVRYURL, AIRPORTS, AMTDUE, AMTDUERCV, APPNMNTDATETIME,
-APPNTMENTDATE, APPNTMENTID, APPNTMENTSTATUS, APPNTMENTTIME, APPRVPAYRQST,
-APRVEDAMT, ATMWDRWL, AUTODBTSUCCES, AUTOPAYRQSTAMNT, AUTOPAYTRX, AVAILURL,
-AVOIDCHRG, AVOIDORDRESCH, BAGTAGNUM, BANKALERT, BENTRX, BILLPRCS,
-BILLRESCHE, BKNGID, BOARDGATENUM, BUSID, CABBKGAMT, CABBKIG, CABCANCEL,
-CALLDETAILS, CASHBACKTOCARD, CASHBACKVALUE, CASHBCKURL, CHARGEONFUTTRX,
-CHECKTRXURL, CHQCLRING, CHQ_CLRG, CODEVAL, CRNCYDENMN, CRYPTODEPOSIT,
-DECLINE_REASON, DELIVDELAY, DELIVERDATE, DELVRYOTP, DELVSTATUSNEGATE,
-DISCNTVAL, DISCONMAXBILL, DLVRYNOTIF, EMANDTTRXINTENT, EMANDTTRXINTENT2,
-EMIBKD, ENSUREORDDLVRY, EXCHANGE, FEEDBACKURL, FLTALERT, FLTBKNGID,
-GATALERT, GATCHNG, GATNUM, GETAMT, GETDISCWORTH, GETDISCWORTHONCARD,
-GETINKIND, INKINDCASH, INSTALOAN, INSTR_ORDNTF, INTENT, INTENTANGET,
-INTENTDUE, INTENTDUEDATE, INTENTGETEXP, INTENTINOFFERPERIOD, ITEMDLVRD,
-ITEMDLVRYOTP, ITINALERT, ITINERARY, JOINURL, LINKADHRDATE, LINKADHRURL,
-LOANAPPROVAL, LOGINURL, MAKETXNS, MAKETXNSGETOFFER, MANAGEDLVRYURL,
-MANAGEURL, MINAMT, MNGDATAURL, MOREINFOURL, NACHREGISTRED,
-NEGATETRANSINTENT, NEWLOAN, NEWPYMNT, OFFERCODE, OFFEREXPDT,
-OFFEREXPONSPEND, OFFERSPEND, ORDCANCEL, ORDERAMT, ORDERBOOKED, ORDERIDVAL,
-ORDEROFFER, ORDERSTATUS, ORDERTRANSIT, ORDERURL, OTPCODE, OTPFOLLOWS,
-OTPIDVAL, OTPNO, PAIDAMT, PAYATURL, PAYLINK, PAYLINKAMT, PAYURL, PLSPAY,
-PNRALERT, PNRID, POLDUE, PREAPPRVDLOAN, PREMIUMRECVD, PTMGAMES, RCHRGSUCC,
-RCHRGURL, RECEIPTURL, REFNO, RESCHEORDER, RETPICKUPSTATUS, SAVEVAL,
-SCHEMEDPOSIT, SEATNUMB, SMSCDNO, SMSTONO, SPENDAMTWORTH, SUCCESSTRANS,
-TICKETNUM, TICKTORDID, TOTAMT, TOTFOLIOVAL, TOTINKIND, TRACKDLVRYURL,
-TRACKINGIDVAL, TRACKMISSEDCALLSURL, TRACKSTATUS, TRAINALERT, TRAINBKNGID,
-TRANSEXCD, TRANSINTENT, TRCONV, TRFREQ, TRFREQSUCCESS, TRFREQ_AMT,
-TRIPCODEVAL, TRXATTEMPT, TRXATTEMPTFAIL, TRXCATG, TRXCREDIT, TRXDECLINE,
-TRXID, TRXINIT, TRXPROCESS, TRXUNKNWN, UNDELIVERED, USCDNO,
-VIEWBRDINGPASSURL, WAIVERONTRX, WALLETAMT, WALLETOFFER, WALLETPYMNT,
-WBCHKURL, WLTPYMNTSETUP
+ACKNWLDGDLVRYURL     blocked on URL
+AIRPORTS             blocked on AIRPORT
+AVAILURL             blocked on URL
+BAGTAGNUM            blocked on FLTIDVAL
+BKNGID               blocked on IDVAL
+BUSID                blocked on IDVAL
+CABBKIG              blocked on VHRGID
+CASHBCKURL           blocked on URL
+CHECKTRXURL          blocked on MOREINFOURL
+EMANDTTRXINTENT      blocked on EMANDTACTIV
+EMANDTTRXINTENT2     blocked on EMANDTTRXINTENT
+FEEDBACKURL          blocked on MOREINFOURL
+FLTALERT             blocked on FLTIDVAL
+GATALERT             blocked on FLTIDVAL
+ITINERARY            blocked on LOCATION
+JOINURL              blocked on URL
+LINKADHRURL          blocked on URL
+LOGINURL             blocked on URL
+MANAGEDLVRYURL       blocked on URL
+MANAGEURL            blocked on URL
+MNGDATAURL           blocked on URL
+MOREINFOURL          blocked on URL
+NEWLOAN              blocked on INS3
+ORDERURL             blocked on URL
+OTPIDVAL             blocked on IDVAL
+PAYLINK              blocked on URL
+PAYURL               blocked on LOGINURL
+RCHRGURL             blocked on URL
+RECEIPTURL           blocked on URL
+SEATNUMB             blocked on SEATNUM
+SMSCDNO              blocked on SMSCODE
+SMSTONO              blocked on SMSCODE
+TICKETNUM            blocked on IDVAL
+TRACKDLVRYURL        blocked on URL
+TRACKMISSEDCALLSURL  blocked on URL
+VIEWBRDINGPASSURL    blocked on URL
+WBCHKURL             blocked on URL
 ```
-(See §4 for the `IDVAL`/`CLASSIFIER.CLS_ID` hypothesis that plausibly
-resolves a large fraction of this list once traced.)
+
+21 of 37 (57%) trace to `URL` (18 directly, 3 transitively through
+`MOREINFOURL`/`LOGINURL`). 4 trace to `IDVAL`. The remaining 12 are
+scattered single-symbol dead ends (`AIRPORT`, `VHRGID`, `LOCATION`,
+`INS3`, `SEATNUM`, `SMSCODE`, `FLTIDVAL`, `EMANDTACTIV` — each referenced
+by 1-3 symbols, none individually as consequential as `URL` or `IDVAL`).
