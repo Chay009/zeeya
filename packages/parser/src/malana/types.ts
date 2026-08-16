@@ -20,15 +20,12 @@ export interface CompiledGrammar {
   patterns: string[];
 }
 
-export interface SeedData {
-  TOKENS: Record<string, string>;
-  GRAMMAR: Record<string, {
-    GRMR: Array<Record<string, string>>;
-    STRUCT: string[];
-    PATTERN: string[];
-  }>;
-  CLASSIFIER: Record<string, string[]>;
-}
+// The canonical type is inferred from asset-schemas.ts's runtime-validated
+// SeedDataSchema (single source of truth — a hand-written interface here
+// would drift from what's actually validated at load time). Re-exported
+// under this name since every other file in malana/ imports SeedData from
+// here.
+export type { SeedData } from './asset-schemas';
 
 export type TrxTypeRich =
   | 'EXPENSE'          // money leaving the account (debit, UPI pay, card spend)

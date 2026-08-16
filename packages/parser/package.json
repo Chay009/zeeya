@@ -14,6 +14,9 @@
     "test": "vitest run",
     "test:watch": "vitest"
   },
+  "dependencies": {
+    "zod": "catalog:"
+  },
   "devDependencies": {
     "@zeeya/config": "workspace:*",
     "typescript": "^6",

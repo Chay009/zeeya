@@ -2,6 +2,7 @@
 // All data loaded from the original Truecaller APK JSON assets.
 
 import type { Token } from './types';
+import { parseCategorizerData } from './asset-schemas';
 import vendorBanksRaw     from './data/vendor_banks.json';
 import vendorBrandsRaw    from './data/vendor_brands.json';
 import bankSeedRaw     from './data/bank.json';       // malanaSeed — 32 banks, complete sender IDs
@@ -229,23 +230,18 @@ export function detectBrand(text: string): BrandMatch | null {
 // Each word entry: [P(w|class0), P(w|class1), count0, count1, logRatio, logRatio]
 // Meta: [prior0, prior1, totalWords0, totalWords1, uniqueWords0, uniqueWords1, ...]
 
-interface CategorizerEntry {
-  word: string;
-  probability: [number, number, number, number, number, number];
-}
-
-interface CategorizerData {
-  probabilities: CategorizerEntry[];
-  meta: number[];
-}
-
-const catData = categorizerRaw as unknown as CategorizerData;
+// Validated once here, at module load — not per SMS. Throws loudly on a
+// corrupted or version-incompatible categorizer instead of silently loading
+// bad data. probability[2..5] and meta[2..9] are training-corpus statistics
+// the engine doesn't use for inference (only [0]/[1] — see below); preserved
+// in the validated, typed structure rather than assumed safe to drop.
+const catData = parseCategorizerData(categorizerRaw);
 const CAT_WORD_MAP = new Map<string, [number, number]>();
 for (const entry of catData.probabilities) {
   CAT_WORD_MAP.set(entry.word, [entry.probability[0], entry.probability[1]]);
 }
 // log(P(class0) / P(class1)) — positive favours transactional
-const CAT_LOG_PRIOR = Math.log(catData.meta[0]! / catData.meta[1]!);
+const CAT_LOG_PRIOR = Math.log(catData.meta[0] / catData.meta[1]);
 
 // Replace amount-like patterns with the placeholder token "AMT" (matches categorizer training format).
 const AMT_NORM_RE = /(?:Rs\.?\s*|INR\s*|₹\s*|\$\s*|[A-Z]{2,3}\s*)[\d,]+(?:\.\d+)?|[\d]{4,}(?:[.,]\d+)*/gi;

@@ -1,6 +1,6 @@
 import seeddataRaw from './data/seeddata.json';
 import { MalanaEngine } from './malana';
-import type { SeedData } from './types';
+import { parseSeedData } from './asset-schemas';
 
 export { MalanaEngine } from './malana';
 export type { SeedData, MalanaResult, Token } from './types';
@@ -10,7 +10,9 @@ export type { BrandMatch } from './enrichment';
 // The compiled grammar/token/classifier seed pulled from the Truecaller APK
 // (resources/assets/malanaSeed/seeddata.json), bundled as a package asset so
 // consumers (e.g. the mobile app) don't need to source or load it themselves.
-export const seedData: SeedData = seeddataRaw as unknown as SeedData;
+// Validated once here, at module load — not per SMS. Throws loudly on a
+// corrupted or version-incompatible seed instead of silently loading bad data.
+export const seedData = parseSeedData(seeddataRaw);
 
 let sharedEngine: MalanaEngine | null = null;
 
