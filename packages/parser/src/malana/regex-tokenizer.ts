@@ -916,7 +916,7 @@ function parseInternal(str: string, config: Map<string, string>): [number, FsaCo
 
       case 19:
         if (isNum(c)) { map.upgrade(c); state = 20; }
-        else if (cn === CH_HYPH && i + 1 < str.length && isNum(str[i + 1])) { /* stay 19 */ }
+        else if (cn === CH_HYPH && i + 1 < str.length && isNum(charAt(str, i + 1))) { /* stay 19 */ }
         else { i = i - 2; state = -1; }
         break;
 
@@ -948,7 +948,7 @@ function parseInternal(str: string, config: Map<string, string>): [number, FsaCo
         else if (isNum(c)) {
           if (lookAheadForMerid(str, i)) { state = -1; i = i - 2; }
           else { map.upgrade(c); state = 20; }
-        } else if (cn === CH_SQOT && i + 1 < str.length && isNum(str[i + 1])) { /* stay 24 */ }
+        } else if (cn === CH_SQOT && i + 1 < str.length && isNum(charAt(str, i + 1))) { /* stay 24 */ }
         else if (c === '|') { /* stay 24 */ }
         else { i = i - 1; state = -1; }
         break;
@@ -981,10 +981,10 @@ function parseInternal(str: string, config: Map<string, string>): [number, FsaCo
           map.append(c);
           const prevDelim = delimiterStack.pop();
           const checkTimeRange = checkForTimeRange(map.get(TY_NUM) ?? '');
-          if ((prevDelim === '/' || prevDelim === '-') && i + 1 < str.length && isNum(str[i + 1]) &&
-              (i + 2 === str.length || (i + 2 < str.length && (isDelimiter(str[i + 2]) || str[i + 2] === '/'))) &&
+          if ((prevDelim === '/' || prevDelim === '-') && i + 1 < str.length && isNum(charAt(str, i + 1)) &&
+              (i + 2 === str.length || (i + 2 < str.length && (isDelimiter(charAt(str, i + 2)) || charAt(str, i + 2) === '/'))) &&
               checkTimeRange) {
-            map.setType(TY_TMS, TY_TMS); map.append(str[i + 1]); i++; state = -1;
+            map.setType(TY_TMS, TY_TMS); map.append(charAt(str, i + 1)); i++; state = -1;
           } else if (prevDelim === ' ') {
             state = 41;
           } else {
@@ -1027,8 +1027,10 @@ function parseInternal(str: string, config: Map<string, string>): [number, FsaCo
         else if ((p = checkTypes(ROOT, 'FSA_DAYSFFX', str.substring(i))) !== null) {
           i += p[0];
         } else {
+          // j starts at i (always < str.length, the outer loop's own
+          // invariant) and only ever decrements, so it's always in bounds.
           let j = i;
-          while (j >= 0 && !isNum(str[j])) j--;
+          while (j >= 0 && !isNum(charAt(str, j))) j--;
           i = j; state = -1;
         }
         break;
@@ -1051,7 +1053,7 @@ function parseInternal(str: string, config: Map<string, string>): [number, FsaCo
 
       case 35:
         if (isNum(c)) {
-          if (i > 1 && isNum(str[i - 1])) { map.convert(DT_D, DT_YYYY); map.append(c); }
+          if (i > 1 && isNum(charAt(str, i - 1))) { map.convert(DT_D, DT_YYYY); map.append(c); }
           else map.put(DT_YY, c);
           state = 20;
         } else if (cn === CH_SPACE || cn === CH_COMA) state = 40;
@@ -1060,8 +1062,8 @@ function parseInternal(str: string, config: Map<string, string>): [number, FsaCo
 
       case 36:
         if (isNum(c)) { map.append(c); counter++; }
-        else if (cn === CH_FSTP && i + 1 < str.length && isNum(str[i + 1])) { map.append(c); state = 10; }
-        else if (cn === CH_HYPH && i + 1 < str.length && isNum(str[i + 1])) { delimiterStack.push(c); map.append(c); state = 16; }
+        else if (cn === CH_FSTP && i + 1 < str.length && isNum(charAt(str, i + 1))) { map.append(c); state = 10; }
+        else if (cn === CH_HYPH && i + 1 < str.length && isNum(charAt(str, i + 1))) { delimiterStack.push(c); map.append(c); state = 16; }
         else if (cn === CH_SPACE && hasISDCodePrefix(str, i)) { map.setType(TY_PHN, TY_PHN); state = 46; }
         else {
           if (counter === 12 || isNumStr(str.substring(1, i))) map.setType(TY_NUM, TY_NUM);
