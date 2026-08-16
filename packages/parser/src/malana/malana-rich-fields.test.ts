@@ -187,4 +187,26 @@ describe('spam detection', () => {
     expect(typeof r.isSpam).toBe('boolean');
     expect(typeof r.spamScore).toBe('number');
   });
+
+  // Only the negative case (transactional/OTP -> not spam) was tested before —
+  // nothing proved the classifier actually flags real promotional messages.
+  // Verified against real message shapes before asserting: all three score
+  // isSpam:true with a negative spamScore, as expected.
+  it('promotional/marketing SMS scores as spam', () => {
+    const cashback = parse(
+      'Congratulations! You have WON a cashback offer of Rs.5000. Click here to claim now, limited time only!',
+    );
+    expect(cashback.isSpam).toBe(true);
+    expect(cashback.spamScore).toBeLessThan(0);
+
+    const discount = parse(
+      'Flat 50% OFF on all products! Shop now and get free delivery. Use code SAVE50 at checkout.',
+    );
+    expect(discount.isSpam).toBe(true);
+
+    const loanAd = parse(
+      'Get personal loan up to Rs.5 Lakhs at low interest rates. Apply now for instant approval!',
+    );
+    expect(loanAd.isSpam).toBe(true);
+  });
 });
