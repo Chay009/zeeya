@@ -128,6 +128,25 @@ export function detectBank(sender: string, message: string): string | null {
   return null;
 }
 
+// ── UPI mandate lifecycle ──────────────────────────────────────────────────────
+// Not part of the ported grammar (Truecaller's own engine doesn't track mandate
+// lifecycle state at all — see regex-tokenizer.ts's MANDATEID token for why).
+// Grounded directly in real SBI UPI-mandate SMS wording seen in practice:
+// "...is successfully created towards..." / "...is successfully cancelled towards...".
+const MANDATE_EVENT_PATTERNS: Array<[RegExp, 'created' | 'executed' | 'cancelled']> = [
+  [/mandate.*successfully cancelled|mandate.*successfully revoked/i, 'cancelled'],
+  [/mandate.*successfully created/i, 'created'],
+  [/mandate.*successfully executed|mandate.*successfully collected/i, 'executed'],
+];
+
+export function detectMandateEvent(message: string): 'created' | 'executed' | 'cancelled' | null {
+  if (!message) return null;
+  for (const [re, event] of MANDATE_EVENT_PATTERNS) {
+    if (re.test(message)) return event;
+  }
+  return null;
+}
+
 // ── UPI handle detection ───────────────────────────────────────────────────────
 
 // upi.json: { handles: ["airtel", "axis", "paytm", ...] }

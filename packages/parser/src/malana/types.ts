@@ -96,6 +96,12 @@ export interface MalanaResult {
   policyNo: string | null;
   rechargeAmount: string | null;
   mandateAmount: string | null;
+  // UMN (Unique Mandate Number) — stable across a mandate's whole lifecycle
+  // (create/execute/cancel messages all reference the same UMN). Not part of
+  // the ported grammar — Truecaller's own engine doesn't track this; see
+  // regex-tokenizer.ts's MANDATEID token for the extraction rationale.
+  mandateId: string | null;
+  mandateEvent: 'created' | 'executed' | 'cancelled' | null;
 
   // ── Offers (GRM_OFFERS) ───────────────────────────────────────────────────
   cashback: string | null;

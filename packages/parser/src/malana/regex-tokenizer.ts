@@ -1347,6 +1347,27 @@ export function regexTokenize(message: string): Token[] {
     const sub = lc.substring(i);
     const origSub = message.substring(i);
 
+    // Detect a UPI Mandate's UMN ("UMN:<hex>@<handle>"), our own addition, not part
+    // of the ported FSA — Truecaller's real VPD (Virtual Payment Address) state only
+    // activates after a phone-number-shaped digit run, so it never fires on a UMN's
+    // long hex identifier. UMN tracking isn't something the real app extracts at all;
+    // this exists purely to correlate a mandate's create/execute/cancel messages.
+    const umnMatch = sub.match(/^umn:([a-z0-9]{6,}@[a-z]+)/);
+    if (umnMatch && umnMatch[1]) {
+      const value = umnMatch[1];
+      tokens.push({
+        type: 'MANDATEID',
+        raw: origSub.substring(0, umnMatch[0].length),
+        text: value,
+        values: { mandateid: value },
+        locked: false,
+        matched: false,
+        children: [],
+      });
+      i += umnMatch[0].length;
+      continue;
+    }
+
     // Detect dot-masked account numbers: "...5494" or "X...X3456" → INSTRNO
     // Dots used as mask characters are not recognized by the FSA, so handle them here.
     const dotMaskMatch = sub.match(/^\.{2,}(\d+)/);
