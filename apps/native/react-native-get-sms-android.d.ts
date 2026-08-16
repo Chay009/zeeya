@@ -8,6 +8,12 @@ declare module "react-native-get-sms-android" {
     maxDate?: number;
     indexFrom?: number;
     maxCount?: number;
+    // Passed straight through to Android's ContentResolver.query() as its
+    // SQL sort order. Left unset, the native module passes `null`, so which
+    // messages survive a `maxCount` truncation depends on the OS/OEM's
+    // undocumented default cursor order for content://sms/inbox — always
+    // set this explicitly.
+    sortOrder?: string;
   }
 
   export interface SmsMessage {

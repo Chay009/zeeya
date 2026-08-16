@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
   PermissionsAndroid,
@@ -17,6 +17,7 @@ import { dashboardTheme as t } from "@/constants/dashboard-theme";
 import {
   deriveDashboard,
   isRecurringTransaction,
+  trxDirection,
   type AccountBalance,
   type Mandate,
   type MerchantMandates,
@@ -31,9 +32,23 @@ import {
 
 type Status = "checking" | "needs-permission" | "loading" | "ready" | "unsupported" | "error";
 
+// maximumFractionDigits: 2 (not a forced 0) so a ₹199.99 charge doesn't
+// silently round to ₹200 — toLocaleString only prints decimals when the
+// amount actually has them, so whole amounts still render without ".00".
 function formatMoney(amount: number, currency: string): string {
   const symbol = currency === "INR" ? "₹" : currency + " ";
-  return `${symbol}${amount.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+  return `${symbol}${amount.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+}
+
+// Currencies present across a set of per-currency totals, INR first (this
+// app's primary currency) then the rest alphabetically — so a single-currency
+// user always sees the familiar single row, and mixed-currency activity adds
+// rows instead of being silently summed together.
+function currenciesOf(...records: Record<string, number>[]): string[] {
+  const set = new Set<string>();
+  for (const r of records) for (const k of Object.keys(r)) set.add(k);
+  if (set.size === 0) set.add("INR");
+  return [...set].sort((a, b) => (a === "INR" ? -1 : b === "INR" ? 1 : a.localeCompare(b)));
 }
 
 function formatDate(ms: number): string {
@@ -65,17 +80,24 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [messages, setMessages] = useState<ParsedSms[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  // Bumped on every load() call so a slow, stale in-flight read can't
+  // overwrite a newer one's result if a refresh is triggered before the
+  // previous one finished.
+  const loadIdRef = useRef(0);
 
   const load = useCallback(async () => {
     if (!isSmsReadSupported()) {
       setStatus("unsupported");
       return;
     }
+    const id = ++loadIdRef.current;
     try {
       const raw = await readSmsInbox();
+      if (id !== loadIdRef.current) return;
       setMessages(parseInboxMessages(raw));
       setStatus("ready");
     } catch (e) {
+      if (id !== loadIdRef.current) return;
       setStatus("error");
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -86,20 +108,30 @@ export default function Home() {
       setStatus("unsupported");
       return;
     }
-    PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_SMS).then((granted) => {
-      if (granted) void load();
-      else setStatus("needs-permission");
-    });
+    PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_SMS)
+      .then((granted) => {
+        if (granted) void load();
+        else setStatus("needs-permission");
+      })
+      .catch((e: unknown) => {
+        setStatus("error");
+        setError(e instanceof Error ? e.message : String(e));
+      });
   }, [load]);
 
   const connect = useCallback(async () => {
     setStatus("loading");
-    const granted = await requestSmsReadPermission();
-    if (!granted) {
-      setStatus("needs-permission");
-      return;
+    try {
+      const granted = await requestSmsReadPermission();
+      if (!granted) {
+        setStatus("needs-permission");
+        return;
+      }
+      await load();
+    } catch (e) {
+      setStatus("error");
+      setError(e instanceof Error ? e.message : String(e));
     }
-    await load();
   }, [load]);
 
   const onRefresh = useCallback(async () => {
@@ -157,7 +189,7 @@ export default function Home() {
                 </Text>
                 <Text style={{ color: t.textMuted, fontSize: 13, marginBottom: 14 }}>
                   zeeya reads your bank and transaction messages on-device to build this dashboard.
-                  Nothing ever leaves your phone.
+                  Your SMS content never leaves your phone.
                 </Text>
                 <Pressable
                   onPress={connect}
@@ -188,7 +220,17 @@ export default function Home() {
 
             {status === "ready" && (
               <>
-                <StatRow income={dashboard.monthIncome} expense={dashboard.monthExpense} />
+                {currenciesOf(
+                  dashboard.monthIncomeByCurrency,
+                  dashboard.monthExpenseByCurrency,
+                ).map((currency) => (
+                  <StatRow
+                    key={currency}
+                    currency={currency}
+                    income={dashboard.monthIncomeByCurrency[currency] ?? 0}
+                    expense={dashboard.monthExpenseByCurrency[currency] ?? 0}
+                  />
+                ))}
 
                 {dashboard.accounts.map((acc) => (
                   <AccountCard key={`${acc.bankName}-${acc.last4 ?? ""}`} account={acc} />
@@ -226,11 +268,7 @@ export default function Home() {
                         {dashboard.subscriptions.length === 1 ? "" : "s"}
                       </Text>
                       <Text style={{ color: t.textMuted, fontSize: 13 }}>
-                        {formatMoney(
-                          dashboard.subscriptions.reduce((s, x) => s + x.amount, 0),
-                          "INR",
-                        )}{" "}
-                        / month
+                        {subscriptionTotalsLabel(dashboard.subscriptions)} / month
                       </Text>
                     </View>
                     {dashboard.subscriptions.map((sub) => (
@@ -302,30 +340,49 @@ function Card({ children, style }: { children: React.ReactNode; style?: StylePro
   );
 }
 
-function StatRow({ income, expense }: { income: number; expense: number }) {
+function StatRow({
+  currency,
+  income,
+  expense,
+}: {
+  currency: string;
+  income: number;
+  expense: number;
+}) {
   const net = income - expense;
   return (
     <Card style={{ marginBottom: 16, flexDirection: "row", gap: 16 }}>
       <Stat
-        label="Income"
-        value={formatMoney(income, "INR")}
+        label={currency === "INR" ? "Income" : `Income (${currency})`}
+        value={formatMoney(income, currency)}
         color={t.positive}
         icon="trending-up"
       />
       <Stat
-        label="Expenses"
-        value={formatMoney(expense, "INR")}
+        label={currency === "INR" ? "Expenses" : `Expenses (${currency})`}
+        value={formatMoney(expense, currency)}
         color={t.negative}
         icon="trending-down"
       />
       <Stat
         label="Net"
-        value={formatMoney(net, "INR")}
+        value={formatMoney(net, currency)}
         color={net >= 0 ? t.positive : t.negative}
         icon="swap-horizontal"
       />
     </Card>
   );
+}
+
+// One "₹1,234" per currency present, joined — subscriptions can be in
+// different currencies, and summing them as raw numbers would be as wrong
+// as the monthly income/expense totals this mirrors.
+function subscriptionTotalsLabel(subs: { amount: number; currency: string }[]): string {
+  const totals: Record<string, number> = {};
+  for (const s of subs) totals[s.currency] = (totals[s.currency] ?? 0) + s.amount;
+  return Object.entries(totals)
+    .map(([currency, amount]) => formatMoney(amount, currency))
+    .join(" + ");
 }
 
 function Stat({
@@ -372,7 +429,7 @@ function AccountCard({ account }: { account: AccountBalance }) {
                 {formatDateTimeFull(r.asOf)} · {r.sender}
               </Text>
               <Text style={{ color: t.textMuted, fontSize: 11 }}>
-                {formatMoney(r.balance, account.currency)}
+                {formatMoney(r.balance, r.currency)}
               </Text>
             </View>
           ))}
@@ -448,9 +505,7 @@ function MandateRow({ mandate }: { mandate: Mandate }) {
 function TransactionRow({ item, isRecurring }: { item: ParsedSms; isRecurring: boolean }) {
   const { result } = item;
   const label = result.brandName ?? result.vendor ?? result.bankName ?? item.sender;
-  const isExpense = result.trxTypeRich
-    ? ["EXPENSE", "AUTO_DEBIT", "WALLET_DEBIT", "ATM_WITHDRAWAL"].includes(result.trxTypeRich)
-    : false;
+  const direction = trxDirection(result.trxTypeRich);
   const amount = result.trx ? Number.parseFloat(result.trx.replace(/,/g, "")) : null;
 
   return (
@@ -475,12 +530,17 @@ function TransactionRow({ item, isRecurring }: { item: ParsedSms; isRecurring: b
       {amount !== null && (
         <Text
           style={{
-            color: isExpense ? t.negative : t.positive,
+            color:
+              direction === "expense"
+                ? t.negative
+                : direction === "income"
+                  ? t.positive
+                  : t.textMuted,
             fontWeight: "700",
             fontSize: 15,
           }}
         >
-          {isExpense ? "-" : "+"}
+          {direction === "expense" ? "-" : direction === "income" ? "+" : ""}
           {formatMoney(amount, result.currency ?? "INR")}
         </Text>
       )}

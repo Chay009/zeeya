@@ -1,7 +1,9 @@
+import type { TrxTypeRich } from "@zeeya/parser/malana";
 import type { ParsedSms } from "@/lib/sms";
 
 export interface BalanceReading {
   balance: number;
+  currency: string;
   asOf: number;
   // The raw SMS sender ID this reading came from (e.g. "VM-SBIINB") — lets
   // a reading be traced back to the actual message that produced it.
@@ -60,16 +62,49 @@ export interface MerchantMandates {
 
 export interface Dashboard {
   accounts: AccountBalance[];
-  monthIncome: number;
-  monthExpense: number;
+  // Keyed by ISO currency code — summing across currencies as raw numbers
+  // would silently mix e.g. INR and USD into one meaningless total.
+  monthIncomeByCurrency: Record<string, number>;
+  monthExpenseByCurrency: Record<string, number>;
   subscriptions: Subscription[];
   mandates: Mandate[];
   mandatesByMerchant: MerchantMandates[];
   recent: ParsedSms[];
 }
 
-const EXPENSE_TYPES = new Set(["EXPENSE", "AUTO_DEBIT", "WALLET_DEBIT", "ATM_WITHDRAWAL"]);
-const INCOME_TYPES = new Set(["INCOME", "SALARY"]);
+export type TrxDirection = "expense" | "income" | "neutral";
+
+// Single source of truth for which trxTypeRich values represent money
+// leaving the account, entering it, or neither. Dashboard totals and the
+// Recent list's sign must never classify a type differently from each
+// other — this used to be two independently hardcoded lists that had
+// already drifted apart.
+//
+// TRANSFER: malana.ts's deriveRichType only ever assigns this when money
+// left the account (NEFT/IMPS/RTGS/AEPS debit) — never for an incoming
+// transfer, so it belongs with the other outflows.
+// RECHARGE / INVESTMENT: both require a real debit-shaped trx tag to fire —
+// paying for a recharge or buying into a SIP/MF is money leaving the account.
+const EXPENSE_DIRECTION_TYPES = new Set<TrxTypeRich>([
+  "EXPENSE",
+  "AUTO_DEBIT",
+  "WALLET_DEBIT",
+  "ATM_WITHDRAWAL",
+  "TRANSFER",
+  "RECHARGE",
+  "INVESTMENT",
+]);
+const INCOME_DIRECTION_TYPES = new Set<TrxTypeRich>(["INCOME", "SALARY"]);
+// WALLET_CREDIT (money moving into a wallet) and BALANCE_UPDATE (no
+// transaction at all) are deliberately neither — a wallet top-up is an
+// internal transfer, not new income, and forcing it into either bucket
+// would misrepresent it.
+
+export function trxDirection(trxTypeRich: TrxTypeRich | null): TrxDirection {
+  if (trxTypeRich && EXPENSE_DIRECTION_TYPES.has(trxTypeRich)) return "expense";
+  if (trxTypeRich && INCOME_DIRECTION_TYPES.has(trxTypeRich)) return "income";
+  return "neutral";
+}
 
 function parseAmount(raw: string | null): number | null {
   if (!raw) return null;
@@ -90,20 +125,42 @@ function normalizeAcc(acc: string | null): string {
   return digits.slice(-4);
 }
 
-// Latest known balance per bank account, income/expense totals for the
-// current month, a simple recurring-charge heuristic (same merchant + same
-// amount seen 2+ times), and the most recent recognized transactions —
-// all derived client-side from what Malana already extracted. No message is
-// ever excluded from this derivation; unrecognized ones just don't
-// contribute to any bucket.
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+// A monthly billing cycle runs 28-31 days; this band gives early/late
+// charges slack without accepting an unrelated same-amount purchase that
+// happens to repeat within the same week, or only once a year.
+const MIN_RECURRING_GAP_DAYS = 20;
+const MAX_RECURRING_GAP_DAYS = 45;
+
+// Collapses same-day repeats to one occurrence. Two SMS confirming the same
+// real-world charge sometimes land on the same calendar day (a bank's own
+// duplicate notification, or a "processing" + "completed" pair for one
+// purchase) — without this, that pair alone would look like two occurrences
+// of a "subscription" that never actually recurred.
+function distinctDaysSorted(dates: number[]): number[] {
+  const latestPerDay = new Map<string, number>();
+  for (const ms of dates) {
+    const d = new Date(ms);
+    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    const current = latestPerDay.get(key);
+    if (current === undefined || ms > current) latestPerDay.set(key, ms);
+  }
+  return [...latestPerDay.values()].sort((a, b) => a - b);
+}
+
+// Latest known balance per bank account, currency-separated income/expense
+// totals for the current month, a cadence-aware recurring-charge heuristic,
+// and the most recent recognized transactions — all derived client-side
+// from what Malana already extracted. No message is ever excluded from this
+// derivation; unrecognized ones just don't contribute to any bucket.
 export function deriveDashboard(messages: ParsedSms[]): Dashboard {
   const now = new Date();
   const accountsByKey = new Map<string, AccountBalance>();
-  let monthIncome = 0;
-  let monthExpense = 0;
+  const monthIncomeByCurrency: Record<string, number> = {};
+  const monthExpenseByCurrency: Record<string, number> = {};
   const subscriptionCandidates = new Map<
     string,
-    { amount: number; count: number; lastDate: number }
+    { merchant: string; amount: number; currency: string; dates: number[] }
   >();
   const mandatesById = new Map<string, Mandate>();
   const recognized: ParsedSms[] = [];
@@ -146,14 +203,15 @@ export function deriveDashboard(messages: ParsedSms[]): Dashboard {
       const key = `${result.bankName}|${normalizeAcc(result.acc)}`;
       const balance = parseAmount(result.bal);
       if (balance !== null) {
-        const reading: BalanceReading = { balance, asOf: m.date, sender: m.sender };
+        const currency = result.currency ?? "INR";
+        const reading: BalanceReading = { balance, currency, asOf: m.date, sender: m.sender };
         const existing = accountsByKey.get(key);
         if (!existing) {
           accountsByKey.set(key, {
             bankName: result.bankName,
             last4: normalizeAcc(result.acc) || result.acc,
             balance,
-            currency: result.currency ?? "INR",
+            currency,
             asOf: m.date,
             sender: m.sender,
             history: [reading],
@@ -164,7 +222,7 @@ export function deriveDashboard(messages: ParsedSms[]): Dashboard {
             existing.balance = balance;
             existing.asOf = m.date;
             existing.sender = m.sender;
-            existing.currency = result.currency ?? existing.currency;
+            existing.currency = currency;
           }
         }
       }
@@ -173,23 +231,30 @@ export function deriveDashboard(messages: ParsedSms[]): Dashboard {
     if (result.trxTypeRich && isSameMonth(new Date(m.date), now)) {
       const amount = parseAmount(result.trx);
       if (amount !== null) {
-        if (EXPENSE_TYPES.has(result.trxTypeRich)) monthExpense += amount;
-        else if (INCOME_TYPES.has(result.trxTypeRich)) monthIncome += amount;
+        const currency = result.currency ?? "INR";
+        const direction = trxDirection(result.trxTypeRich);
+        if (direction === "expense") {
+          monthExpenseByCurrency[currency] = (monthExpenseByCurrency[currency] ?? 0) + amount;
+        } else if (direction === "income") {
+          monthIncomeByCurrency[currency] = (monthIncomeByCurrency[currency] ?? 0) + amount;
+        }
       }
     }
 
-    if (result.trxTypeRich && EXPENSE_TYPES.has(result.trxTypeRich)) {
+    // Messages already tied to a tracked UPI mandate are excluded here so a
+    // real recurring mandate execution can't also get picked up by this
+    // merchant+amount-repeat guess — that would show the same recurring
+    // charge once under Autopay (grounded in the real UMN) and again under
+    // Subscriptions (a heuristic), duplicating its presentation.
+    if (result.trxTypeRich && trxDirection(result.trxTypeRich) === "expense" && !result.mandateId) {
       const merchant = result.brandName ?? result.vendor;
       const amount = parseAmount(result.trx);
+      const currency = result.currency ?? "INR";
       if (merchant && amount !== null) {
-        const key = `${merchant}|${amount}`;
+        const key = `${merchant}|${amount}|${currency}`;
         const existing = subscriptionCandidates.get(key);
-        if (existing) {
-          existing.count += 1;
-          if (m.date > existing.lastDate) existing.lastDate = m.date;
-        } else {
-          subscriptionCandidates.set(key, { amount, count: 1, lastDate: m.date });
-        }
+        if (existing) existing.dates.push(m.date);
+        else subscriptionCandidates.set(key, { merchant, amount, currency, dates: [m.date] });
       }
     }
 
@@ -201,15 +266,23 @@ export function deriveDashboard(messages: ParsedSms[]): Dashboard {
   }
 
   const subscriptions: Subscription[] = [];
-  for (const [key, v] of subscriptionCandidates) {
-    if (v.count < 2) continue;
-    const merchant = key.slice(0, key.lastIndexOf("|"));
+  for (const v of subscriptionCandidates.values()) {
+    const days = distinctDaysSorted(v.dates);
+    if (days.length < 2) continue;
+    const last = days[days.length - 1]!;
+    const prev = days[days.length - 2]!;
+    const gapDays = (last - prev) / ONE_DAY_MS;
+    // Two occurrences alone don't prove a monthly cadence — a pair of
+    // coincidental same-amount purchases a few days apart, or a one-off
+    // repeat a year later, isn't a subscription. Require the most recent
+    // gap to actually look like a billing cycle.
+    if (gapDays < MIN_RECURRING_GAP_DAYS || gapDays > MAX_RECURRING_GAP_DAYS) continue;
     subscriptions.push({
-      merchant,
+      merchant: v.merchant,
       amount: v.amount,
-      currency: "INR",
-      count: v.count,
-      lastDate: v.lastDate,
+      currency: v.currency,
+      count: days.length,
+      lastDate: last,
     });
   }
   subscriptions.sort((a, b) => b.lastDate - a.lastDate);
@@ -234,8 +307,8 @@ export function deriveDashboard(messages: ParsedSms[]): Dashboard {
 
   return {
     accounts,
-    monthIncome,
-    monthExpense,
+    monthIncomeByCurrency,
+    monthExpenseByCurrency,
     subscriptions,
     mandates,
     mandatesByMerchant,
@@ -244,10 +317,11 @@ export function deriveDashboard(messages: ParsedSms[]): Dashboard {
 }
 
 // A transaction is recurring if it's tied to a tracked UPI mandate, or its
-// merchant+amount matches the guessed-from-repeats Subscriptions list. Kept
-// as a lookup against the already-derived Dashboard rather than a per-message
-// parser field — "is this part of a recurring series" is a cross-message
-// dashboard-level fact, not something a single SMS can know about itself.
+// merchant+amount+currency matches the guessed-from-repeats Subscriptions
+// list. Kept as a lookup against the already-derived Dashboard rather than a
+// per-message parser field — "is this part of a recurring series" is a
+// cross-message dashboard-level fact, not something a single SMS can know
+// about itself.
 export function isRecurringTransaction(item: ParsedSms, dashboard: Dashboard): boolean {
   const { result } = item;
   if (result.mandateId && dashboard.mandates.some((m) => m.mandateId === result.mandateId)) {
@@ -255,8 +329,11 @@ export function isRecurringTransaction(item: ParsedSms, dashboard: Dashboard): b
   }
   const merchant = result.brandName ?? result.vendor;
   const amount = parseAmount(result.trx);
+  const currency = result.currency ?? "INR";
   if (merchant && amount !== null) {
-    return dashboard.subscriptions.some((s) => s.merchant === merchant && s.amount === amount);
+    return dashboard.subscriptions.some(
+      (s) => s.merchant === merchant && s.amount === amount && s.currency === currency,
+    );
   }
   return false;
 }

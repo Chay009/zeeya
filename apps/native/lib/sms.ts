@@ -25,7 +25,7 @@ export async function requestSmsReadPermission(): Promise<boolean> {
   const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.READ_SMS, {
     title: "Read SMS",
     message:
-      "zeeya reads your bank and transaction messages on-device to build your transaction history. Nothing leaves your phone.",
+      "zeeya reads your bank and transaction messages on-device to build your transaction history. Your SMS content never leaves your phone.",
     buttonPositive: "Allow",
     buttonNegative: "Deny",
   });
@@ -40,6 +40,10 @@ export function readSmsInbox(options: { maxCount?: number } = {}): Promise<RawSm
     const filter = JSON.stringify({
       box: "inbox",
       maxCount: options.maxCount ?? 5000,
+      // Without this, the native module passes a null sort order straight
+      // to ContentResolver.query() and which messages survive the maxCount
+      // truncation is OS/OEM-defined — explicitly keep the newest ones.
+      sortOrder: "date DESC",
     });
     SmsAndroid.list(
       filter,
