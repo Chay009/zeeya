@@ -184,6 +184,75 @@ describe("currency — extended coverage", () => {
   });
 });
 
+// The ATTACHED_CURR_RE fallback in malana.ts (currency symbol glued directly to a
+// digit, e.g. "$50" with no space) previously required a `\b` before the symbol —
+// but a leading currency symbol is always preceded by whitespace/punctuation/start-
+// of-string, never a word character, so `\b` could never match there. Confirmed by
+// running the engine directly: "$50", "€25", "£20" all fell through to the "INR"
+// default regardless of position in the message. This is the regression coverage
+// for the fix.
+describe("currency — symbol directly attached to digit (no word boundary)", () => {
+  it("USD — $ at start of message", () => {
+    expect(parse("$50 spent on your card XX1234.").currency).toBe("USD");
+  });
+
+  it("USD — $ mid-sentence", () => {
+    expect(parse("Amount of $50 was spent on your card XX1234.").currency).toBe("USD");
+  });
+
+  it("EUR — € at start of message", () => {
+    expect(parse("€25 debited from your account.").currency).toBe("EUR");
+  });
+
+  it("EUR — € mid-sentence", () => {
+    expect(parse("A charge of €25 was debited from your account.").currency).toBe("EUR");
+  });
+
+  it("GBP — £ at start of message", () => {
+    expect(parse("£20 charged to your card XX1234.").currency).toBe("GBP");
+  });
+
+  it("GBP — £ mid-sentence", () => {
+    expect(parse("Total: £20 charged to your card XX1234.").currency).toBe("GBP");
+  });
+
+  it("JPY — ¥ symbol", () => {
+    expect(parse("¥500 spent on your card XX1234.").currency).toBe("JPY");
+  });
+
+  it("INR — ₹ symbol", () => {
+    expect(parse("₹199 debited from your account.").currency).toBe("INR");
+  });
+
+  it("SGD — lowercase s$ prefix", () => {
+    expect(parse("s$50 charged to your card for Singapore trip.").currency).toBe("SGD");
+  });
+
+  it("AUD — A$ prefix", () => {
+    expect(parse("A$100 charged to your card XX1234.").currency).toBe("AUD");
+  });
+
+  it("CAD — C$ prefix", () => {
+    expect(parse("C$100 charged to your card XX1234.").currency).toBe("CAD");
+  });
+
+  it("HKD — HK$ prefix", () => {
+    expect(parse("HK$100 charged to your card XX1234.").currency).toBe("HKD");
+  });
+
+  it("NZD — NZ$ prefix", () => {
+    expect(parse("NZ$100 charged to your card XX1234.").currency).toBe("NZD");
+  });
+
+  it("USD — spaced '$ 50' form still resolves via the keyword-tokenizer CRNCY path", () => {
+    expect(parse("$ 50 spent on your card XX1234.").currency).toBe("USD");
+  });
+
+  it("defaults to INR when the message has no currency marker at all", () => {
+    expect(parse("500 debited from A/c XX1234 on 20-Oct-25").currency).toBe("INR");
+  });
+});
+
 describe("spam detection", () => {
   it("transactional SMS scores as non-spam", () => {
     const r = parse("Rs.500.00 debited from A/c XX1234 on 20-Oct-25. Avl Bal: Rs.45000.00");

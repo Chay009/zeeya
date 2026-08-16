@@ -242,7 +242,18 @@ const CRNCY_TO_ISO: Record<string, string> = {
 
 // Fallback for currency prefixes attached directly to digits (e.g. "S$50", "A$100").
 // The keyword tokenizer requires a word boundary after the prefix, so "S$50" is missed.
-const ATTACHED_CURR_RE = /\b(S\$|A\$|C\$|HK\$|NZ\$|€|£|\$|¥|₹)\d/;
+//
+// No leading `\b` before the alternatives: a leading currency symbol ($, €, £, ¥, ₹)
+// is always preceded by whitespace, punctuation, or start-of-string — never a word
+// character — so a `\b` there can never match. That's not a rare edge case: it made
+// this fallback structurally unable to ever detect $/€/£/¥/₹ as a leading amount
+// prefix (verified directly — "$50", "€25", "£20" all fell through to the "INR"
+// default regardless of where the symbol appeared in the message).
+//
+// Multi-character prefixes are listed first (S$/A$/C$/HK$/NZ$ before the bare $) so
+// "S$50" matches the 2-character prefix as a whole rather than risking the bare `$`
+// alternative winning at the wrong position.
+const ATTACHED_CURR_RE = /(S\$|A\$|C\$|HK\$|NZ\$|€|£|\$|¥|₹)\d/i;
 const ATTACHED_CURR_MAP: Record<string, string> = {
   S$: "SGD",
   A$: "AUD",
@@ -266,7 +277,12 @@ function detectCurrency(kwToks: Token[], message: string): string {
   // Fallback: currency symbol directly attached to digit (no word boundary)
   const m = message.match(ATTACHED_CURR_RE);
   if (m) {
-    const iso = ATTACHED_CURR_MAP[m[1] ?? ""];
+    const prefix = m[1] ?? "";
+    // The /i flag makes "s$50" match the regex, but ATTACHED_CURR_MAP's keys are
+    // uppercase — normalize the alphabetic prefixes before lookup. The pure symbol
+    // alternatives ($/€/£/¥/₹) have no letters, so this is a no-op for those.
+    const key = /[a-z]/i.test(prefix) ? prefix.toUpperCase() : prefix;
+    const iso = ATTACHED_CURR_MAP[key];
     if (iso) return iso;
   }
   return "INR";
