@@ -2,13 +2,13 @@
 """
 Inventories every PATTERN and STRUCT entry in seeddata.json, classifies every
 space-separated element by syntactic shape, and cross-checks each shape
-against pattern-extractor.ts's parsePatternString()/tryMatchAt() (ported
-faithfully below, mirroring the actual TS logic line for line).
+against the current TS pattern-extractor.ts parser (mirrored below).
 
 Read-only. Companion to seed_grammar_inventory.py and
 other_assets_inventory.py. See MALANA_DSL_COMPLIANCE_INVENTORY.md for the
-narrative writeup this feeds, in particular the "swallowed capture" finding
-below (24 of 111 entries never produce any capture at all).
+narrative writeup this feeds. The swallowed-capture result is explicitly a
+TS-only observation: the traced APK loads but does not compile PATTERN, while
+its STRUCT compiler accepts only plain token edges and #capture markers.
 
 Run: python3 scripts/dsl-audit/pattern_struct_inventory.py
 """
@@ -21,7 +21,7 @@ SEED_PATH = Path(__file__).parent.parent.parent / "src/malana/data/seeddata.json
 
 
 def load_seed():
-    with open(SEED_PATH) as f:
+    with open(SEED_PATH, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -62,7 +62,7 @@ def classify_element(el):
     if el["kind"] == "skip":
         if el["stopType"]:
             if el["stopType"].startswith("#"):
-                return "skip-with-SWALLOWED-capture ({N}|#name, no space -- BUG)"
+                return "TS skip-with-swallowed-capture ({N}|#name)"
             return "skip-with-stop ({N}|TOKEN)"
         return "skip ({N})"
     if el["type"] and el["literal"] is not None:
@@ -80,7 +80,6 @@ def main():
     shape_examples = defaultdict(list)
     per_section_counts = {"PATTERN": 0, "STRUCT": 0}
     entries_seen = 0
-    all_entries = []
     broken_no_capture = []
     multi_capture = 0
     end_in_capture = 0
@@ -94,7 +93,6 @@ def main():
             for i, raw in enumerate(values):
                 entries_seen += 1
                 els = parse_pattern_string(raw)
-                all_entries.append((cat, section, i, raw, els))
                 for el in els:
                     shape = classify_element(el)
                     shape_counts[shape] += 1
@@ -126,7 +124,7 @@ def main():
     for shape, count in shape_counts.most_common():
         print(f"    {shape}: {count}")
     print()
-    print(f"[assertion] Entries producing ZERO captures ever (dead pattern, name='unknown'): {len(broken_no_capture)}")
+    print(f"[assertion] Entries producing zero captures in the current TS interpreter: {len(broken_no_capture)}")
     for b in broken_no_capture:
         print(f"    {b[0]}:{b[1]}[{b[2]}] `{b[3]}`")
     print()
@@ -136,13 +134,6 @@ def main():
     print(f"[assertion] {{0}} zero-max skip clauses (always a no-op skip): {len(zero_max_skip)}")
     for z in zero_max_skip:
         print(f"    {z[0]}:{z[1]}[{z[2]}] `{z[3]}`")
-
-    with open(Path(__file__).parent / "pattern_struct_raw.json", "w") as f:
-        json.dump(
-            [{"category": c, "section": s, "index": i, "raw": r, "elements": e} for c, s, i, r, e in all_entries],
-            f,
-            indent=2,
-        )
 
     print()
     print("=== pattern_struct_inventory.py: COMPLETE ===")

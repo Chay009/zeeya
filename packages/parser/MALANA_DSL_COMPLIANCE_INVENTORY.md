@@ -25,28 +25,34 @@ mean:
 > Every instruction's real Java runtime semantics are proven.
 
 Multiplier meaning, category composition/resolution order, `CLASSIFIER.
-CLS_ID`'s actual mechanism, `PATTERN`/`STRUCT` execution against the real
-Malana engine, and some token-level metadata (`_pos`/`_tense`/`_negation`/
-`_chunk`/`_context`) still require Java bytecode or behavioral
+CLS_ID`'s actual mechanism, `STRUCT` matching/capture execution, and some
+token-level metadata (`_pos`/`_tense`/`_negation`/`_context`) still require
+additional Java bytecode or behavioral
 verification (a Yuga-equivalent Malana Java path, or a golden real-message
 corpus) before any "this is what Java does" claim can be made — the Yuga
 JAR itself only covers numeric/date/currency tokenization, not the grammar
-or pattern engine, so it cannot answer these questions. Every
-"architecture" statement below is flagged as a hypothesis requiring that
-verification, not a conclusion.
+or pattern engine, so it cannot answer these questions. Java observations
+added later cite the exact traced methods; remaining architectural
+hypotheses are explicitly marked as unconfirmed.
 
 > **Revision note:** §1 and §4 of the first version of this document had two
 > modeling bugs, both caught in review and corrected here: (1) the
-> dependency graph counted an edge whenever *any* other category also
+> dependency graph counted an edge whenever _any_ other category also
 > defined a referenced symbol, even when the consumer had a perfectly good
 > local producer of its own — inflating the edge count and the SCC size;
-> (2) reachability required *every* token referenced across *all* of a
+> (2) reachability required _every_ token referenced across _all_ of a
 > rule's comma-separated alternatives to be reachable, instead of requiring
 > just one full alternative to work — so one exotic token anywhere in any
 > alternative could wrongly mark the whole symbol (including load-bearing
 > ones like `TRANSINTENT`/`INTENT`, confirmed reachable at runtime) as
 > unreachable. Both are fixed below; the original numbers (53 edges,
 > 11-category SCC, 169 unreachable) are superseded and should not be cited.
+>
+> A later Java/smali trace corrected §4b again: this APK loads all 91
+> `PATTERN` strings but `ga3.baz.g()` never compiles them. Only `GRMR` and
+> `STRUCT` are compiled. The former “24 dead captures” finding describes a
+> defect in the TS-only PATTERN interpreter, not a missing Java behavior, and
+> must not be cited as the cause of Java/Truecaller vendor extraction.
 
 ## 1. Category / GRM_VOID composition — dependency graph
 
@@ -54,13 +60,13 @@ verification, not a conclusion.
 
 For every `GRMR` rule's referenced token, classified per-category:
 
-| Classification | Count | Meaning |
-|---|---|---|
-| terminal | 672 | Satisfied by a `TOKENS`/regex-tokenizer type — no grammar dependency |
-| local | 211 | The consumer's *own* category also defines this symbol — no cross-category edge, even if other categories define it too (see §2 for those) |
-| required external | 97 | No local producer; exactly **one** other category defines it |
-| ambiguous external | 12 | No local producer; **multiple** other categories define it (all are candidate producers) |
-| undefined | 39 | Referenced, defined nowhere at all — not terminal, not any category's `GRMR` |
+| Classification     | Count | Meaning                                                                                                                                    |
+| ------------------ | ----- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| terminal           | 672   | Satisfied by a `TOKENS`/regex-tokenizer type — no grammar dependency                                                                       |
+| local              | 211   | The consumer's _own_ category also defines this symbol — no cross-category edge, even if other categories define it too (see §2 for those) |
+| required external  | 97    | No local producer; exactly **one** other category defines it                                                                               |
+| ambiguous external | 12    | No local producer; **multiple** other categories define it (all are candidate producers)                                                   |
+| undefined          | 39    | Referenced, defined nowhere at all — not terminal, not any category's `GRMR`                                                               |
 
 (Counts are per unique (category, dep-symbol) pair, deduped across a
 symbol's multiple rule alternatives within one category.)
@@ -122,7 +128,7 @@ disappeared the same way.
 ### 1c. Ambiguous cross-category edges (18 distinct pairs, 26 symbol instances)
 
 No local producer, but more than one external category could supply it —
-can't say *which* one without knowing the real resolution order:
+can't say _which_ one without knowing the real resolution order:
 
 ```
 GRM_BANK -> GRM_BILL / GRM_NOTIF: TRFREQ
@@ -167,13 +173,22 @@ largely because of the counting bug; with local producers correctly
 excluded, they only have outbound required/ambiguous dependencies (or
 none), not cyclic ones.
 
+The Java trace adds stronger configuration evidence without yet proving the
+matcher's traversal policy. `g40.d0.q()` returns all 13 categories, including
+`GRM_VOID`; the per-message parser call passes that list to `g40.d0.N(...)`;
+and `d61.baz.l(...)` can assemble the selected categories into combined GRMR
+and STRUCT roots. This proves the Java path is configured with the full
+category set rather than only the TS-routed category. Whether every combined
+branch is attempted for every message, or a later runtime gate narrows it,
+remains open until `g40.d0.N`/the matcher call path is traced.
+
 ### 1e. Producer/consumer layer-index relationship (required edges only)
 
-| Relationship | Count |
-|---|---|
-| producer's layer index is *later* than consumer's | 81 |
-| producer's layer index is the *same* as consumer's | 54 |
-| producer's layer index is *earlier* than consumer's | 19 |
+| Relationship                                        | Count |
+| --------------------------------------------------- | ----- |
+| producer's layer index is _later_ than consumer's   | 81    |
+| producer's layer index is the _same_ as consumer's  | 54    |
+| producer's layer index is _earlier_ than consumer's | 19    |
 
 Still no consistent ordering — a producer is more often later than earlier,
 but both directions are common. Layer index alone still doesn't encode a
@@ -221,9 +236,9 @@ order — the same "first write wins" behavior `compileLayer` already has via
 `if (!pairMap.has(mapKey))`.
 
 - 597 distinct `prev-next` pair keys total across all categories' layer 0.
-- 0 keys are redundantly defined with the *same* result by >1 category.
+- 0 keys are redundantly defined with the _same_ result by >1 category.
 - **9 keys collide: the same `prev-next` transition is claimed by two (or
-  three) categories with *different* result types.**
+  three) categories with _different_ result types.**
 
 ```
 AMNT-AMT    GRM_BILL:MINAMT[min]         vs GRM_DELIVERY:ORDERAMT[order]
@@ -244,7 +259,7 @@ that depends entirely on JS object key iteration order, not on any
 semantic priority.
 
 **Worth tracing together with multiplier semantics (§5):** three of the
-nine collisions pit rules with *different* `<N>` multipliers against each
+nine collisions pit rules with _different_ `<N>` multipliers against each
 other on the same pair transition — `AMT-AUX` (`INTENTDUE<3>` vs.
 `TRXDECLINE<5>`), `TRANSINTENT-AUX` (`INTENTDUE<3>` vs. `TRXINIT<5>`), and
 `AUX-RESCHE` (`PNRALERT` — no multiplier — vs. `BILLRESCHE<2>` vs.
@@ -263,13 +278,13 @@ Computed a fixed point: starting from every terminal token **type**
 (383 distinct base type names from `TOKENS` keys, after stripping bracket
 attrs and the trailing-digit numbered-variant suffix the way
 `keyword-tokenizer.ts`'s `baseType()` does — this is a count of distinct
-*type names*, not the 1,167 keyword *phrase entries* tallied in §6, which
+_type names_, not the 1,167 keyword _phrase entries_ tallied in §6, which
 is a different measurement of the same dictionary — plus 24
 `regex-tokenizer.ts` output types, 407 terminals total), then repeatedly
 mark a `GRMR` result-symbol reachable once **at least one of its
 comma-separated rule alternatives** has every referenced input type
 reachable (not "all tokens across every alternative combined" — the first
-pass's bug, corrected below), allowing a symbol from *any* category to
+pass's bug, corrected below), allowing a symbol from _any_ category to
 satisfy a dependency (the most generous possible "everything is globally
 merged, no collisions, no ordering issues" scenario).
 
@@ -278,7 +293,7 @@ merged, no collisions, no ordering issues" scenario).
   reachable, matching their observed runtime behavior directly (verified:
   `engine.parse("Rs.500 debited...")` does produce a `TRANSINTENT`-derived
   result in practice). The first pass's flat dependency-merge had wrongly
-  marked both unreachable because *some* alternative among several
+  marked both unreachable because _some_ alternative among several
   referenced an exotic token — the fix requires only one full alternative
   to work, matching how `grammar-runner.ts` actually evaluates rules.
 - **37 remain unreachable** even under the most generous global-merge
@@ -286,11 +301,11 @@ merged, no collisions, no ordering issues" scenario).
 
 ### Where the 37 actually cluster
 
-| Blocked on | Count | Symbols |
-|---|---|---|
-| `URL` | 18 direct (+3 more transitively, via a `URL`-blocked symbol) | `ACKNWLDGDLVRYURL`, `AVAILURL`, `CASHBCKURL`, `JOINURL`, `LINKADHRURL`, `LOGINURL`, `MANAGEDLVRYURL`, `MANAGEURL`, `MNGDATAURL`, `MOREINFOURL`, `ORDERURL`, `PAYLINK`, `RCHRGURL`, `RECEIPTURL`, `TRACKDLVRYURL`, `TRACKMISSEDCALLSURL`, `VIEWBRDINGPASSURL`, `WBCHKURL` (+ `CHECKTRXURL`, `FEEDBACKURL`, `PAYURL` transitively) |
-| `IDVAL` | 4 | `BKNGID`, `BUSID`, `OTPIDVAL`, `TICKETNUM` |
-| other (`SEATNUM`, `AIRPORT`, `LOCATION`, `VHRGID`, ...) | 15 | see appendix |
+| Blocked on                                              | Count                                                        | Symbols                                                                                                                                                                                                                                                                                                                          |
+| ------------------------------------------------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `URL`                                                   | 18 direct (+3 more transitively, via a `URL`-blocked symbol) | `ACKNWLDGDLVRYURL`, `AVAILURL`, `CASHBCKURL`, `JOINURL`, `LINKADHRURL`, `LOGINURL`, `MANAGEDLVRYURL`, `MANAGEURL`, `MNGDATAURL`, `MOREINFOURL`, `ORDERURL`, `PAYLINK`, `RCHRGURL`, `RECEIPTURL`, `TRACKDLVRYURL`, `TRACKMISSEDCALLSURL`, `VIEWBRDINGPASSURL`, `WBCHKURL` (+ `CHECKTRXURL`, `FEEDBACKURL`, `PAYURL` transitively) |
+| `IDVAL`                                                 | 4                                                            | `BKNGID`, `BUSID`, `OTPIDVAL`, `TICKETNUM`                                                                                                                                                                                                                                                                                       |
+| other (`SEATNUM`, `AIRPORT`, `LOCATION`, `VHRGID`, ...) | 15                                                           | see appendix                                                                                                                                                                                                                                                                                                                     |
 
 **New finding from the correction: `URL` is now the dominant blocker (21
 of 37, ~57%), not `IDVAL`.** Confirmed by direct inspection — there is no
@@ -310,12 +325,12 @@ scope.** `IDVAL` is referenced by `REFNO`, `TRXID`, `BKNGID`, `PNRID`,
 `TICKETNUM`, `ORDERIDVAL`, `TRACKINGIDVAL`, `OTPIDVAL`, `TRIPCODEVAL`,
 `BUSID` — but only 4 of those (`BKNGID`, `BUSID`, `OTPIDVAL`,
 `TICKETNUM`) are actually unreachable overall, because `REFNO`,
-`TRXID`, `ORDERIDVAL`, and `TRACKINGIDVAL` turned out to have *other*,
+`TRXID`, `ORDERIDVAL`, and `TRACKINGIDVAL` turned out to have _other_,
 already-reachable alternatives that don't need `IDVAL` at all — the exact
 kind of thing the alternative-level fix was needed to see correctly.
 `CLASSIFIER.CLS_ID`'s word list (`REF`, `PNR`, `TICKETNO`, `TRIPCODE`,
 `BUSNO`, `TRANSID`, `ORDERID`, `TRACKINGID`, `BOOKINGID`, ...) still lines
-up closely with the *remaining* stuck symbols, so the hypothesis that
+up closely with the _remaining_ stuck symbols, so the hypothesis that
 `CLASSIFIER.CLS_ID` drives a generic identifier-marker mechanism outside
 `TOKENS`/`GRMR` is retained — but the earlier claim that it would resolve
 "roughly a third of the 169" is withdrawn as unsupported. At the corrected
@@ -334,72 +349,51 @@ appendix at the bottom of this document.
 
 ## 4b. `PATTERN` / `STRUCT` compliance (91 + 20 = 111 entries)
 
-This section did not exist in earlier passes of this document — `PATTERN`
-and `STRUCT` were spot-checked (2-3 individual entries) but never
-mechanically inventoried the way `TOKENS`/`GRMR` were. That gap is closed
-here: all 111 entries, every space-separated element, classified and
-cross-checked against `pattern-extractor.ts`.
+All 111 entries remain mechanically inventoried below. The Java trace now
+shows that they are not two names for one instruction set.
 
-### What `PATTERN`/`STRUCT` actually are, read directly from the engine
+### JSON inventory versus the two runtimes
 
-`malana.ts` calls `runPatterns(getPatternsFor(category), processed)` where
-`processed` is the token stream **after** `runGrammar` has already run —
-so patterns match against already-merged/synthesized grammar tokens, not
-just raw keyword/regex tokens. `getPatternsFor` concatenates
-`PATTERN` and `STRUCT` into one array and compiles both identically —
-**there is no functional distinction between the two sections in the TS
-engine**; the JSON's separation into two arrays doesn't correspond to any
-different code path.
+- The APK loader stores all three arrays (`GRMR`, `STRUCT`, and `PATTERN`).
+- The complete `ga3.baz.g()` body compiles `GRMR` and `STRUCT`, but reads the
+  stored `PATTERN` field zero times. Therefore all 91 `PATTERN` entries are
+  dormant in this APK version.
+- Java compiles each `STRUCT` by splitting on spaces. A word beginning with
+  `#` marks a capture on the current trie node; every other word is a literal
+  token-type edge. No `{N}` or `TOKEN|(literal)` syntax is parsed by the
+  STRUCT compiler.
+- The TS port instead concatenates `PATTERN` and `STRUCT` and runs all 111
+  strings through `pattern-extractor.ts`'s richer interpreter. It does so
+  after grammar processing. This is a confirmed parity divergence: TS
+  executes 91 entries Java does not and models STRUCT with PATTERN syntax.
 
-`runPatterns`' matching is a straightforward brute-force scan, confirmed
-directly from `pattern-extractor.ts`:
-- For each compiled pattern, try every start position `0..tokens.length`
-  in order; take the **first** position where every element matches.
-  This is a **search** (tries all N starting positions), not a blind skip
-  — but once a start position is chosen, matching proceeds strictly
-  left-to-right with **no backtracking**: if an element fails, that whole
-  start position is abandoned and the next one is tried from scratch, not
-  retried with a different skip amount.
-- `{N}` skip clauses **blindly consume up to N tokens** (or fewer if a
-  `stopType` match or end-of-stream is hit first) — there's no attempt to
-  try skip=0, skip=1, ... skip=N and see which lets the rest of the
-  pattern match; it always greedily consumes as much as the stop
-  condition allows.
-- Base token types are matched by plain equality (`tok.type === el.type`).
-- Literal alternatives (`TOKEN|(a,b,c)`) are matched case-insensitively
-  against both the token's normalized value and its raw text.
-- Captures preserve free text (joined raw `tok.text`), explicitly
-  filtering out date-shaped, pure-numeric, and URL-shaped raw text so
-  those never get captured as a merchant/vendor name.
-- Across multiple patterns, resolution is **strict first-registered-wins**
-  per captured field name (`if (v && !result[k])`) — the first pattern in
-  the JSON array to produce a real value for a field name (e.g. `vendor`)
-  wins; later patterns can never override it, even if they'd have matched
-  "better" by some other measure. There is no scoring, confidence, or
-  competing-match resolution beyond array order.
+The downstream Java STRUCT traversal and capture boundaries still require
+the matching runtime call path. Compilation alone does not prove how an
+arbitrary-word span is selected or how competing captures resolve.
 
-### Element shape inventory (all 111 entries, every element)
+### Mechanical JSON shape inventory (all 111 entries)
 
-| Shape | Count |
-|---|---|
-| bare token (`TOKEN`) | 189 |
-| capture (`#name`) | 100 |
-| skip-with-stop (`{N}\|TOKEN`) | 71 |
-| token-or-literal (`TOKEN\|(literal)`) | 31 |
-| **skip-with-swallowed-capture (`{N}\|#name`, no space)** | **26** |
-| token-or-literal-alternatives (`TOKEN\|(a,b,c)`) | 3 |
-| literal-only (`(literal)`, standalone) | 0 — never occurs in practice, despite being documented syntax |
+| Shape                                                  | Count                                                         |
+| ------------------------------------------------------ | ------------------------------------------------------------- |
+| bare token (`TOKEN`)                                   | 189                                                           |
+| capture (`#name`)                                      | 100                                                           |
+| skip-with-stop (`{N}\|TOKEN`)                          | 71                                                            |
+| token-or-literal (`TOKEN\|(literal)`)                  | 31                                                            |
+| `{N}\|#name` (swallowed by the current TS interpreter) | **26**                                                        |
+| token-or-literal-alternatives (`TOKEN\|(a,b,c)`)       | 3                                                             |
+| literal-only (`(literal)`, standalone)                 | 0 — never occurs in practice, despite being documented syntax |
 
-### The headline finding: 24 of 111 entries (21.6%) can never produce a capture, ever
+### TS-only finding: 24 PATTERN entries cannot produce a capture
 
-This is the single most consequential thing this audit has found, and it
-doesn't need bytecode tracing — it's directly provable by tracing the TS
-code.
+This is directly provable behavior of the current TS interpreter, but it is
+not a missing Java behavior: all 91 PATTERN entries are dormant in the traced
+APK. Repairing these 24 entries would therefore be a product extension, not a
+Truecaller-parity fix.
 
 The doc comment in `pattern-extractor.ts` describes `{N}|TOKEN` ("skip up
 to N tokens, stop if TOKEN is found"). The seed data contains a related
 but different shape: `{N}|#name` — e.g. `"AMT {2}|#vendor"`. Because
-`parsePatternString` splits on whitespace *first*, and there is no space
+`parsePatternString` splits on whitespace _first_, and there is no space
 between `|` and `#vendor`, the entire substring `{2}|#vendor` is one
 whitespace token. It gets parsed as a single **skip** element whose
 `stopType` is the literal string `"#vendor"` (hash included) — **not** as
@@ -413,8 +407,8 @@ all**. `compilePatterns` then derives that pattern's `name` as `"unknown"`
 key. The pattern still runs (wastes a full start-position scan on every
 parse) but can **never** contribute a field to the result.
 
-Confirmed by direct execution of the actual parsing logic (ported
-faithfully, not assumed), not just static reading of the string:
+Confirmed by direct execution of the current TS parsing logic, not just
+static reading of the string:
 
 ```
 GRM_BANK:PATTERN[8]   INS {3}|PREPV|(at) {3}|#vendor
@@ -443,33 +437,24 @@ GRM_DELIVERY:PATTERN[22] BOOK {1}|PREP|(with) {2}|#item
 GRM_DELIVERY:PATTERN[23] ORDSTATUS {2}|DET {1}|NUM {0}|#item
 ```
 
-**Every single one of these is trying to capture `vendor`, `billvendor`,
-`item`, `boardgate`, `from_loc`, or `to_loc`** — exactly the fields the
-dashboard uses for merchant/vendor labels (`enrichment.ts`'s
-`extractMandateMerchant` and the `#vendor`-derived `vendor` field feed
-directly into `apps/native`'s transaction labels and subscription
-grouping). GRM_BANK alone has 6 of its 24 PATTERN entries (25%) silently
-dead this way. **This is very likely a real, or the primary, root cause of
-the pre-existing "garbled vendor/merchant labels in Recent transactions
-and Subscriptions" issue already tracked as unfixed local work** — not a
-new problem, but a concrete explanation for one that was already known and
-previously unexplained. Vendor extraction isn't *entirely* broken (other,
-correctly-spaced `#vendor` patterns in the same categories do work — e.g.
-`GRM_BANK:PATTERN[1]`: `"TRX|(deposit) AMT #vendor AUX {2}|AVBL"` has a
-real, functioning capture), but a quarter or more of the intended coverage
-for the most commonly-used capture fields never fires.
+These entries name fields used by the dashboard, so enabling PATTERN could
+materially change merchant, bill-vendor, item, and travel labels. However,
+the earlier claim that this is likely the root cause of garbled labels is
+withdrawn. Java does not execute these entries, and no Java capture result
+has been reproduced from them. Any TS repair needs an explicit product
+decision plus golden-message expectations.
 
-### Other confirmed observations
+### Other TS-interpreter observations
 
 - **11 entries have more than one capture**, **45 entries end in a capture
-  with no trailing anchor to bound it** (the capture logic handles this —
+  with no trailing anchor to bound it** (the TS capture logic handles this —
   it just consumes to the end of the token stream, filtered by the
   structural-token-type stoplist — but it does mean no anchor tests
   whether the capture over-consumed unrelated trailing text).
 - **Zero adjacent capture pairs** (`#a #b` with nothing between) occur in
   the actual data, despite the parser having no special handling for that
   shape (worth knowing it's untested, not that it's broken).
-- **2 entries have a `{0}` skip clause** (`GRM_STOCKUPDATES:PATTERN[0]`,
+- **2 PATTERN entries have a `{0}` skip clause** (`GRM_STOCKUPDATES:PATTERN[0]`,
   `GRM_DELIVERY:PATTERN[23]`) — by the code's own logic (`skipped < el.max`
   with `max=0`), these are permanent no-ops; harmless, but dead syntax
   wherever they appear.
@@ -481,12 +466,12 @@ for the most commonly-used capture fields never fires.
 
 140 of 533 `GRMR` result-keys (26%) carry a `<N>` multiplier:
 
-| N | Count | Example |
-|---|---|---|
-| `<2>` | 79 | `CASHBACKTOCARD[trx]<2>`, `UPITRX[trx]<2>` |
-| `<3>` | 50 | `AUTODBTSUCCES[trx]<3>`, `OTPIDVAL[otp]<3>` |
-| `<4>` | 6  | `OTPNO[otp]<4>`, `MAKETXNSGETOFFER<4>` |
-| `<5>` | 5  | `TRCONV[conv]<5>`, `TRXDECLINE[decline]<5>` |
+| N     | Count | Example                                     |
+| ----- | ----- | ------------------------------------------- |
+| `<2>` | 79    | `CASHBACKTOCARD[trx]<2>`, `UPITRX[trx]<2>`  |
+| `<3>` | 50    | `AUTODBTSUCCES[trx]<3>`, `OTPIDVAL[otp]<3>` |
+| `<4>` | 6     | `OTPNO[otp]<4>`, `MAKETXNSGETOFFER<4>`      |
+| `<5>` | 5     | `TRCONV[conv]<5>`, `TRXDECLINE[decline]<5>` |
 
 **TS status: fully inert.** `grammar-compiler.ts:55,95` parses `<N>` into
 `GrammarEntry.multiplier` and stores it in the compiled `pairMap` entry, but
@@ -501,12 +486,12 @@ grammar outputs.
 Every keyword entry across all `TOKENS` values, classified by syntax shape
 (1,167 total entries):
 
-| Shape | Count | Example |
-|---|---|---|
-| plain phrase | 784 | `debited` |
-| `phrase\|normalizedvalue` | 380 | `dr\|debit` |
-| `phrase\|[a;b;c;d]` | 2 | `expire\|[verb;past]`, `picked\|[pickedup;;past;verb]` |
-| `phrase[a;b;c;d]` (no pipe) | 1 | `picked up[pickedup;;past;verb]` |
+| Shape                       | Count | Example                                                |
+| --------------------------- | ----- | ------------------------------------------------------ |
+| plain phrase                | 784   | `debited`                                              |
+| `phrase\|normalizedvalue`   | 380   | `dr\|debit`                                            |
+| `phrase\|[a;b;c;d]`         | 2     | `expire\|[verb;past]`, `picked\|[pickedup;;past;verb]` |
+| `phrase[a;b;c;d]` (no pipe) | 1     | `picked up[pickedup;;past;verb]`                       |
 
 Low raw frequency (3 entries total), but both forms are mishandled by
 `keyword-tokenizer.ts:97-99`, which splits on the first `|` only:
@@ -530,13 +515,13 @@ confirmed non-functional.
 Broader than the two constructs originally flagged — every underscore-prefixed
 attribute found in any `TOKENS` key's bracket:
 
-| Attr | Keys using it | Example |
-|---|---|---|
-| `_pos` | 22 | `DET[_pos=det]`, `AUX[_pos=aux]` |
-| `_tense` | 10 | `TRX[type,_tense=past,_pos=verb,_negation=negatable]` |
-| `_negation` | 7 | same `TRX`/`TRX1`/`TRX2`/`TRANS`/`ORDSTATUS5` family |
-| `_chunk` | 2 | `COURIER[_chunk=true]`, `PRECODE[_chunk=true]` |
-| `_context` | 1 | `SPNDLMT[_context=limit]` |
+| Attr        | Keys using it | Example                                               |
+| ----------- | ------------- | ----------------------------------------------------- |
+| `_pos`      | 22            | `DET[_pos=det]`, `AUX[_pos=aux]`                      |
+| `_tense`    | 10            | `TRX[type,_tense=past,_pos=verb,_negation=negatable]` |
+| `_negation` | 7             | same `TRX`/`TRX1`/`TRX2`/`TRANS`/`ORDSTATUS5` family  |
+| `_chunk`    | 2             | `COURIER[_chunk=true]`, `PRECODE[_chunk=true]`        |
+| `_context`  | 1             | `SPNDLMT[_context=limit]`                             |
 
 All five are parsed generically by `keyword-tokenizer.ts:37-40` (any
 `_key=value` → `attrs[key] = value`, stripping the underscore) and get
@@ -545,6 +530,12 @@ anywhere downstream** — grepped `grammar-runner.ts`, `pattern-extractor.ts`,
 `malana.ts`, `enrichment.ts` for `"pos"`, `"tense"`, `"negation"`,
 `"chunk"`, `"context"` as read-sites (not just the string constants) and
 found zero consumers.
+
+Java differs for `_chunk`: `ra3.bar.d()` explicitly returns true for a token
+whose attribute map contains `chunk=true` (and for `GDO_NONDET`). This proves
+the Java token model preserves and interprets `_chunk`; the downstream effect
+of that predicate still needs its call sites. No equivalent predicate exists
+in the TS port.
 
 **`_negation=negatable` on `TRX`/`TRX1`/`TRX2`/`TRANS` is the one most
 worth flagging beyond the original two.** Those are the core transaction
@@ -587,20 +578,20 @@ Every JSON file in `src/malana/data/` besides `seeddata.json`, mechanically
 inventoried by `scripts/dsl-audit/other_assets_inventory.py` — shape,
 size, and TS consumer confirmed by grep (not assumed):
 
-| File | Shape | Consumer(s) |
-|---|---|---|
-| `categorizer.json` (502.5KB) | `{probabilities: [3708 x {word, probability:[6]}], meta:[...], version}` | `enrichment.ts` — Naive Bayes spam classifier. `probability[2..5]`/`meta[2..9]` are training-corpus stats not used for inference (documented in-code, verified earlier this session) |
-| `addr.json` (5.9KB) | `{category: [sender IDs]}` × 6 categories | `enrichment.ts` `grammarForSender` |
-| `airport.json` (2.0KB) | `{city: IATA code}` × 101 | `enrichment.ts` city→IATA lookup |
-| `bank.json` (1.6KB) | `{bank name: [sender IDs]}` × 32 | `enrichment.ts` `detectBank` |
-| **`blacklist.json` (1.6KB)** | `{version, countries: [{country_code, shingles, ngrams, min_sim_score, patterns: [{type, subtype, threshold, sub-patterns: [...]}]}]}` | **NONE — confirmed via repo-wide grep across `packages/parser` and `apps/native`, zero references anywhere** |
-| `location.json` (68.1KB) | `[4829 place names]` | `enrichment.ts` gazetteer membership set |
-| `offers.json` (3.6KB) | `{category: [sender codes]}` × 8 | `enrichment.ts` promo sender→category |
-| `upi.json` (1.5KB) | `{handles: [111 strings]}` | `enrichment.ts` `detectUpiHandle` |
-| `vendor_banks.json` (0.6KB) | `{bank name: [aliases]}` × 13 | `enrichment.ts` `detectBank` fallback, `vendor-category-matcher.ts` |
-| `vendor_brands.json` (3.3KB) | `{brand: {tokens:[...], tags:[...]}}` × 38 | `enrichment.ts` `detectBrand` (both fields consumed — checked every entry, no field beyond `tokens`/`tags` exists anywhere in the file) |
-| `vendor_operators.json` (0.7KB) | `[79 strings]` | `vendor-category-matcher.ts` |
-| `vendor_seed.json` (5.6KB) | `{category: [keywords]}` × 31 | `vendor-category-matcher.ts` |
+| File                            | Shape                                                                                                                                  | Consumer(s)                                                                                                                                                                          |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `categorizer.json` (502.5KB)    | `{probabilities: [3708 x {word, probability:[6]}], meta:[...], version}`                                                               | `enrichment.ts` — Naive Bayes spam classifier. `probability[2..5]`/`meta[2..9]` are training-corpus stats not used for inference (documented in-code, verified earlier this session) |
+| `addr.json` (5.9KB)             | `{category: [sender IDs]}` × 6 categories                                                                                              | `enrichment.ts` `grammarForSender`                                                                                                                                                   |
+| `airport.json` (2.0KB)          | `{city: IATA code}` × 101                                                                                                              | `enrichment.ts` city→IATA lookup                                                                                                                                                     |
+| `bank.json` (1.6KB)             | `{bank name: [sender IDs]}` × 32                                                                                                       | `enrichment.ts` `detectBank`                                                                                                                                                         |
+| **`blacklist.json` (1.6KB)**    | `{version, countries: [{country_code, shingles, ngrams, min_sim_score, patterns: [{type, subtype, threshold, sub-patterns: [...]}]}]}` | **NONE — confirmed via repo-wide grep across `packages/parser` and `apps/native`, zero references anywhere**                                                                         |
+| `location.json` (68.1KB)        | `[4829 place names]`                                                                                                                   | `enrichment.ts` gazetteer membership set                                                                                                                                             |
+| `offers.json` (3.6KB)           | `{category: [sender codes]}` × 8                                                                                                       | `enrichment.ts` promo sender→category                                                                                                                                                |
+| `upi.json` (1.5KB)              | `{handles: [111 strings]}`                                                                                                             | `enrichment.ts` `detectUpiHandle`                                                                                                                                                    |
+| `vendor_banks.json` (0.6KB)     | `{bank name: [aliases]}` × 13                                                                                                          | `enrichment.ts` `detectBank` fallback, `vendor-category-matcher.ts`                                                                                                                  |
+| `vendor_brands.json` (3.3KB)    | `{brand: {tokens:[...], tags:[...]}}` × 38                                                                                             | `enrichment.ts` `detectBrand` (both fields consumed — checked every entry, no field beyond `tokens`/`tags` exists anywhere in the file)                                              |
+| `vendor_operators.json` (0.7KB) | `[79 strings]`                                                                                                                         | `vendor-category-matcher.ts`                                                                                                                                                         |
+| `vendor_seed.json` (5.6KB)      | `{category: [keywords]}` × 31                                                                                                          | `vendor-category-matcher.ts`                                                                                                                                                         |
 
 **`blacklist.json` is a real, substantial, entirely unused asset** — a
 shingle/n-gram fuzzy-similarity spam-detection configuration (per-country
@@ -634,8 +625,9 @@ contained modeling bugs in an earlier pass:
   SCCs, multi-producer symbols, corrected reachability, pair-map
   collisions, `<N>` multiplier counts, `TOKENS` bracket-annotation and
   underscore-attr inventories.
-- `pattern_struct_inventory.py` — `PATTERN`/`STRUCT` element-shape
-  classification and the swallowed-capture bug detection (§4b).
+- `pattern_struct_inventory.py` — `PATTERN`/`STRUCT` JSON element-shape
+  classification and the TS-only swallowed-capture observation (§4b). Java
+  execution facts come from the separately supplied Java/smali trace.
 - `other_assets_inventory.py` — shape/consumer inventory for the 12
   non-`seeddata.json` assets (§9), with an assertion that every file in
   `data/` is covered by some script.
@@ -650,20 +642,20 @@ from `packages/parser/`; requires `networkx` for
 
 ## 8. Summary table
 
-| # | Construct | TS status | Confidence |
-|---|---|---|---|
-| 1 | `<N>` multiplier | Parsed, stored, never read (140/533 rules affected) | Confirmed |
-| 2 | `phrase\|[a;b;c;d]` bracket annotation | Literal string, fields never decoded (2 entries) | Confirmed |
-| 2b | `phrase[a;b;c;d]` (no pipe) | Entire string becomes unmatchable keyword (1 entry) | Confirmed |
-| 3 | `_chunk`, `_context`, `_pos`, `_tense`, `_negation` | Parsed into `values`, never read downstream | Confirmed |
-| 4 | Cross-category grammar composition | 39 required + 18 ambiguous edges, 8-category SCC (`GRM_BANK`/`GRM_BILL`/`GRM_CALLALERTS`/`GRM_DELIVERY`/`GRM_NOTIF`/`GRM_OFFERS`/`GRM_TELECOM`/`GRM_VOID`), 9 pair-map collisions if merged naively | Confirmed structure (recomputed correctly excluding local producers); correct resolution mechanism unconfirmed |
-| 5 | `RECURR`/`SUBSCRPTN`/`AUTORENEW`/`EMANDATE`/`STNDNGINS`/`AUTDBT` | Only `RECURR` is grammar-unused; the rest are real seed-grammar inputs the TS engine doesn't specifically surface | Corrected this session — see below |
-| 6 | `PATTERN`/`STRUCT` — element parsing | 24 of 111 entries (21.6%) produce zero captures ever, due to `{N}\|#name` (no space) being swallowed into a skip clause's `stopType` instead of parsing as a separate capture — see §4b | Confirmed by tracing the actual parsing logic; likely root cause of the pre-existing garbled-vendor-label issue |
-| 6b | `PATTERN`/`STRUCT` — matching semantics | Full start-position search (not blind skip), no backtracking once a start is chosen, strict first-registered-pattern-wins per field, blind `{N}`-token skip (not 0..N trial) — see §4b | Confirmed by direct code trace |
-| 7 | `CLASSIFIER.CLS_ID` | Validated by schema, never read; plausibly the producer of `IDVAL` (4 of 37 unreachable symbols) — `URL` (21 of 37) is now the bigger, more concrete lead | Confirmed unused; production-mechanism hypothesis unconfirmed, reduced scope after correction |
-| 8 | `URL` token type | No `TOKENS` entry, no regex-tokenizer rule — real bank/delivery/offer links in SMS have nowhere to match | New this pass — concrete, checkable without bytecode |
-| 9 | `TRX`/`NEGATION` negation pairing | Both halves exist in seed (`TRX[..._negation=negatable]`, `NEGATION[_negation=negater]`); TS parses both, combines neither. Runtime-confirmed: `trxTypeRich` set on a negated debit/credit SMS | Confirmed both statically and at runtime; `trx` stays null so today's dashboard totals aren't affected |
-| 10 | `blacklist.json` | Real shingle/n-gram spam-detection config, zero TS consumers — a wholesale missing subsystem, not a redundant duplicate of the working Naive Bayes classifier | Confirmed unused |
+| #   | Construct                                                        | TS status                                                                                                                                                                                                | Confidence                                                                                             |
+| --- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| 1   | `<N>` multiplier                                                 | Parsed, stored, never read (140/533 rules affected)                                                                                                                                                      | Confirmed                                                                                              |
+| 2   | `phrase\|[a;b;c;d]` bracket annotation                           | Literal string, fields never decoded (2 entries)                                                                                                                                                         | Confirmed                                                                                              |
+| 2b  | `phrase[a;b;c;d]` (no pipe)                                      | Entire string becomes unmatchable keyword (1 entry)                                                                                                                                                      | Confirmed                                                                                              |
+| 3   | `_chunk`, `_context`, `_pos`, `_tense`, `_negation`              | TS parses all into `values` but reads none. Java `ra3.bar.d()` interprets `chunk=true`; downstream call sites remain open                                                                                | TS gap and Java predicate confirmed                                                                    |
+| 4   | Cross-category grammar composition                               | 39 required + 18 ambiguous edges, 8-category SCC, 9 naive-merge collisions. Java passes all 13 categories to its per-message parser and can build combined GRMR/STRUCT roots                             | Configuration confirmed; runtime traversal/resolution still unconfirmed                                |
+| 5   | `RECURR`/`SUBSCRPTN`/`AUTORENEW`/`EMANDATE`/`STNDNGINS`/`AUTDBT` | Only `RECURR` is grammar-unused; the rest are real seed-grammar inputs the TS engine doesn't specifically surface                                                                                        | Corrected this session — see below                                                                     |
+| 6   | `PATTERN` versus `STRUCT` execution                              | Java loads but does not compile any of the 91 PATTERN entries; it compiles the 20 STRUCT entries as token edges plus `#capture`. TS concatenates and executes both tables through one richer interpreter | Java compilation and TS divergence confirmed; Java STRUCT traversal still open                         |
+| 6b  | TS-only PATTERN matching                                         | 24 PATTERN entries produce zero captures because `{N}\|#name` is swallowed into a skip stop type. Fixing this would extend behavior beyond this APK, not restore parity                                  | Confirmed TS behavior; withdrawn as Java bug and merchant-label root cause                             |
+| 7   | `CLASSIFIER.CLS_ID`                                              | Validated by schema, never read; plausibly the producer of `IDVAL` (4 of 37 unreachable symbols) — `URL` (21 of 37) is now the bigger, more concrete lead                                                | Confirmed unused; production-mechanism hypothesis unconfirmed, reduced scope after correction          |
+| 8   | `URL` token type                                                 | No `TOKENS` entry, no regex-tokenizer rule — real bank/delivery/offer links in SMS have nowhere to match                                                                                                 | New this pass — concrete, checkable without bytecode                                                   |
+| 9   | `TRX`/`NEGATION` negation pairing                                | Both halves exist in seed (`TRX[..._negation=negatable]`, `NEGATION[_negation=negater]`); TS parses both, combines neither. Runtime-confirmed: `trxTypeRich` set on a negated debit/credit SMS           | Confirmed both statically and at runtime; `trx` stays null so today's dashboard totals aren't affected |
+| 10  | `blacklist.json`                                                 | Real shingle/n-gram spam-detection config, zero TS consumers — a wholesale missing subsystem, not a redundant duplicate of the working Naive Bayes classifier                                            | Confirmed unused                                                                                       |
 
 ## Corrections applied during this pass
 
@@ -702,7 +694,7 @@ apply.
 
 ## Appendix: full corrected 37-symbol unreachable list
 
-Each symbol's *best* (fewest-missing-dependency) alternative is shown —
+Each symbol's _best_ (fewest-missing-dependency) alternative is shown —
 i.e. even its most promising rule alternative still can't be satisfied
 under the most generous global-merge hypothesis.
 
