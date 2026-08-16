@@ -83,23 +83,59 @@ function pickTagValue(tag: string, values: Record<string, string>): string {
   }
 }
 
-// Every literal (non-generic) token type that appears in a BAL[bal] grammar
-// rule across the seed (GRM_BANK: "BLNC AMT,AVBL BAL,CURR {0}BAL,TOTAL BAL,
-// BLNC NUM,CLRNC BAL,AMT AUX BLNC,AVBL {2}AMT"; GRM_BILL is a subset). AMT/NUM
-// are excluded — they're the generic amount side of every rule, not evidence
-// of a balance statement on their own.
-const BALANCE_INDICATOR_TYPES = new Set(['BLNC', 'AVBL', 'BAL', 'CURR', 'TOTAL', 'CLRNC']);
+// Structural "carries a scalar value" leaf types (grammar-runner.ts's
+// inheritLeafValues pulls these into merged.values['amount']/['instrno']/etc)
+// — reused across dozens of unrelated rules, never balance-specific on their
+// own. Mirrors that function's own type list; kept separate here rather than
+// importing it since inheritLeafValues checks types inline, not via a set.
+const LEAF_VALUE_TYPES = new Set(['AMT', 'NUM', 'INSTRNO', 'IDVAL', 'DATE', 'DATETIME']);
+
+// A token type is a grammatical function word (not a semantic keyword) when
+// its own seed.TOKENS entry carries a [_pos=...] marker — the same marker
+// the seed itself uses for DET/AUX/PREP/PREPV/ART. Confirmed directly: AUX's
+// entry is 'AUX[_pos=aux]' (excluded), while BLNC/AVBL/CURR/TOTAL/CLRNC have
+// plain entries with no such marker (included).
+function isGrammaticalFunctionWord(type: string, seed: SeedData): boolean {
+  return Object.keys(seed.TOKENS).some(k => k.startsWith(`${type}[_pos=`));
+}
+
+// Derives every real balance-indicating token type by parsing the literal
+// text of every [bal]-tagged grammar rule across the whole seed (not just
+// BAL[bal] — GRM_BANK also has INSUFFBAL[bal]: "INSUFF BLNC,BLNC {6}INSUFF",
+// contributing INSUFF ("insufficient") — a rule easy to miss by hand, which
+// is the actual point of deriving this instead of hand-typing it). Excludes
+// leaf-value types and grammatical function words; every other literal token
+// type mentioned is a real semantic balance word by construction.
+export function deriveBalanceIndicatorTypes(seed: SeedData): Set<string> {
+  const result = new Set<string>();
+  for (const category of Object.values(seed.GRAMMAR)) {
+    for (const layer of category.GRMR ?? []) {
+      for (const [resultKey, rulesStr] of Object.entries(layer)) {
+        if (!resultKey.endsWith('[bal]')) continue;
+        for (const rule of rulesStr.split(',')) {
+          for (const part of rule.trim().split(/\s+/).filter(Boolean)) {
+            const gapMatch = /^\{[^}]*\}(.+)$/.exec(part);
+            const type = gapMatch ? gapMatch[1] : part;
+            if (!type || LEAF_VALUE_TYPES.has(type) || isGrammaticalFunctionWord(type, seed)) continue;
+            result.add(type);
+          }
+        }
+      }
+    }
+  }
+  return result;
+}
 
 function baseType(t: string): string {
   return t.replace(/\d+$/, '');
 }
 
-function isBalanceIndicatorPair(values: Record<string, string>): boolean {
+function isBalanceIndicatorPair(values: Record<string, string>, balanceIndicatorTypes: Set<string>): boolean {
   const prev = values['_prevType'];
   const next = values['_nextType'];
   return (
-    (!!prev && BALANCE_INDICATOR_TYPES.has(baseType(prev))) ||
-    (!!next && BALANCE_INDICATOR_TYPES.has(baseType(next)))
+    (!!prev && balanceIndicatorTypes.has(baseType(prev))) ||
+    (!!next && balanceIndicatorTypes.has(baseType(next)))
   );
 }
 
@@ -215,10 +251,12 @@ export class MalanaEngine {
   // bulk-parses up to 5,000 messages per screen load, all through the same
   // small set of grammar categories.
   private layerCache = new Map<string, ReturnType<typeof compileSeed>>();
+  private balanceIndicatorTypes: Set<string>;
 
   constructor(seed: SeedData) {
     this.seed = seed;
     this.keywordTokenizer = new KeywordTokenizer(seed.TOKENS);
+    this.balanceIndicatorTypes = deriveBalanceIndicatorTypes(seed);
   }
 
   private getPatternsFor(category: string) {
@@ -280,7 +318,7 @@ export class MalanaEngine {
         // trusting it, so e.g. "Rs.1999.00 is successfully created..." (an
         // amount followed by any auxiliary verb) can't masquerade as a
         // balance statement.
-        const trustworthy = tag !== 'bal' || isBalanceIndicatorPair(token.values);
+        const trustworthy = tag !== 'bal' || isBalanceIndicatorPair(token.values, this.balanceIndicatorTypes);
         if (trustworthy) {
           const tagValue = pickTagValue(tag, token.values);
           if (tagValue) tags[tag] = tagValue;

@@ -15,7 +15,7 @@
  * balance-indicating token types, not just any amount+auxiliary-verb pair.
  */
 import { describe, it, expect } from 'vitest';
-import { MalanaEngine } from './malana.js';
+import { MalanaEngine, deriveBalanceIndicatorTypes } from './malana.js';
 import { seedData } from './index.js';
 
 const engine = new MalanaEngine(seedData);
@@ -35,5 +35,26 @@ describe('bal false positive — amount+auxiliary-verb is not a balance statemen
       'VM-TESTBK',
     );
     expect(r.bal).not.toBeNull();
+  });
+});
+
+// The original fix hand-typed the balance-indicator set from reading BAL[bal]'s
+// rule text once — a plausible source of drift if the seed grammar changes, and
+// it turned out to already be incomplete (missed GRM_BANK's separate
+// INSUFFBAL[bal] rule, contributing "insufficient"). deriveBalanceIndicatorTypes
+// parses every [bal]-tagged rule in the real seed instead of hand-listing them.
+describe('deriveBalanceIndicatorTypes', () => {
+  const derived = deriveBalanceIndicatorTypes(seedData);
+
+  it('includes every real semantic balance word from the seed', () => {
+    for (const type of ['BLNC', 'AVBL', 'BAL', 'CURR', 'TOTAL', 'CLRNC', 'INSUFF']) {
+      expect(derived.has(type)).toBe(true);
+    }
+  });
+
+  it('excludes generic leaf-value and grammatical function-word types', () => {
+    for (const type of ['AMT', 'NUM', 'AUX']) {
+      expect(derived.has(type)).toBe(false);
+    }
   });
 });
