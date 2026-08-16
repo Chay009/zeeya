@@ -1,4 +1,5 @@
 import type { Token } from "./types";
+import type { CurrencyRegistry } from "./currency-registry.js";
 
 // ── Trie ─────────────────────────────────────────────────────────────────────
 
@@ -67,6 +68,7 @@ const YUGA_SOURCE_CONTEXT = "YUGA_SOURCE_CONTEXT";
 const YUGA_SC_CURR = "YUGA_SC_CURR";
 const YUGA_SC_TRANSID = "YUGA_SC_TRANSID";
 const YUGA_CONF_DATE = "YUGA_CONF_DATE";
+const YUGA_CONF_CURRENCY_ALIASES = "YUGA_CONF_CURRENCY_ALIASES";
 
 const FSA_MONTHS_SEED =
   "jan;uary,feb;r;uary,mar;ch,apr;il,may,jun;e,jul;y,aug;ust,sep;t;ember,oct;ober,nov;ember,dec;ember";
@@ -78,24 +80,6 @@ const FSA_TIMES_SEED = "hours,hrs,hr,mins,minutes";
 const FSA_TZ_SEED = "gmt,ist";
 const FSA_DAYSFFX_SEED = "st,nd,rd,th";
 const FSA_UPI_SEED = "UPI,MMT,NEFT";
-
-const CURR_ACT = [
-  "rs",
-  "inr",
-  "cny",
-  "ngn",
-  "usd",
-  "cad",
-  "eur",
-  "gbp",
-  "aed",
-  "jpy",
-  "aud",
-  "s$",
-  "lkr",
-  "ksh",
-  "egp",
-];
 
 class FsaContextMap {
   private _map: Map<string, string> = new Map();
@@ -531,9 +515,11 @@ function getAmt(type: string): string {
   return "";
 }
 
-function isCurrencyAhead(type: string): boolean {
+function currencyAliasAhead(type: string, config: Map<string, string>): string | null {
   const s = getPotentialCurrString(type).toLowerCase();
-  return CURR_ACT.includes(s);
+  return (
+    (config.get(YUGA_CONF_CURRENCY_ALIASES) ?? "").split("|").find((alias) => alias === s) ?? null
+  );
 }
 
 function getPotentialCurrString(type: string): string {
@@ -1718,16 +1704,18 @@ function parseInternal(str: string, config: Map<string, string>): [number, FsaCo
       if ((kc === "k" || kc === "m" || kc === "g") && k + 1 < str.length && str[k + 1] === "b") {
         checkIfData(str, k, map);
         i = k + 2;
-      } else if (
-        !configContextIsCURR(config) &&
-        isCurrencyAhead(str.substring(k)) &&
-        !str.substring(i, k).includes("{") &&
-        !str.substring(i, k).includes("[") &&
-        !str.substring(i, k).includes("(")
-      ) {
-        map.setType(TY_AMT, TY_AMT);
-        map.getValMap().set("currency", getPotentialCurrString(str.substring(k)));
-        i = k + 3;
+      } else if (!configContextIsCURR(config)) {
+        const currencyAlias = currencyAliasAhead(str.substring(k), config);
+        if (
+          currencyAlias &&
+          !str.substring(i, k).includes("{") &&
+          !str.substring(i, k).includes("[") &&
+          !str.substring(i, k).includes("(")
+        ) {
+          map.setType(TY_AMT, TY_AMT);
+          map.getValMap().set("currency", currencyAlias);
+          i = k + currencyAlias.length;
+        }
       }
     }
     // Java post-processing: NUM immediately followed by alphabetic (no space) → STR
@@ -1887,14 +1875,14 @@ function yugaTokenType(yugaType: string, hasTime: boolean): string {
   return yugaType; // AMT, NUM, PCT, USSD
 }
 
-function makeDefaultConfig(): Map<string, string> {
+function makeDefaultConfig(currencyRegistry: CurrencyRegistry): Map<string, string> {
   const now = new Date();
   const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} 00:00:00`;
-  return new Map([[YUGA_CONF_DATE, dateStr]]);
+  return new Map([
+    [YUGA_CONF_DATE, dateStr],
+    [YUGA_CONF_CURRENCY_ALIASES, currencyRegistry.aliases.join("|")],
+  ]);
 }
-
-// Matches currency prefix: Rs. / Rs / INR / ₹ / $ / € etc. followed by optional space
-const CURR_PREFIX_RE = /^(?:rs\.?\s*|inr\s*|[₹$€£¥₩]\s*|usd\s*|eur\s*|gbp\s*|aed\s*)/i;
 
 function makeCurrConfig(base: Map<string, string>): Map<string, string> {
   const m = new Map(base);
@@ -1902,8 +1890,19 @@ function makeCurrConfig(base: Map<string, string>): Map<string, string> {
   return m;
 }
 
-export function regexTokenize(message: string): Token[] {
-  const config = makeDefaultConfig();
+function tokenValues(
+  map: FsaContextMap,
+  currencyRegistry: CurrencyRegistry,
+  prefixCurrency?: string,
+): Record<string, string> {
+  const values = Object.fromEntries(map.getValMap());
+  const currency = prefixCurrency ?? currencyRegistry.isoForAlias(values["currency"] ?? "");
+  if (currency) values["currency"] = currency;
+  return values;
+}
+
+export function regexTokenize(message: string, currencyRegistry: CurrencyRegistry): Token[] {
+  const config = makeDefaultConfig(currencyRegistry);
   const currConfig = makeCurrConfig(config);
   const tokens: Token[] = [];
   const lc = message.toLowerCase();
@@ -1953,9 +1952,9 @@ export function regexTokenize(message: string): Token[] {
     }
 
     // Check for currency prefix — call FSA with CURR context on the number part
-    const currMatch = sub.match(CURR_PREFIX_RE);
+    const currMatch = currencyRegistry.matchAmountPrefix(origSub, message[i - 1] ?? "");
     if (currMatch) {
-      const prefixLen = currMatch[0].length;
+      const prefixLen = currMatch.length;
       const numSub = sub.substring(prefixLen);
       if (numSub.length > 0) {
         const result = parseInternal(numSub, currConfig);
@@ -1969,7 +1968,7 @@ export function regexTokenize(message: string): Token[] {
               type: "AMT",
               raw,
               text: pr.value.trim(),
-              values: Object.fromEntries(map.getValMap()),
+              values: tokenValues(map, currencyRegistry, currMatch.iso),
               locked: false,
               matched: false,
               children: [],
@@ -1993,7 +1992,7 @@ export function regexTokenize(message: string): Token[] {
             type: tokenType,
             raw: origSub.substring(0, consumed),
             text: pr.value.trim(),
-            values: Object.fromEntries(map.getValMap()),
+            values: tokenValues(map, currencyRegistry),
             locked: false,
             matched: false,
             children: [],

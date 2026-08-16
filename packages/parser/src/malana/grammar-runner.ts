@@ -73,6 +73,11 @@ function mergeChildAttrs(parent: Token, children: Token[]) {
       }
       if (k.startsWith("_")) continue; // other internal metadata, don't propagate
 
+      // Currency belongs to the AMT leaf that supplied `amount`.
+      // inheritLeafValues copies that pair together; generic inheritance must
+      // not attach a later amount's currency to an earlier amount.
+      if (k === "currency") continue;
+
       if (k === "type") {
         const existing = parent.values["type"];
         // If child carries a specific payment method and parent only has generic "debit", upgrade
@@ -180,7 +185,10 @@ export function runLayer(tokens: Token[], layer: CompiledLayer): Token[] {
 function inheritLeafValues(merged: Token, sources: Token[]) {
   for (const src of sources) {
     if (src.type === "AMT" || src.type === "NUM") {
-      if (!merged.values["amount"]) merged.values["amount"] = src.text || src.raw;
+      if (!merged.values["amount"]) {
+        merged.values["amount"] = src.text || src.raw;
+        if (src.values["currency"]) merged.values["currency"] = src.values["currency"];
+      }
     }
     if (src.type === "INSTRNO") {
       if (!merged.values["instrno"]) merged.values["instrno"] = src.text || src.raw;

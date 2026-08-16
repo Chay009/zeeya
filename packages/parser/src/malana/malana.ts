@@ -4,6 +4,7 @@ import { KeywordTokenizer } from "./keyword-tokenizer";
 import { compileSeed } from "./grammar-compiler";
 import { runGrammar } from "./grammar-runner";
 import { compilePatterns, runPatterns } from "./pattern-extractor";
+import { CurrencyRegistry } from "./currency-registry";
 import {
   detectBank,
   detectMerchantCategory,
@@ -222,73 +223,23 @@ function deriveRichType(tags: Record<string, string>, kwToks: Token[]): TrxTypeR
   return null;
 }
 
-// ── Currency detection ─────────────────────────────────────────────────────────
-// Uses the CRNCY keyword token which covers 18+ currencies from the seed TOKENS definition.
-// CRNCY[crncy] → normalised value (e.g. 'usd', 'eur', 's$', 'lkr', 'ksh', 'cny', …)
-// kwToks (pre-merge) retains CRNCY tokens even when they overlap with AMT regex tokens.
-const CRNCY_TO_ISO: Record<string, string> = {
-  rs: "INR",
-  inr: "INR",
-  usd: "USD",
-  $: "USD",
-  cad: "CAD",
-  eur: "EUR",
-  gbp: "GBP",
-  aed: "AED",
-  jpy: "JPY",
-  aud: "AUD",
-  s$: "SGD",
-  lkr: "LKR",
-  ksh: "KES",
-  kr: "SEK", // Scandinavian kr family (SEK / NOK / DKK) — SEK as default
-  cny: "CNY",
-  egp: "EGP",
-  ghc: "GHS", // Ghana Cedi (seed normalises both ghc and ghs → ghc)
-};
+function detectCurrency(
+  registry: CurrencyRegistry,
+  kwToks: Token[],
+  regexToks: Token[],
+  preferredCurrency?: string,
+): string {
+  if (preferredCurrency) return preferredCurrency;
 
-// Fallback for currency prefixes attached directly to digits (e.g. "S$50", "A$100").
-// The keyword tokenizer requires a word boundary after the prefix, so "S$50" is missed.
-//
-// No leading `\b` before the alternatives: a leading currency symbol ($, €, £, ¥, ₹)
-// is always preceded by whitespace, punctuation, or start-of-string — never a word
-// character — so a `\b` there can never match. That's not a rare edge case: it made
-// this fallback structurally unable to ever detect $/€/£/¥/₹ as a leading amount
-// prefix (verified directly — "$50", "€25", "£20" all fell through to the "INR"
-// default regardless of where the symbol appeared in the message).
-//
-// Multi-character prefixes are listed first (S$/A$/C$/HK$/NZ$ before the bare $) so
-// "S$50" matches the 2-character prefix as a whole rather than risking the bare `$`
-// alternative winning at the wrong position.
-const ATTACHED_CURR_RE = /(S\$|A\$|C\$|HK\$|NZ\$|€|£|\$|¥|₹)\d/i;
-const ATTACHED_CURR_MAP: Record<string, string> = {
-  S$: "SGD",
-  A$: "AUD",
-  C$: "CAD",
-  HK$: "HKD",
-  NZ$: "NZD",
-  "€": "EUR",
-  "£": "GBP",
-  $: "USD",
-  "¥": "JPY",
-  "₹": "INR",
-};
+  for (const token of regexToks) {
+    const currency = token.values["currency"];
+    if (token.type === "AMT" && currency) return currency;
+  }
 
-function detectCurrency(kwToks: Token[], message: string): string {
   for (const t of kwToks) {
     if (t.type !== "CRNCY") continue;
     const norm = t.values["crncy"] ?? "";
-    const iso = CRNCY_TO_ISO[norm];
-    if (iso) return iso;
-  }
-  // Fallback: currency symbol directly attached to digit (no word boundary)
-  const m = message.match(ATTACHED_CURR_RE);
-  if (m) {
-    const prefix = m[1] ?? "";
-    // The /i flag makes "s$50" match the regex, but ATTACHED_CURR_MAP's keys are
-    // uppercase — normalize the alphabetic prefixes before lookup. The pure symbol
-    // alternatives ($/€/£/¥/₹) have no letters, so this is a no-op for those.
-    const key = /[a-z]/i.test(prefix) ? prefix.toUpperCase() : prefix;
-    const iso = ATTACHED_CURR_MAP[key];
+    const iso = registry.isoForAlias(norm);
     if (iso) return iso;
   }
   return "INR";
@@ -305,11 +256,13 @@ export class MalanaEngine {
   // small set of grammar categories.
   private layerCache = new Map<string, ReturnType<typeof compileSeed>>();
   private balanceIndicatorTypes: Set<string>;
+  private currencyRegistry: CurrencyRegistry;
 
   constructor(seed: SeedData) {
     this.seed = seed;
     this.keywordTokenizer = new KeywordTokenizer(seed.TOKENS);
     this.balanceIndicatorTypes = deriveBalanceIndicatorTypes(seed);
+    this.currencyRegistry = new CurrencyRegistry(seed);
   }
 
   private getPatternsFor(category: string) {
@@ -331,7 +284,7 @@ export class MalanaEngine {
 
   parse(message: string, sender = "", defaultCategory = "GRM_BANK"): MalanaResult {
     // Step 1: Tokenize
-    const regexToks = regexTokenize(message);
+    const regexToks = regexTokenize(message, this.currencyRegistry);
     const kwToks = this.keywordTokenizer.tokenize(message);
     const allTokens = mergeTokens(regexToks, kwToks, message);
 
@@ -352,6 +305,7 @@ export class MalanaEngine {
 
     // Step 5: Extract result tags
     const tags: Record<string, string> = {};
+    const tagCurrencies: Record<string, string> = {};
 
     for (const token of processed) {
       if (!token.matched) continue;
@@ -372,7 +326,11 @@ export class MalanaEngine {
           tag !== "bal" || isBalanceIndicatorPair(token.values, this.balanceIndicatorTypes);
         if (trustworthy) {
           const tagValue = pickTagValue(tag, token.values);
-          if (tagValue) tags[tag] = tagValue;
+          if (tagValue) {
+            tags[tag] = tagValue;
+            delete tagCurrencies[tag];
+            if (token.values["currency"]) tagCurrencies[tag] = token.values["currency"];
+          }
           if (!detectedCategory) detectedCategory = category;
         }
       }
@@ -402,6 +360,7 @@ export class MalanaEngine {
     // 2. INCRDLMT from PREP+AMT pairs (e.g. "debited WITH Rs.5000")
     if (!tags["trx"] && tags["incrdlmt"] && tags["type"]) {
       tags["trx"] = tags["incrdlmt"];
+      if (tagCurrencies["incrdlmt"]) tagCurrencies["trx"] = tagCurrencies["incrdlmt"];
       if (!detectedCategory) detectedCategory = category;
     }
 
@@ -410,6 +369,7 @@ export class MalanaEngine {
       for (const token of processed) {
         if (!token.matched && token.type === "AMT") {
           tags["trx"] = token.text || token.raw;
+          if (token.values["currency"]) tagCurrencies["trx"] = token.values["currency"];
           if (!detectedCategory) detectedCategory = category;
           break;
         }
@@ -427,6 +387,7 @@ export class MalanaEngine {
             const amt = tok.values["amount"];
             if (amt) {
               tags["trx"] = amt;
+              if (tok.values["currency"]) tagCurrencies["trx"] = tok.values["currency"];
               if (!tags["type"]) tags["type"] = dir;
               if (!detectedCategory) detectedCategory = category;
               break;
@@ -443,6 +404,7 @@ export class MalanaEngine {
         for (const token of processed) {
           if (!token.matched && token.type === "AMT") {
             tags["bal"] = token.text || token.raw;
+            if (token.values["currency"]) tagCurrencies["bal"] = token.values["currency"];
             if (!detectedCategory) detectedCategory = category;
             break;
           }
@@ -485,7 +447,8 @@ export class MalanaEngine {
 
     // Step 9: Derived rich fields
     const trxTypeRich = deriveRichType(tags, kwToks);
-    const currency = detectCurrency(kwToks, message);
+    const preferredCurrency = tags["trx"] ? tagCurrencies["trx"] : tagCurrencies["bal"];
+    const currency = detectCurrency(this.currencyRegistry, kwToks, regexToks, preferredCurrency);
     const isFromCard = kwToks.some(
       (t) =>
         t.type === "INS" && ["card", "creditcard", "debitcard"].includes(t.values["_norm"] ?? ""),

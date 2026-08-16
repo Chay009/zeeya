@@ -193,13 +193,8 @@ describe("currency — extended coverage", () => {
   });
 });
 
-// The ATTACHED_CURR_RE fallback in malana.ts (currency symbol glued directly to a
-// digit, e.g. "$50" with no space) previously required a `\b` before the symbol —
-// but a leading currency symbol is always preceded by whitespace/punctuation/start-
-// of-string, never a word character, so `\b` could never match there. Confirmed by
-// running the engine directly: "$50", "€25", "£20" all fell through to the "INR"
-// default regardless of position in the message. This is the regression coverage
-// for the fix.
+// Currency symbols glued directly to a digit previously fell through to INR.
+// These cases now exercise the centralized registry used by amount tokenization.
 describe("currency — symbol directly attached to digit (no word boundary)", () => {
   it("USD — $ at start of message", () => {
     expect(parse("$50 spent on your card XX1234.").currency).toBe("USD");

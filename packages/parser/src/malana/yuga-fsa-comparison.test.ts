@@ -7,6 +7,8 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { spawnSync } from "child_process";
 import { existsSync } from "fs";
+import { CurrencyRegistry } from "./currency-registry.js";
+import { seedData } from "./index.js";
 import { regexTokenize } from "./regex-tokenizer.js";
 
 // ── Java runner ───────────────────────────────────────────────────────────────
@@ -111,8 +113,14 @@ interface TSToken {
   raw: string;
 }
 
+const currencyRegistry = new CurrencyRegistry(seedData);
+
 function tsTokenize(message: string): TSToken[] {
-  return regexTokenize(message).map((t) => ({ type: t.type, value: t.text, raw: t.raw }));
+  return regexTokenize(message, currencyRegistry).map((t) => ({
+    type: t.type,
+    value: t.text,
+    raw: t.raw,
+  }));
 }
 
 // ── Intentional differences ────────────────────────────────────────────────────
