@@ -148,6 +148,23 @@ export function isMandateCancelled(kwToks: Token[]): boolean {
   return kwToks.some(t => t.type === 'RESCHE');
 }
 
+// The generic #vendor PATTERN capture (pattern-extractor.ts) is unreliable on
+// real mandate SMS — verified directly: it captures the UMN itself on a
+// creation notice, and the word "cancelled" on a cancellation notice, because
+// the grammar's vendor-capture anchors don't match this message shape at all.
+// Real mandate SMS reliably follow "...towards <merchant> for <amount>..." in
+// both create and cancel notices, so anchor on that instead of trusting the
+// broken generic capture.
+const MANDATE_MERCHANT_RE = /towards\s+(.+?)\s+for\s+([\d,]+(?:\.\d+)?)/i;
+
+export interface MandateMerchantMatch { merchant: string; amount: string }
+
+export function extractMandateMerchant(message: string): MandateMerchantMatch | null {
+  const m = MANDATE_MERCHANT_RE.exec(message);
+  if (!m || !m[1] || !m[2]) return null;
+  return { merchant: m[1].trim(), amount: m[2] };
+}
+
 // ── UPI handle detection ───────────────────────────────────────────────────────
 
 // upi.json: { handles: ["airtel", "axis", "paytm", ...] }

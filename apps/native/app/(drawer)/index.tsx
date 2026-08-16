@@ -188,6 +188,52 @@ export default function Home() {
                   <AccountCard key={`${acc.bankName}-${acc.last4 ?? ""}`} account={acc} />
                 ))}
 
+                {dashboard.mandates.length > 0 && (
+                  <Card style={{ marginBottom: 16 }}>
+                    <Text
+                      style={{
+                        color: t.textPrimary,
+                        fontWeight: "700",
+                        fontSize: 16,
+                        marginBottom: 10,
+                      }}
+                    >
+                      Autopay
+                    </Text>
+                    {dashboard.mandates.map((man) => (
+                      <View
+                        key={man.mandateId}
+                        style={{
+                          flexDirection: "row",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          paddingVertical: 6,
+                        }}
+                      >
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                          <View
+                            style={{
+                              width: 6,
+                              height: 6,
+                              borderRadius: 3,
+                              backgroundColor: man.status === "active" ? t.positive : t.textMuted,
+                            }}
+                          />
+                          <Text style={{ color: t.textPrimary, fontSize: 13 }}>
+                            {man.merchant}{" "}
+                            <Text style={{ color: t.textMuted }}>
+                              · {man.status === "active" ? "Active" : "Cancelled"}
+                            </Text>
+                          </Text>
+                        </View>
+                        <Text style={{ color: t.textMuted, fontSize: 13 }}>
+                          {man.amount !== null ? formatMoney(man.amount, man.currency) : "—"}
+                        </Text>
+                      </View>
+                    ))}
+                  </Card>
+                )}
+
                 {dashboard.subscriptions.length > 0 && (
                   <Card style={{ marginBottom: 16 }}>
                     <View

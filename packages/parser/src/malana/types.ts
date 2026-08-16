@@ -105,6 +105,10 @@ export interface MalanaResult {
   // signal for cancellation (RESCHE) but none for creation vs. execution, so
   // that distinction isn't invented. See enrichment.ts's isMandateCancelled.
   mandateEvent: 'active' | 'cancelled' | null;
+  // The generic #vendor capture is unreliable on real mandate SMS (verified —
+  // it captures the UMN itself or a stray keyword instead of the real
+  // merchant). See enrichment.ts's extractMandateMerchant.
+  mandateMerchant: string | null;
 
   // ── Offers (GRM_OFFERS) ───────────────────────────────────────────────────
   cashback: string | null;

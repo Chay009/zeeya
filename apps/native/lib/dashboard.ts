@@ -29,11 +29,26 @@ export interface Subscription {
   lastDate: number;
 }
 
+export interface Mandate {
+  mandateId: string;
+  merchant: string;
+  amount: number | null;
+  currency: string;
+  // Status as of the latest message referencing this mandateId — a mandate
+  // stays "active" until a message with the real RESCHE-derived cancellation
+  // signal (see enrichment.ts's isMandateCancelled) is seen for the same UMN.
+  status: "active" | "cancelled";
+  createdAt: number;
+  lastUpdated: number;
+  sender: string;
+}
+
 export interface Dashboard {
   accounts: AccountBalance[];
   monthIncome: number;
   monthExpense: number;
   subscriptions: Subscription[];
+  mandates: Mandate[];
   recent: ParsedSms[];
 }
 
@@ -71,11 +86,38 @@ export function deriveDashboard(messages: ParsedSms[]): Dashboard {
   let monthIncome = 0;
   let monthExpense = 0;
   const subscriptionCandidates = new Map<string, { amount: number; count: number; lastDate: number }>();
+  const mandatesById = new Map<string, Mandate>();
   const recognized: ParsedSms[] = [];
 
   for (const m of messages) {
     const { result } = m;
     if (result.category === null) continue;
+
+    if (result.mandateId) {
+      const merchant = result.mandateMerchant ?? result.brandName ?? result.bankName ?? m.sender;
+      const amount = parseAmount(result.mandateAmount);
+      const existing = mandatesById.get(result.mandateId);
+      if (!existing) {
+        mandatesById.set(result.mandateId, {
+          mandateId: result.mandateId,
+          merchant,
+          amount,
+          currency: result.currency ?? "INR",
+          status: result.mandateEvent ?? "active",
+          createdAt: m.date,
+          lastUpdated: m.date,
+          sender: m.sender,
+        });
+      } else {
+        if (amount !== null && existing.amount === null) existing.amount = amount;
+        if (m.date < existing.createdAt) existing.createdAt = m.date;
+        if (m.date > existing.lastUpdated) {
+          existing.lastUpdated = m.date;
+          existing.status = result.mandateEvent ?? existing.status;
+          existing.sender = m.sender;
+        }
+      }
+    }
 
     if (result.bal && result.bankName) {
       const key = `${result.bankName}|${normalizeAcc(result.acc)}`;
@@ -154,11 +196,14 @@ export function deriveDashboard(messages: ParsedSms[]): Dashboard {
   const accounts = [...accountsByKey.values()];
   for (const acc of accounts) acc.history.sort((a, b) => b.asOf - a.asOf);
 
+  const mandates = [...mandatesById.values()].sort((a, b) => b.lastUpdated - a.lastUpdated);
+
   return {
     accounts,
     monthIncome,
     monthExpense,
     subscriptions,
+    mandates,
     recent: recognized,
   };
 }

@@ -4,7 +4,7 @@ import { KeywordTokenizer } from './keyword-tokenizer';
 import { compileSeed } from './grammar-compiler';
 import { runGrammar } from './grammar-runner';
 import { compilePatterns, runPatterns } from './pattern-extractor';
-import { detectBank, detectMerchantCategory, detectSubcategory, detectBrand, grammarForSender, detectUpiHandle, detectSpam, detectAirports, detectLocation, detectOfferCategory, isMandateCancelled } from './enrichment';
+import { detectBank, detectMerchantCategory, detectSubcategory, detectBrand, grammarForSender, detectUpiHandle, detectSpam, detectAirports, detectLocation, detectOfferCategory, isMandateCancelled, extractMandateMerchant } from './enrichment';
 
 // ── Grammar auto-routing ───────────────────────────────────────────────────────
 // Token types produced by the keyword tokenizer that identify a specific grammar.
@@ -382,6 +382,10 @@ export class MalanaEngine {
       t.type === 'INS' && ['card', 'creditcard', 'debitcard'].includes(t.values['_norm'] ?? '')
     );
     const spam = detectSpam(message);
+    // Only run the mandate merchant/amount extractor when a mandateId is
+    // already confirmed present — its "towards X for Y" anchor isn't scoped
+    // to mandate messages specifically and could false-match unrelated text.
+    const mandateMerchantMatch = tags['mandateid'] ? extractMandateMerchant(message) : null;
 
     // Build typed result
     const result: MalanaResult = {
@@ -435,9 +439,10 @@ export class MalanaEngine {
       dueDate: tags['due'] || null,
       policyNo: tags['policy'] || null,
       rechargeAmount: tags['rechrg'] || tags['rechrgsucc'] || null,
-      mandateAmount: tags['mandate'] || null,
+      mandateAmount: mandateMerchantMatch?.amount || tags['mandate'] || null,
       mandateId: tags['mandateid'] || null,
       mandateEvent: tags['mandateid'] ? (isMandateCancelled(kwToks) ? 'cancelled' : 'active') : null,
+      mandateMerchant: mandateMerchantMatch?.merchant ?? null,
 
       // Offer fields
       cashback: tags['cashback'] || null,

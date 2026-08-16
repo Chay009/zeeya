@@ -52,4 +52,27 @@ describe('UPI mandate lifecycle', () => {
     const r = engine.parse('Rs.500.00 debited from A/c XX1234 on 20-Oct-25', 'VM-TESTBK');
     expect(r.mandateEvent).toBeNull();
   });
+
+  // The generic #vendor PATTERN capture is unreliable on real mandate SMS —
+  // verified directly: it captured the UMN itself on the creation notice, and
+  // the stray word "cancelled" on the cancellation notice. mandateMerchant
+  // exists specifically because of that, anchored on the real "towards X for
+  // Y" shape both messages share instead of trusting the broken capture.
+  it('extracts the real merchant name, not the broken #vendor capture', () => {
+    const created = engine.parse(CREATED, 'VA-SBIUPI-S');
+    const cancelled = engine.parse(CANCELLED, 'VA-SBIUPI-S');
+    expect(created.mandateMerchant).toBe('OpenAI LLC');
+    expect(cancelled.mandateMerchant).toBe('OpenAI LLC');
+    expect(created.vendor).not.toBe('OpenAI LLC'); // documents why mandateMerchant exists
+  });
+
+  it('extracts the mandate amount from the "towards X for Y" shape', () => {
+    const r = engine.parse(CREATED, 'VA-SBIUPI-S');
+    expect(r.mandateAmount).toBe('1999.00');
+  });
+
+  it('does not extract a mandate merchant when there is no mandateId', () => {
+    const r = engine.parse('Package delivered towards your address for verification', 'VM-TESTBK');
+    expect(r.mandateMerchant).toBeNull();
+  });
 });
