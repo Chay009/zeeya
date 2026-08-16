@@ -58,6 +58,46 @@ const GOLDEN_SMS_CASES: GoldenSmsCase[] = [
     },
   },
   {
+    name: "negated debit is not a financial transaction",
+    message: "Rs.500 was not debited from A/c XX1234.",
+    expected: {
+      trx: null,
+      trxTypeRich: null,
+    },
+  },
+  {
+    name: "failed debit is not a financial transaction",
+    message: "Transaction of Rs.500 failed due to insufficient funds.",
+    expected: {
+      trx: null,
+      trxTypeRich: null,
+    },
+  },
+  {
+    name: "declined debit is not a financial transaction",
+    message: "Rs.500 debit transaction was declined due to insufficient funds.",
+    expected: {
+      trx: null,
+      trxTypeRich: null,
+    },
+  },
+  {
+    name: "status-like merchant text does not suppress a completed debit",
+    message: "Rs.500 was debited at Declined Cafe from A/c XX1234.",
+    expected: {
+      trx: "500",
+      trxTypeRich: "EXPENSE",
+    },
+  },
+  {
+    name: "negated bank transfer is not a financial transaction",
+    message: "Rs.500 was not transferred via NEFT from A/c XX1234.",
+    expected: {
+      trx: null,
+      trxTypeRich: null,
+    },
+  },
+  {
     name: "transaction currency follows the transaction amount, not an earlier balance",
     message: "Available balance INR 5000. USD 50 was debited from A/c XX1234.",
     expected: {

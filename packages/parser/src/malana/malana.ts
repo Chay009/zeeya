@@ -171,6 +171,19 @@ function isBalanceIndicatorPair(
 // When trxType is one of these, money definitely left the account → TRANSFER.
 const TRANSFER_METHODS = new Set(["neft", "imps", "rtgs", "aeps"]);
 
+function hasInactiveTransactionStatus(message: string, tags: Record<string, string>): boolean {
+  if (tags["decline"] || tags["autpaydecline"] || tags["trxfailed"]) return true;
+
+  // The seed declares "decline" but omits the overwhelmingly common past-tense
+  // form "declined". Keep this compatibility gap local to transaction status;
+  // broad stemming in the keyword tokenizer would change every grammar family.
+  // Require transaction context and a status-shaped ending so merchant/free
+  // text such as "Declined Cafe" cannot invalidate a completed debit.
+  return /\b(?:transaction|txn|payment|purchase|withdrawal|debit|credit|charge)\b[^.!?]{0,80}\b(?:declined|failed|unsuccessful)\b(?=\s+(?:due|because|for|by|as)\b|[.!?,;]|$)/i.test(
+    message,
+  );
+}
+
 function deriveRichType(tags: Record<string, string>, kwToks: Token[]): TrxTypeRich | null {
   // Plan validity/expiry notice (rechrgnumexp — "plan expires on X" / "validity ends"). This
   // is Truecaller's own dedicated grammar tag for an expiry notice, distinct from rechrgsucc
@@ -208,7 +221,7 @@ function deriveRichType(tags: Record<string, string>, kwToks: Token[]): TrxTypeR
   if (hasAtmKw && tags["trx"]) return "ATM_WITHDRAWAL";
 
   const t = (tags["type"] ?? "").toLowerCase();
-  if (TRANSFER_METHODS.has(t)) return "TRANSFER";
+  if (TRANSFER_METHODS.has(t) && tags["trx"]) return "TRANSFER";
   if (t === "debit" || t === "upi" || t === "") {
     // TRANSFER keyword (_norm=neft/imps/rtgs/aeps) present alongside a debit direction → TRANSFER
     // The keyword token carries _norm but NOT a 'type' key, so tags['type'] stays 'debit'.
@@ -216,10 +229,10 @@ function deriveRichType(tags: Record<string, string>, kwToks: Token[]): TrxTypeR
     const hasTransferMethod = kwToks.some(
       (tok) => tok.type === "TRANSFER" && TRANSFER_METHODS.has(tok.values["_norm"] ?? ""),
     );
-    if (hasTransferMethod && (t === "debit" || t === "")) return "TRANSFER";
-    if (t === "debit" || t === "upi") return "EXPENSE";
+    if (hasTransferMethod && tags["trx"] && (t === "debit" || t === "")) return "TRANSFER";
+    if ((t === "debit" || t === "upi") && tags["trx"]) return "EXPENSE";
   }
-  if (t === "credit") return "INCOME";
+  if (t === "credit" && tags["trx"]) return "INCOME";
   return null;
 }
 
@@ -446,6 +459,11 @@ export class MalanaEngine {
     const upiHandle = detectUpiHandle(vpaText);
 
     // Step 9: Derived rich fields
+    if (hasInactiveTransactionStatus(message, tags)) {
+      delete tags["trx"];
+      delete tags["type"];
+      delete tagCurrencies["trx"];
+    }
     const trxTypeRich = deriveRichType(tags, kwToks);
     const preferredCurrency = tags["trx"] ? tagCurrencies["trx"] : tagCurrencies["bal"];
     const currency = detectCurrency(this.currencyRegistry, kwToks, regexToks, preferredCurrency);
