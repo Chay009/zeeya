@@ -29,6 +29,12 @@ export interface Subscription {
   lastDate: number;
 }
 
+export interface MandateEvent {
+  status: "active" | "cancelled";
+  date: number;
+  sender: string;
+}
+
 export interface Mandate {
   mandateId: string;
   merchant: string;
@@ -41,6 +47,15 @@ export interface Mandate {
   createdAt: number;
   lastUpdated: number;
   sender: string;
+  // Every mandate-context message seen for this UMN, newest first — the
+  // create/execute/cancel timeline, not just the current status. A message
+  // that doesn't flip the status (e.g. an execution) still shows up here.
+  history: MandateEvent[];
+}
+
+export interface MerchantMandates {
+  merchant: string;
+  mandates: Mandate[];
 }
 
 export interface Dashboard {
@@ -49,6 +64,7 @@ export interface Dashboard {
   monthExpense: number;
   subscriptions: Subscription[];
   mandates: Mandate[];
+  mandatesByMerchant: MerchantMandates[];
   recent: ParsedSms[];
 }
 
@@ -96,6 +112,8 @@ export function deriveDashboard(messages: ParsedSms[]): Dashboard {
     if (result.mandateId) {
       const merchant = result.mandateMerchant ?? result.brandName ?? result.bankName ?? m.sender;
       const amount = parseAmount(result.mandateAmount);
+      const status = result.mandateEvent ?? "active";
+      const event: MandateEvent = { status, date: m.date, sender: m.sender };
       const existing = mandatesById.get(result.mandateId);
       if (!existing) {
         mandatesById.set(result.mandateId, {
@@ -103,17 +121,19 @@ export function deriveDashboard(messages: ParsedSms[]): Dashboard {
           merchant,
           amount,
           currency: result.currency ?? "INR",
-          status: result.mandateEvent ?? "active",
+          status,
           createdAt: m.date,
           lastUpdated: m.date,
           sender: m.sender,
+          history: [event],
         });
       } else {
+        existing.history.push(event);
         if (amount !== null && existing.amount === null) existing.amount = amount;
         if (m.date < existing.createdAt) existing.createdAt = m.date;
         if (m.date > existing.lastUpdated) {
           existing.lastUpdated = m.date;
-          existing.status = result.mandateEvent ?? existing.status;
+          existing.status = status;
           existing.sender = m.sender;
         }
       }
@@ -197,6 +217,17 @@ export function deriveDashboard(messages: ParsedSms[]): Dashboard {
   for (const acc of accounts) acc.history.sort((a, b) => b.asOf - a.asOf);
 
   const mandates = [...mandatesById.values()].sort((a, b) => b.lastUpdated - a.lastUpdated);
+  for (const man of mandates) man.history.sort((a, b) => b.date - a.date);
+
+  const mandatesByMerchantMap = new Map<string, Mandate[]>();
+  for (const man of mandates) {
+    const group = mandatesByMerchantMap.get(man.merchant);
+    if (group) group.push(man);
+    else mandatesByMerchantMap.set(man.merchant, [man]);
+  }
+  const mandatesByMerchant: MerchantMandates[] = [...mandatesByMerchantMap.entries()]
+    .map(([merchant, ms]) => ({ merchant, mandates: ms }))
+    .sort((a, b) => b.mandates[0]!.lastUpdated - a.mandates[0]!.lastUpdated);
 
   return {
     accounts,
@@ -204,6 +235,7 @@ export function deriveDashboard(messages: ParsedSms[]): Dashboard {
     monthExpense,
     subscriptions,
     mandates,
+    mandatesByMerchant,
     recent: recognized,
   };
 }

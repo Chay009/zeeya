@@ -14,7 +14,7 @@ import {
 
 import { TransactionAvatar } from "@/components/transaction-avatar";
 import { dashboardTheme as t } from "@/constants/dashboard-theme";
-import { deriveDashboard, type AccountBalance } from "@/lib/dashboard";
+import { deriveDashboard, type AccountBalance, type Mandate, type MerchantMandates } from "@/lib/dashboard";
 import {
   isSmsReadSupported,
   type ParsedSms,
@@ -188,7 +188,7 @@ export default function Home() {
                   <AccountCard key={`${acc.bankName}-${acc.last4 ?? ""}`} account={acc} />
                 ))}
 
-                {dashboard.mandates.length > 0 && (
+                {dashboard.mandatesByMerchant.length > 0 && (
                   <Card style={{ marginBottom: 16 }}>
                     <Text
                       style={{
@@ -200,36 +200,8 @@ export default function Home() {
                     >
                       Autopay
                     </Text>
-                    {dashboard.mandates.map((man) => (
-                      <View
-                        key={man.mandateId}
-                        style={{
-                          flexDirection: "row",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          paddingVertical: 6,
-                        }}
-                      >
-                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                          <View
-                            style={{
-                              width: 6,
-                              height: 6,
-                              borderRadius: 3,
-                              backgroundColor: man.status === "active" ? t.positive : t.textMuted,
-                            }}
-                          />
-                          <Text style={{ color: t.textPrimary, fontSize: 13 }}>
-                            {man.merchant}{" "}
-                            <Text style={{ color: t.textMuted }}>
-                              · {man.status === "active" ? "Active" : "Cancelled"}
-                            </Text>
-                          </Text>
-                        </View>
-                        <Text style={{ color: t.textMuted, fontSize: 13 }}>
-                          {man.amount !== null ? formatMoney(man.amount, man.currency) : "—"}
-                        </Text>
-                      </View>
+                    {dashboard.mandatesByMerchant.map((group) => (
+                      <MerchantMandateGroup key={group.merchant} group={group} />
                     ))}
                   </Card>
                 )}
@@ -398,6 +370,65 @@ function AccountCard({ account }: { account: AccountBalance }) {
         </View>
       )}
     </Card>
+  );
+}
+
+// Merchant → mandates → each mandate's own event history, as a tree: a
+// merchant can have multiple distinct mandates over time (different UMNs —
+// e.g. cancelled and re-subscribed, or genuinely separate plans), and each
+// mandate can have multiple lifecycle events (create/execute/cancel), so
+// nothing collapses into one misleading row.
+function MerchantMandateGroup({ group }: { group: MerchantMandates }) {
+  const multi = group.mandates.length > 1;
+  return (
+    <View style={{ marginBottom: 10 }}>
+      <Text style={{ color: t.textPrimary, fontSize: 13, fontWeight: "600" }}>
+        {group.merchant}
+        {multi ? (
+          <Text style={{ color: t.textMuted, fontWeight: "400" }}> · {group.mandates.length} mandates</Text>
+        ) : null}
+      </Text>
+      <View style={{ marginTop: 4, paddingLeft: multi ? 10 : 0, gap: 6 }}>
+        {group.mandates.map((man) => (
+          <MandateRow key={man.mandateId} mandate={man} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function MandateRow({ mandate }: { mandate: Mandate }) {
+  const older = mandate.history.filter((e) => e.date !== mandate.lastUpdated);
+  return (
+    <View>
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <View
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: 3,
+              backgroundColor: mandate.status === "active" ? t.positive : t.textMuted,
+            }}
+          />
+          <Text style={{ color: t.textMuted, fontSize: 12 }}>
+            {mandate.status === "active" ? "Active" : "Cancelled"} · {formatDate(mandate.lastUpdated)}
+          </Text>
+        </View>
+        <Text style={{ color: t.textMuted, fontSize: 13 }}>
+          {mandate.amount !== null ? formatMoney(mandate.amount, mandate.currency) : "—"}
+        </Text>
+      </View>
+      {older.length > 0 && (
+        <View style={{ marginLeft: 12, marginTop: 2 }}>
+          {older.map((e) => (
+            <Text key={e.date} style={{ color: t.textMuted, fontSize: 11 }}>
+              {e.status === "active" ? "Active" : "Cancelled"} · {formatDate(e.date)}
+            </Text>
+          ))}
+        </View>
+      )}
+    </View>
   );
 }
 
