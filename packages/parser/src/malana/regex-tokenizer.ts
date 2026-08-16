@@ -615,7 +615,7 @@ function parseInternal(str: string, config: Map<string, string>): [number, FsaCo
   const prevStates: number[] = [1];
 
   while (state > 0 && i < str.length && i >= 0) {
-    const c = str[i];
+    const c = charAt(str, i);
     const cn = c.charCodeAt(0);
     if (prevStates[prevStates.length - 1] !== state) prevStates.push(state);
 
