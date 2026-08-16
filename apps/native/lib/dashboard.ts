@@ -239,3 +239,21 @@ export function deriveDashboard(messages: ParsedSms[]): Dashboard {
     recent: recognized,
   };
 }
+
+// A transaction is recurring if it's tied to a tracked UPI mandate, or its
+// merchant+amount matches the guessed-from-repeats Subscriptions list. Kept
+// as a lookup against the already-derived Dashboard rather than a per-message
+// parser field — "is this part of a recurring series" is a cross-message
+// dashboard-level fact, not something a single SMS can know about itself.
+export function isRecurringTransaction(item: ParsedSms, dashboard: Dashboard): boolean {
+  const { result } = item;
+  if (result.mandateId && dashboard.mandates.some((m) => m.mandateId === result.mandateId)) {
+    return true;
+  }
+  const merchant = result.brandName ?? result.vendor;
+  const amount = parseAmount(result.trx);
+  if (merchant && amount !== null) {
+    return dashboard.subscriptions.some((s) => s.merchant === merchant && s.amount === amount);
+  }
+  return false;
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { deriveDashboard } from "./dashboard";
+import { deriveDashboard, isRecurringTransaction } from "./dashboard";
 import type { ParsedSms } from "./sms";
 import type { MalanaResult } from "@zeeya/parser/malana";
 
@@ -155,5 +155,44 @@ describe("deriveDashboard — mandates", () => {
 
     expect(mandates).toHaveLength(0);
     expect(mandatesByMerchant).toHaveLength(0);
+  });
+});
+
+// The Recent list's "· Recurring" label used to check a parser field
+// (subcategory === "recurring") that detectSubcategory() never actually
+// returns — dead code, confirmed by reading enrichment.ts directly. Replaced
+// with a real cross-message check against the derived Dashboard.
+describe("isRecurringTransaction", () => {
+  it("is true when the message's mandateId matches a tracked mandate", () => {
+    const messages: ParsedSms[] = [
+      sms("1", "VA-SBIUPI-S", 1000, {
+        mandateId: "umn-A",
+        mandateMerchant: "OpenAI LLC",
+        mandateAmount: "1999.00",
+        mandateEvent: "active",
+      }),
+    ];
+    const dashboard = deriveDashboard(messages);
+
+    expect(isRecurringTransaction(messages[0]!, dashboard)).toBe(true);
+  });
+
+  it("is true when merchant+amount matches the guessed Subscriptions list", () => {
+    const messages: ParsedSms[] = [
+      sms("1", "VM-TESTBK", 1000, { trxTypeRich: "EXPENSE", trx: "199.00", vendor: "Netflix" }),
+      sms("2", "VM-TESTBK", 2000, { trxTypeRich: "EXPENSE", trx: "199.00", vendor: "Netflix" }),
+    ];
+    const dashboard = deriveDashboard(messages);
+
+    expect(isRecurringTransaction(messages[1]!, dashboard)).toBe(true);
+  });
+
+  it("is false for a one-off transaction with no mandate and no repeat", () => {
+    const messages: ParsedSms[] = [
+      sms("1", "VM-TESTBK", 1000, { trxTypeRich: "EXPENSE", trx: "50.00", vendor: "Random Store" }),
+    ];
+    const dashboard = deriveDashboard(messages);
+
+    expect(isRecurringTransaction(messages[0]!, dashboard)).toBe(false);
   });
 });

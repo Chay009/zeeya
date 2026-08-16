@@ -14,7 +14,13 @@ import {
 
 import { TransactionAvatar } from "@/components/transaction-avatar";
 import { dashboardTheme as t } from "@/constants/dashboard-theme";
-import { deriveDashboard, type AccountBalance, type Mandate, type MerchantMandates } from "@/lib/dashboard";
+import {
+  deriveDashboard,
+  isRecurringTransaction,
+  type AccountBalance,
+  type Mandate,
+  type MerchantMandates,
+} from "@/lib/dashboard";
 import {
   isSmsReadSupported,
   type ParsedSms,
@@ -269,7 +275,9 @@ export default function Home() {
             )}
           </View>
         }
-        renderItem={({ item }) => <TransactionRow item={item} />}
+        renderItem={({ item }) => (
+          <TransactionRow item={item} isRecurring={isRecurringTransaction(item, dashboard)} />
+        )}
       />
     </View>
   );
@@ -432,7 +440,7 @@ function MandateRow({ mandate }: { mandate: Mandate }) {
   );
 }
 
-function TransactionRow({ item }: { item: ParsedSms }) {
+function TransactionRow({ item, isRecurring }: { item: ParsedSms; isRecurring: boolean }) {
   const { result } = item;
   const label = result.brandName ?? result.vendor ?? result.bankName ?? item.sender;
   const isExpense = result.trxTypeRich
@@ -456,7 +464,7 @@ function TransactionRow({ item }: { item: ParsedSms }) {
         <Text style={{ color: t.textPrimary, fontWeight: "600", fontSize: 15 }}>{label}</Text>
         <Text style={{ color: t.textMuted, fontSize: 12 }}>
           {formatDate(item.date)}
-          {result.subcategory === "recurring" ? " · Recurring" : ""}
+          {isRecurring ? " · Recurring" : ""}
         </Text>
       </View>
       {amount !== null && (
