@@ -101,7 +101,10 @@ export interface MalanaResult {
   // the ported grammar — Truecaller's own engine doesn't track this; see
   // regex-tokenizer.ts's MANDATEID token for the extraction rationale.
   mandateId: string | null;
-  mandateEvent: 'created' | 'executed' | 'cancelled' | null;
+  // Only "active"/"cancelled" — the real seed dictionary has a genuine keyword
+  // signal for cancellation (RESCHE) but none for creation vs. execution, so
+  // that distinction isn't invented. See enrichment.ts's isMandateCancelled.
+  mandateEvent: 'active' | 'cancelled' | null;
 
   // ── Offers (GRM_OFFERS) ───────────────────────────────────────────────────
   cashback: string | null;

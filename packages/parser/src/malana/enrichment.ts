@@ -1,6 +1,7 @@
 // Bank name detection, merchant category, brand enrichment, subcategory derivation.
 // All data loaded from the original Truecaller APK JSON assets.
 
+import type { Token } from './types';
 import vendorBanksRaw     from './data/vendor_banks.json';
 import vendorBrandsRaw    from './data/vendor_brands.json';
 import bankSeedRaw     from './data/bank.json';       // malanaSeed — 32 banks, complete sender IDs
@@ -131,20 +132,20 @@ export function detectBank(sender: string, message: string): string | null {
 // ── UPI mandate lifecycle ──────────────────────────────────────────────────────
 // Not part of the ported grammar (Truecaller's own engine doesn't track mandate
 // lifecycle state at all — see regex-tokenizer.ts's MANDATEID token for why).
-// Grounded directly in real SBI UPI-mandate SMS wording seen in practice:
-// "...is successfully created towards..." / "...is successfully cancelled towards...".
-const MANDATE_EVENT_PATTERNS: Array<[RegExp, 'created' | 'executed' | 'cancelled']> = [
-  [/mandate.*successfully cancelled|mandate.*successfully revoked/i, 'cancelled'],
-  [/mandate.*successfully created/i, 'created'],
-  [/mandate.*successfully executed|mandate.*successfully collected/i, 'executed'],
-];
-
-export function detectMandateEvent(message: string): 'created' | 'executed' | 'cancelled' | null {
-  if (!message) return null;
-  for (const [re, event] of MANDATE_EVENT_PATTERNS) {
-    if (re.test(message)) return event;
-  }
-  return null;
+//
+// Checked the real seed TOKENS dictionary directly rather than guess at wording:
+// MANDATE ("mandate") and SUCCESSFUL ("successful|success") both exist as real
+// keyword classes, but neither fires on real mandate SMS — "UPI-Mandate" doesn't
+// match the plain "mandate" keyword due to the hyphen, and "successfully" doesn't
+// stem to "successful"/"success". There is no real dictionary signal for a
+// creation/execution event at all. RESCHE ("cancelled|cancel,rescheduled|...")
+// does fire — it's the same generic cancel/reschedule keyword class the seed
+// already reuses elsewhere (order/delivery cancellation), so cancellation is a
+// real, data-driven signal; "created" vs "executed" is not, so those collapse
+// into a single "active" state rather than inventing a distinction the
+// dictionary doesn't support.
+export function isMandateCancelled(kwToks: Token[]): boolean {
+  return kwToks.some(t => t.type === 'RESCHE');
 }
 
 // ── UPI handle detection ───────────────────────────────────────────────────────

@@ -4,7 +4,7 @@ import { KeywordTokenizer } from './keyword-tokenizer';
 import { compileSeed } from './grammar-compiler';
 import { runGrammar } from './grammar-runner';
 import { compilePatterns, runPatterns } from './pattern-extractor';
-import { detectBank, detectMerchantCategory, detectSubcategory, detectBrand, grammarForSender, detectUpiHandle, detectSpam, detectAirports, detectLocation, detectOfferCategory, detectMandateEvent } from './enrichment';
+import { detectBank, detectMerchantCategory, detectSubcategory, detectBrand, grammarForSender, detectUpiHandle, detectSpam, detectAirports, detectLocation, detectOfferCategory, isMandateCancelled } from './enrichment';
 
 // ── Grammar auto-routing ───────────────────────────────────────────────────────
 // Token types produced by the keyword tokenizer that identify a specific grammar.
@@ -437,7 +437,7 @@ export class MalanaEngine {
       rechargeAmount: tags['rechrg'] || tags['rechrgsucc'] || null,
       mandateAmount: tags['mandate'] || null,
       mandateId: tags['mandateid'] || null,
-      mandateEvent: detectMandateEvent(message),
+      mandateEvent: tags['mandateid'] ? (isMandateCancelled(kwToks) ? 'cancelled' : 'active') : null,
 
       // Offer fields
       cashback: tags['cashback'] || null,

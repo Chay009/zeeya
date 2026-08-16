@@ -1,8 +1,13 @@
 /**
  * Tests for UPI mandate lifecycle tracking (mandateId, mandateEvent) — not
  * part of the ported Truecaller grammar (see regex-tokenizer.ts's MANDATEID
- * token and enrichment.ts's detectMandateEvent for the rationale). Verifies
- * against the real SBI/OpenAI mandate create + cancel SMS this was built from.
+ * token and enrichment.ts's isMandateCancelled for the rationale). Only
+ * "active"/"cancelled" are distinguished: the real seed TOKENS dictionary has
+ * a genuine keyword class for cancellation (RESCHE, checked directly — it's
+ * the same generic cancel/reschedule class the seed reuses elsewhere for
+ * order/delivery cancellation) but none for creation vs. execution, so that
+ * distinction isn't invented. Verifies against the real SBI/OpenAI mandate
+ * create + cancel SMS this was built from.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
@@ -22,9 +27,9 @@ describe('UPI mandate lifecycle', () => {
     expect(r.mandateId).toBe('c7969215595642979e8ed5da1152758e@axl');
   });
 
-  it('classifies a creation notice as "created"', () => {
+  it('classifies a creation notice as "active"', () => {
     const r = engine.parse(CREATED, 'VA-SBIUPI-S');
-    expect(r.mandateEvent).toBe('created');
+    expect(r.mandateEvent).toBe('active');
   });
 
   it('classifies a cancellation notice as "cancelled"', () => {
