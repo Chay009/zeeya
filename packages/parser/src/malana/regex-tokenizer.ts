@@ -38,7 +38,6 @@ const TY_TMERANGE = 'TIMERANGE';
 const TY_NUMRANGE = 'NUMRANGE';
 const TY_STR = 'STR';
 const TY_PHN = 'PHN';
-const TY_OTP = 'OTP';
 const TY_DTA = 'DATA';
 const TY_MLT = 'MLTPL';
 const TY_VPD = 'VPD';
@@ -54,7 +53,6 @@ const CH_EXCL = 33;
 const CH_HASH = 35;
 const CH_PCT = 37;
 const CH_SQOT = 39;
-const CH_LBKT = 40;
 const CH_RBKT = 41;
 const CH_STAR = 42;
 const CH_PLUS = 43;
@@ -64,15 +62,10 @@ const CH_FSTP = 46;
 const CH_SLSH = 47;
 const CH_COLN = 58;
 const CH_LSBT = 91;
-const CH_UNSC = 95;
-const CH_ATRT = 64;
 
 const YUGA_SOURCE_CONTEXT = 'YUGA_SOURCE_CONTEXT';
 const YUGA_SC_CURR = 'YUGA_SC_CURR';
-const YUGA_SC_ON = 'YUGA_SC_ON';
-const YUGA_SC_TMERANGE = 'YUGA_SC_TMERANGE';
 const YUGA_SC_TRANSID = 'YUGA_SC_TRANSID';
-const YUGA_SC_TRANS = 'YUGA_SC_TRANS';
 const YUGA_CONF_DATE = 'YUGA_CONF_DATE';
 
 const FSA_MONTHS_SEED = 'jan;uary,feb;r;uary,mar;ch,apr;il,may,jun;e,jul;y,aug;ust,sep;t;ember,oct;ober,nov;ember,dec;ember';
@@ -201,7 +194,6 @@ class FsaContextMap {
       let month: number | null = null; // 1-based
       let day: number | null = null;
       let hour = 0, min = 0, sec = 0;
-      let hasTime = false;
 
       if (this._map.has(DT_YYYY)) year = parseInt(this._map.get(DT_YYYY)!);
       else if (this._map.has(DT_YY)) {
@@ -223,8 +215,8 @@ class FsaContextMap {
         if (!isNaN(parsed)) day = parsed;
       }
 
-      if (this._map.has(DT_HH)) { hour = parseInt(this._map.get(DT_HH)!); hasTime = true; }
-      if (this._map.has(DT_mm)) { min = parseInt(this._map.get(DT_mm)!); hasTime = true; }
+      if (this._map.has(DT_HH)) hour = parseInt(this._map.get(DT_HH)!);
+      if (this._map.has(DT_mm)) min = parseInt(this._map.get(DT_mm)!);
       if (this._map.has(DT_ss)) sec = parseInt(this._map.get(DT_ss)!);
 
       const confDate = config.get(YUGA_CONF_DATE);
@@ -299,9 +291,7 @@ function isDelimiter(c: string) {
   return n === CH_SPACE || n === CH_FSTP || n === CH_COMA || n === CH_RBKT || n === CH_NLINE;
 }
 function isTimeOp(c: string) { return c.charCodeAt(0) === CH_COLN; }
-function isAlpha(c: string) { const n = c.charCodeAt(0); return (n >= 65 && n <= 90) || (n >= 97 && n <= 122); }
 function isLowerAlpha(c: string) { const n = c.charCodeAt(0); return n >= 97 && n <= 122; }
-function isUpperAlpha(c: string) { const n = c.charCodeAt(0); return n >= 65 && n <= 90; }
 
 function isTypeEnd(ch: string) {
   const n = ch.charCodeAt(0);
@@ -464,18 +454,6 @@ function getPrevState(prevStates: number[]): number {
   return idx < 0 ? 1 : prevStates[idx];
 }
 
-function isHour(c1: string, c2: string): boolean {
-  return ((c1 === '0' || c1 === '1') && isNum(c2)) ||
-    (c1 === '2' && (c2 === '0' || c2 === '1' || c2 === '2' || c2 === '3' || c2 === '4'));
-}
-
-function handleTYTMS(map: FsaContextMap, v: string | undefined): boolean {
-  if (!v || v.length !== 8 || !isHour(v[0], v[1]) || !isHour(v[4], v[5])) return false;
-  extractTime(v.substring(0, 4), map.getValMap(), 'from');
-  extractTime(v.substring(4, 8), map.getValMap(), 'to');
-  return true;
-}
-
 function checkIfData(str: string, j: number, map: FsaContextMap) {
   map.setVal('data', map.get(map.getType()) ?? '');
   let sData = '';
@@ -597,19 +575,10 @@ function accAmtNumPct(
 
 // ── Response ──────────────────────────────────────────────────────────────────
 
-interface YugaResponse {
-  type: string;
-  str: string;
-  valMap: Map<string, string>;
-  index: number;
-  hasTime?: boolean; // true when DATE has time components
-}
-
 // ── parseInternal ─────────────────────────────────────────────────────────────
 
 function parseInternal(str: string, config: Map<string, string>): [number, FsaContextMap] | null {
   let state = 1, i = 0, comma_count = 1;
-  let haveSeenAComma = false;
   let p: [number, string] | null;
   let map = new FsaContextMap();
   const delimiterStack = new DelimiterStack();
@@ -670,7 +639,6 @@ function parseInternal(str: string, config: Map<string, string>): [number, FsaCo
         else if (cn === CH_SPACE && i === str.length - 1) { state = -1; }
         else if (isTimeOp(c)) { delimiterStack.push(c); map.setType(TY_DTE, DT_HH); state = 4; }
         else if ((isDateOp(c) && !configContextIsCURR(config)) || cn === CH_COMA) {
-          if (cn === CH_COMA) haveSeenAComma = true;
           if (cn === CH_SPACE && meridienTimeAhead(str, i + 1)) {
             map.setType(TY_DTE, DT_HH); map.put(DT_mm, '00'); state = 7;
           } else {
