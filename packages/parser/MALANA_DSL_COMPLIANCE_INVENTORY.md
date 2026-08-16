@@ -24,17 +24,16 @@ mean:
 
 > Every instruction's real Java runtime semantics are proven.
 
-Multiplier meaning, `CLASSIFIER.CLS_ID`'s actual mechanism, `PATTERN`/
-`STRUCT` execution against the real Malana engine, and most token-level
-metadata (`_pos`/`_tense`/`_negation`/`_context`) still require Java
-bytecode or behavioral verification (a Yuga-equivalent Malana Java path,
-or a golden real-message corpus) before any "this is what Java does"
-claim can be made — the Yuga JAR itself only covers numeric/date/currency
-tokenization, not the grammar or pattern engine, so it cannot answer
-these questions. Every "architecture" statement below is flagged as a
-hypothesis requiring that verification, not a conclusion, **except**
-category composition/resolution order and `_chunk`'s real effect, which
-were subsequently confirmed by direct bytecode trace — see §11.
+Multiplier meaning, category composition/resolution order, `CLASSIFIER.
+CLS_ID`'s actual mechanism, `PATTERN`/`STRUCT` execution against the real
+Malana engine, and some token-level metadata (`_pos`/`_tense`/`_negation`/
+`_chunk`/`_context`) still require Java bytecode or behavioral
+verification (a Yuga-equivalent Malana Java path, or a golden real-message
+corpus) before any "this is what Java does" claim can be made — the Yuga
+JAR itself only covers numeric/date/currency tokenization, not the grammar
+or pattern engine, so it cannot answer these questions. Every
+"architecture" statement below is flagged as a hypothesis requiring that
+verification, not a conclusion.
 
 > **Revision note:** §1 and §4 of the first version of this document had two
 > modeling bugs, both caught in review and corrected here: (1) the
@@ -649,87 +648,6 @@ covered by some script). Run with `python3 scripts/dsl-audit/<script>.py`
 from `packages/parser/`; requires `networkx` for
 `seed_grammar_inventory.py`'s SCC computation.
 
-## 11. Java runtime trace — category composition and `_chunk` (bytecode-confirmed)
-
-Everything above this section is static (TS-source-only) analysis. This
-section is different in kind: it reports findings from directly reading
-decompiled/disassembled bytecode of the real Truecaller engine
-(`apktool`/`baksmali`/`jadx` against the APK already present in this
-sandbox before this session — no APK was fetched or added, and no
-repository files were changed to produce it; all temporary
-extraction/decompile artifacts were deleted after each round). It answers
-two of the "requires Java bytecode… verification" items flagged in the
-note above §1: category composition/resolution order, and `_chunk`'s real
-effect.
-
-**Category composition/resolution (`g40.d0.N(...)`, called per-message
-from `zt1.f`):**
-
-All 13 categories from `g40.d0.q()` — `GRM_BANK`, `GRM_BILL`, `GRM_EVENT`,
-`GRM_TRAVEL`, `GRM_OFFERS`, `GRM_OTP`, `GRM_TELECOM`, `GRM_NOTIF`,
-`GRM_CALLALERTS`, `GRM_STOCKUPDATES`, `GRM_DELIVERY`, `GRM_BLACKLIST`,
-`GRM_VOID` — are matched independently against every message, producing
-one `ra3.bar` result per category, chained in a linked list. `N()` then
-walks that list and picks a single winning category through a **hardcoded
-Java rules table**, not a JSON-driven mechanism: it starts from
-`"GRM_VOID"` as the default and reassigns to `GRM_BANK`/`GRM_TRAVEL`/
-`GRM_OFFERS`/`GRM_EVENT` based on (a) presence of specific captured
-attribute keys (`upi_num`, `trx_amt`, `vpd`, `flight_id`, `to_loc`,
-`dept_date`, `ref_id`) and (b) **hardcoded sender-ID special cases**
-(`HDFCBK`, `BOBTXN`/`BOBCRD`/`BOBSMS`, `IPAYTM`, `INSIDR`) combined with
-literal message-substring checks (e.g. `str.contains("HDFC Bank CREDIT
-Card")`). `q()`'s list itself is notable on its own: it includes
-`GRM_VOID`, requests a `GRM_BLACKLIST` category that has no corresponding
-`GRAMMAR` entry in the seed JSON (confirmed dead), and omits
-`GRM_APPOINTMENT` entirely (present in the seed JSON but never matched by
-the real app).
-
-This rules out both hypotheses that were previously open: it is not
-"categories run in isolation, first/only match wins" (all 13 always run),
-and it is not "the results simply merge" (a curated, sender-aware Java
-decision table picks exactly one winner, and Truecaller's business rules —
-not portable, not reusable JSON-engine semantics — are load-bearing in
-that pick).
-
-**`_chunk` (`ra3.bar.d()`, confirmed via direct bytecode read of the
-method body):**
-
-```
-d() returns true  iff  category == "GDO_NONDET"
-                        OR  (attrs contains "chunk" -> "true")
-d() returns false otherwise
-```
-
-`N()`'s disambiguation loop is gated with
-`if (!barVar7.j && !barVar7.d())` — so any category result that is a
-chunk-eligible match (or the `GDO_NONDET` fallback) is **excluded** from
-both the field-presence category-promotion checks and the attribute merge
-(`n5.bar.h(dVar2, barVar7.d)`) that feeds the final result. `_chunk`
-therefore acts as an **exclusion filter on category-resolution
-candidates**, not as a free-text-capture mechanism — it does not cause
-chunk-matched tokens to be absorbed into STRUCT captures; if anything it
-keeps them from influencing the final category/attribute set at all.
-
-**What this does and does not change:**
-
-- It does not change any TS behavior by itself — no parser code was
-  touched to produce this section, matching the read-only scope of the
-  rest of this document.
-- It closes out the "category composition/resolution order" and "`_chunk`
-  effect" unknowns flagged in the note above §1 — both are now confirmed,
-  not hypotheses.
-- `g40.d0.N()` itself (the sender-specific rules table) is explicitly
-  **not** a porting target: it encodes Truecaller-proprietary policy
-  (hardcoded sender IDs, hardcoded message substrings), not general JSON
-  grammar semantics, and porting it would mean re-implementing another
-  company's business rules rather than fixing our DSL interpreter.
-- No demonstrated budget-tracker output bug has been traced to the current
-  single-category routing in `pattern-extractor.ts`/`grammar-runner.ts`,
-  or to the absence of `_chunk` filtering. Multi-category evaluation and
-  `_chunk` handling are deferred until a real SMS is found where current
-  routing selects the wrong grammar category — see §10 for the
-  corpus-driven approach this now shifts to.
-
 ## 8. Summary table
 
 | # | Construct | TS status | Confidence |
@@ -746,8 +664,6 @@ keeps them from influencing the final category/attribute set at all.
 | 8 | `URL` token type | No `TOKENS` entry, no regex-tokenizer rule — real bank/delivery/offer links in SMS have nowhere to match | New this pass — concrete, checkable without bytecode |
 | 9 | `TRX`/`NEGATION` negation pairing | Both halves exist in seed (`TRX[..._negation=negatable]`, `NEGATION[_negation=negater]`); TS parses both, combines neither. Runtime-confirmed: `trxTypeRich` set on a negated debit/credit SMS | Confirmed both statically and at runtime; `trx` stays null so today's dashboard totals aren't affected |
 | 10 | `blacklist.json` | Real shingle/n-gram spam-detection config, zero TS consumers — a wholesale missing subsystem, not a redundant duplicate of the working Naive Bayes classifier | Confirmed unused |
-| 11 | Category composition/resolution order | All 13 categories always run; a hardcoded Java rules table (sender IDs + message substrings + captured-key presence) picks one winner — not JSON-driven, not portable | Bytecode-confirmed (`g40.d0.N`) — see §11 |
-| 12 | `_chunk` real effect | Excludes chunk-eligible/`GDO_NONDET` category candidates from the final attribute merge and category-promotion checks; does not cause free-text capture absorption | Bytecode-confirmed (`ra3.bar.d()`) — see §11 |
 
 ## Corrections applied during this pass
 
