@@ -8,18 +8,42 @@ import type { ParsedSms } from "./sms";
 
 export type { Subscription, SubscriptionConfidence } from "./subscriptions";
 
+export interface BalanceReconciliation {
+  previousAsOf: number;
+  capturedIncome: number;
+  capturedExpense: number;
+  capturedChange: number;
+  capturedTransactionCount: number;
+  expectedBalance: number;
+  // Reported balance minus the balance predicted from the previous reading
+  // and captured transactions. This exposes activity the SMS window/parser
+  // did not capture instead of silently folding it into the next balance.
+  delta: number;
+}
+
 export interface BalanceReading {
   balance: number;
   currency: string;
   asOf: number;
+  detectedBankName: string;
+  detectedAccount: string | null;
+  association: BalanceAssociation;
   // The raw SMS sender ID this reading came from (e.g. "VM-SBIINB") — lets
   // a reading be traced back to the actual message that produced it.
   sender: string;
+  // Insight for the interval from the immediately preceding bank balance to
+  // this reading. The oldest reading (or a currency boundary) has no interval.
+  reconciliation: BalanceReconciliation | null;
 }
+
+export type BalanceAssociation =
+  | { kind: "confirmed"; accountLast4: string }
+  | { kind: "suggested"; accountLast4: string; reason: "sole-account" }
+  | { kind: "unassigned" };
 
 export interface AccountBalance {
   bankName: string;
-  last4: string | null;
+  last4: string;
   // Latest balance explicitly reported by the bank. This remains the
   // reconciliation anchor and is never overwritten by our estimate.
   balance: number;
@@ -42,6 +66,14 @@ export interface AccountBalance {
   // ones older than the current `balance` — nothing the parser extracted is
   // dropped, it's just not all shown as the headline figure.
   history: BalanceReading[];
+}
+
+export interface BankGroup {
+  bankName: string;
+  accounts: AccountBalance[];
+  // Readings where Malana did not extract account digits. They stay visible
+  // without being allowed to create or mutate a confirmed account.
+  unassignedReadings: BalanceReading[];
 }
 
 export interface MandateEvent {
@@ -74,7 +106,10 @@ export interface MerchantMandates {
 }
 
 export interface Dashboard {
+  // Flat confirmed-account view retained for account-level consumers and
+  // tests. `banks` is the canonical presentation hierarchy used by the UI.
   accounts: AccountBalance[];
+  banks: BankGroup[];
   // Keyed by ISO currency code — summing across currencies as raw numbers
   // would silently mix e.g. INR and USD into one meaningless total.
   monthIncomeByCurrency: Record<string, number>;
@@ -104,10 +139,17 @@ function normalizeAcc(acc: string | null): string {
   return digits.slice(-4);
 }
 
-function accountKey(bankName: string, acc: string | null, sender: string): string {
+function normalizeBankName(bankName: string): string {
+  return bankName.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function displayBankName(bankName: string): string {
+  return bankName.trim().replace(/\s+/g, " ");
+}
+
+function accountKey(bankName: string, acc: string | null): string | null {
   const normalizedAcc = normalizeAcc(acc);
-  const identity = normalizedAcc || `sender:${sender.trim().toLowerCase()}`;
-  return `${bankName}|${identity}`;
+  return normalizedAcc ? `${normalizeBankName(bankName)}|${normalizedAcc}` : null;
 }
 
 function signedTransactionChange(message: ParsedSms): number | null {
@@ -126,14 +168,30 @@ function resolveTransactionAccountKey(
 ): string | null {
   const { result } = message;
   if (!result.bankName) return null;
+  const bankName = result.bankName;
   const currency = result.currency ?? "INR";
-  const exactKey = accountKey(result.bankName, result.acc, message.sender);
-  const exactAccount = accountsByKey.get(exactKey);
-  if (exactAccount?.currency === currency) return exactKey;
-  if (normalizeAcc(result.acc)) return null;
+  const exactKey = accountKey(bankName, result.acc);
+  if (exactKey) {
+    const exactAccount = accountsByKey.get(exactKey);
+    if (exactAccount?.currency !== currency) return null;
 
+    // Bank-name normalization is deliberately allowed to group balance
+    // readings into one UI account, but it must not silently broaden ledger
+    // attribution. Preserve the previously validated estimate behaviour by
+    // requiring the transaction's parsed bank name to exactly match the latest
+    // confirmed balance anchor's parsed bank name.
+    const latestReading = exactAccount.history.reduce((latest, reading) =>
+      reading.asOf > latest.asOf ? reading : latest,
+    );
+    return latestReading.detectedBankName === bankName ? exactKey : null;
+  }
+
+  // A large share of real bank transaction SMS omit account digits. Retain
+  // the validated estimate behaviour only when the bank and currency leave a
+  // single possible confirmed account. Sender IDs never participate, and an
+  // ambiguous multi-account transaction remains unapplied.
   const candidates = [...accountsByKey.entries()].filter(
-    ([, account]) => account.bankName === result.bankName && account.currency === currency,
+    ([, account]) => account.bankName === bankName && account.currency === currency,
   );
   return candidates.length === 1 ? candidates[0]![0] : null;
 }
@@ -165,6 +223,7 @@ function referencedTransactionKey(message: ParsedSms): string | null {
 // time and when this function calls `new Date()` internally.
 export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): Dashboard {
   const accountsByKey = new Map<string, AccountBalance>();
+  const unassignedReadingsByBank = new Map<string, BalanceReading[]>();
   const monthIncomeByCurrency: Record<string, number> = {};
   const monthExpenseByCurrency: Record<string, number> = {};
   const mandatesById = new Map<string, Mandate>();
@@ -226,46 +285,64 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
 
     if (result.bal && result.bankName) {
       const normalizedAcc = normalizeAcc(result.acc);
-      // Exact available digits are the strongest identity we have. When none
-      // exist, sender keeps separate bank channels from collapsing together.
-      // Do not pad or suffix-match partial digits ("12" vs "0012"): that can
-      // silently merge two real accounts and show the wrong balance.
-      const key = accountKey(result.bankName, result.acc, m.sender);
+      // Only parsed account digits establish account identity. Sender IDs are
+      // delivery-channel metadata and can vary for one account, so they must
+      // never create account cards. Do not pad or suffix-match partial digits
+      // ("12" vs "0012"): that can silently merge two real accounts.
+      const key = accountKey(result.bankName, result.acc);
       const balance = parseAmount(result.bal);
       if (balance !== null) {
         const currency = result.currency ?? "INR";
-        const reading: BalanceReading = { balance, currency, asOf: m.date, sender: m.sender };
-        const existing = accountsByKey.get(key);
-        if (!existing) {
-          accountsByKey.set(key, {
-            bankName: result.bankName,
-            last4: normalizedAcc || result.acc,
-            balance,
-            currency,
-            asOf: m.date,
-            sender: m.sender,
-            estimatedBalance: balance,
-            capturedIncome: 0,
-            capturedExpense: 0,
-            capturedChange: 0,
-            capturedTransactionCount: 0,
-            estimatedAsOf: m.date,
-            reconciliationDelta: null,
-            history: [reading],
-          });
+        const reading: BalanceReading = {
+          balance,
+          currency,
+          asOf: m.date,
+          detectedBankName: result.bankName,
+          detectedAccount: result.acc,
+          association: normalizedAcc
+            ? { kind: "confirmed", accountLast4: normalizedAcc }
+            : { kind: "unassigned" },
+          sender: m.sender,
+          reconciliation: null,
+        };
+        if (!key) {
+          const bankKey = normalizeBankName(result.bankName);
+          const unassigned = unassignedReadingsByBank.get(bankKey);
+          if (unassigned) unassigned.push(reading);
+          else unassignedReadingsByBank.set(bankKey, [reading]);
         } else {
-          existing.history.push(reading);
-          if (m.date > existing.asOf) {
-            existing.balance = balance;
-            existing.asOf = m.date;
-            existing.sender = m.sender;
-            existing.currency = currency;
-            existing.estimatedBalance = balance;
-            existing.capturedIncome = 0;
-            existing.capturedExpense = 0;
-            existing.capturedChange = 0;
-            existing.capturedTransactionCount = 0;
-            existing.estimatedAsOf = m.date;
+          const existing = accountsByKey.get(key);
+          if (!existing) {
+            accountsByKey.set(key, {
+              bankName: result.bankName,
+              last4: normalizedAcc,
+              balance,
+              currency,
+              asOf: m.date,
+              sender: m.sender,
+              estimatedBalance: balance,
+              capturedIncome: 0,
+              capturedExpense: 0,
+              capturedChange: 0,
+              capturedTransactionCount: 0,
+              estimatedAsOf: m.date,
+              reconciliationDelta: null,
+              history: [reading],
+            });
+          } else {
+            existing.history.push(reading);
+            if (m.date > existing.asOf) {
+              existing.balance = balance;
+              existing.asOf = m.date;
+              existing.sender = m.sender;
+              existing.currency = currency;
+              existing.estimatedBalance = balance;
+              existing.capturedIncome = 0;
+              existing.capturedExpense = 0;
+              existing.capturedChange = 0;
+              existing.capturedTransactionCount = 0;
+              existing.estimatedAsOf = m.date;
+            }
           }
         }
       }
@@ -301,16 +378,34 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
 
   for (const [key, account] of accountsByKey) {
     const readings = [...account.history].sort((a, b) => b.asOf - a.asOf);
-    const previous = readings[1];
-    if (previous && previous.currency === account.currency) {
-      let capturedBetweenReports = 0;
+    for (let index = 0; index < readings.length; index++) {
+      const reading = readings[index]!;
+      const previous = readings[index + 1];
+      if (!previous || previous.currency !== reading.currency) continue;
+
+      let capturedIncome = 0;
+      let capturedExpense = 0;
+      let capturedTransactionCount = 0;
       for (const { key: transactionKey, change, message } of ledgerEntries) {
         if (transactionKey !== key) continue;
-        if (message.date <= previous.asOf || message.date >= account.asOf) continue;
-        capturedBetweenReports += change;
+        if (message.date <= previous.asOf || message.date >= reading.asOf) continue;
+        if (change > 0) capturedIncome += change;
+        else capturedExpense += Math.abs(change);
+        capturedTransactionCount++;
       }
-      account.reconciliationDelta = account.balance - (previous.balance + capturedBetweenReports);
+      const capturedChange = capturedIncome - capturedExpense;
+      const expectedBalance = previous.balance + capturedChange;
+      reading.reconciliation = {
+        previousAsOf: previous.asOf,
+        capturedIncome,
+        capturedExpense,
+        capturedChange,
+        capturedTransactionCount,
+        expectedBalance,
+        delta: reading.balance - expectedBalance,
+      };
     }
+    account.reconciliationDelta = readings[0]?.reconciliation?.delta ?? null;
 
     for (const { key: transactionKey, change, message } of ledgerEntries) {
       if (transactionKey !== key) continue;
@@ -331,6 +426,44 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
   const accounts = [...accountsByKey.values()];
   for (const acc of accounts) acc.history.sort((a, b) => b.asOf - a.asOf);
 
+  const banksByKey = new Map<string, BankGroup>();
+  for (const account of accounts) {
+    const key = normalizeBankName(account.bankName);
+    const existing = banksByKey.get(key);
+    if (existing) existing.accounts.push(account);
+    else {
+      banksByKey.set(key, {
+        bankName: displayBankName(account.bankName),
+        accounts: [account],
+        unassignedReadings: [],
+      });
+    }
+  }
+  for (const [key, readings] of unassignedReadingsByBank) {
+    const bank = banksByKey.get(key) ?? {
+      bankName: displayBankName(readings[0]!.detectedBankName),
+      accounts: [],
+      unassignedReadings: [],
+    };
+    for (const reading of readings) {
+      const candidates = bank.accounts.filter((account) => account.currency === reading.currency);
+      if (candidates.length === 1) {
+        reading.association = {
+          kind: "suggested",
+          accountLast4: candidates[0]!.last4,
+          reason: "sole-account",
+        };
+      }
+      bank.unassignedReadings.push(reading);
+    }
+    bank.unassignedReadings.sort((a, b) => b.asOf - a.asOf);
+    banksByKey.set(key, bank);
+  }
+  const banks = [...banksByKey.values()].sort((a, b) => a.bankName.localeCompare(b.bankName));
+  for (const bank of banks) {
+    bank.accounts.sort((a, b) => b.asOf - a.asOf || a.last4.localeCompare(b.last4));
+  }
+
   const mandates = [...mandatesById.values()].sort((a, b) => b.lastUpdated - a.lastUpdated);
   for (const man of mandates) man.history.sort((a, b) => b.date - a.date);
 
@@ -346,6 +479,7 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
 
   return {
     accounts,
+    banks,
     monthIncomeByCurrency,
     monthExpenseByCurrency,
     subscriptions,

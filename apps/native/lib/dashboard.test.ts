@@ -183,7 +183,70 @@ describe("deriveDashboard — account identity", () => {
     });
   });
 
-  it("assigns an account-less transaction to the sole account for that bank and currency", () => {
+  it("preserves reconciliation insights for every interval between balance readings", () => {
+    const messages: ParsedSms[] = [
+      sms("may-balance", "VM-TEST-A", 1000, {
+        bankName: "Test Bank",
+        bal: "1000.00",
+        acc: "XX1234",
+      }),
+      sms("may-expense", "VM-TEST-A", 2000, {
+        bankName: "Test Bank",
+        trx: "200.00",
+        trxTypeRich: "EXPENSE",
+        acc: "XX1234",
+      }),
+      sms("june-balance", "VM-TEST-A", 3000, {
+        bankName: "Test Bank",
+        bal: "700.00",
+        acc: "XX1234",
+      }),
+      sms("june-income", "VM-TEST-A", 4000, {
+        bankName: "Test Bank",
+        trx: "300.00",
+        trxTypeRich: "INCOME",
+        acc: "XX1234",
+      }),
+      sms("july-balance", "VM-TEST-A", 5000, {
+        bankName: "Test Bank",
+        bal: "1050.00",
+        acc: "XX1234",
+      }),
+    ];
+
+    const { accounts } = deriveDashboard(messages);
+
+    expect(accounts[0]).toMatchObject({ reconciliationDelta: 50 });
+    expect(accounts[0]!.history).toMatchObject([
+      {
+        balance: 1050,
+        reconciliation: {
+          previousAsOf: 3000,
+          capturedIncome: 300,
+          capturedExpense: 0,
+          capturedChange: 300,
+          capturedTransactionCount: 1,
+          expectedBalance: 1000,
+          delta: 50,
+        },
+      },
+      {
+        balance: 700,
+        reconciliation: {
+          previousAsOf: 1000,
+          capturedIncome: 0,
+          capturedExpense: 200,
+          capturedChange: -200,
+          capturedTransactionCount: 1,
+          expectedBalance: 800,
+          delta: -100,
+        },
+      },
+      { balance: 1000, reconciliation: null },
+    ]);
+  });
+
+  it("applies an account-less transaction when one bank account is possible", () => {
     const messages: ParsedSms[] = [
       sms("balance", "VM-BALANCE", 1000, {
         bankName: "Test Bank",
@@ -203,6 +266,39 @@ describe("deriveDashboard — account identity", () => {
     const { accounts } = deriveDashboard(messages);
 
     expect(accounts[0]).toMatchObject({ estimatedBalance: 800, capturedTransactionCount: 1 });
+  });
+
+  it("keeps a validated balance estimate when later income omits account digits", () => {
+    const messages: ParsedSms[] = [
+      sms("feb-balance", "VA-CBSSBI-S", 1000, {
+        bankName: "State Bank of India",
+        bal: "105614.00",
+        acc: "XX7521",
+      }),
+      sms("income-without-account", "VA-SBIUPI-S", 2000, {
+        bankName: "State Bank of India",
+        trx: "120000.00",
+        trxTypeRich: "INCOME",
+        acc: null,
+      }),
+      sms("expense-with-account", "VA-SBIUPI-S", 3000, {
+        bankName: "State Bank of India",
+        trx: "25614.00",
+        trxTypeRich: "EXPENSE",
+        acc: "XX7521",
+      }),
+    ];
+
+    const { accounts } = deriveDashboard(messages);
+
+    expect(accounts[0]).toMatchObject({
+      balance: 105614,
+      estimatedBalance: 200000,
+      capturedIncome: 120000,
+      capturedExpense: 25614,
+      capturedChange: 94386,
+      capturedTransactionCount: 2,
+    });
   });
 
   it("does not assign an account-less transaction when multiple accounts are possible", () => {
@@ -256,27 +352,47 @@ describe("deriveDashboard — account identity", () => {
     expect(accounts[0]).toMatchObject({ estimatedBalance: 800, capturedTransactionCount: 1 });
   });
 
-  it("does not merge unknown accounts from different bank sender IDs", () => {
+  it("keeps BOB balance readings from rotating sender IDs under one bank", () => {
     const messages: ParsedSms[] = [
-      sms("1", "VM-TEST-A", 1000, {
-        bankName: "Test Bank",
-        bal: "1000.00",
+      sms("1", "JK-BOBSMS-S", 1000, {
+        bankName: "Bank of Baroda",
+        bal: "28739.94",
         acc: null,
       }),
-      sms("2", "VM-TEST-B", 2000, {
-        bankName: "Test Bank",
-        bal: "2000.00",
+      sms("2", "JX-BOBSMS-S", 2000, {
+        bankName: "Bank of Baroda",
+        bal: "28890.45",
+        acc: null,
+      }),
+      sms("3", "JD-BOBSMS-S", 3000, {
+        bankName: "  BANK   OF BARODA ",
+        bal: "9444.60",
+        acc: null,
+      }),
+      sms("4", "JK-BOBSMS-S", 4000, {
+        bankName: "Bank of Baroda",
+        bal: "3678.60",
         acc: null,
       }),
     ];
 
-    const { accounts } = deriveDashboard(messages);
+    const { accounts, banks } = deriveDashboard(messages);
 
-    expect(accounts).toHaveLength(2);
-    expect(accounts.map((account) => account.sender).sort()).toEqual(["VM-TEST-A", "VM-TEST-B"]);
+    expect(accounts).toHaveLength(0);
+    expect(banks).toHaveLength(1);
+    expect(banks[0]).toMatchObject({ bankName: "Bank of Baroda", accounts: [] });
+    expect(banks[0]!.unassignedReadings.map((reading) => reading.sender)).toEqual([
+      "JK-BOBSMS-S",
+      "JD-BOBSMS-S",
+      "JX-BOBSMS-S",
+      "JK-BOBSMS-S",
+    ]);
+    expect(
+      banks[0]!.unassignedReadings.every((reading) => reading.association.kind === "unassigned"),
+    ).toBe(true);
   });
 
-  it("keeps unknown-account history together for the same bank sender", () => {
+  it("keeps earlier and later unknown readings separate when explicit digits later confirm one account", () => {
     const messages: ParsedSms[] = [
       sms("1", "VM-TEST-A", 1000, {
         bankName: "Test Bank",
@@ -286,15 +402,52 @@ describe("deriveDashboard — account identity", () => {
       sms("2", "vm-test-a", 2000, {
         bankName: "Test Bank",
         bal: "2000.00",
+        acc: "XX1234",
+      }),
+      sms("3", "VM-ANOTHER-SENDER", 3000, {
+        bankName: "Test Bank",
+        bal: "3000.00",
         acc: null,
       }),
     ];
 
-    const { accounts } = deriveDashboard(messages);
+    const { accounts, banks } = deriveDashboard(messages);
 
     expect(accounts).toHaveLength(1);
-    expect(accounts[0]).toMatchObject({ balance: 2000, last4: null, sender: "vm-test-a" });
-    expect(accounts[0]!.history).toHaveLength(2);
+    expect(accounts[0]).toMatchObject({ balance: 2000, last4: "1234", sender: "vm-test-a" });
+    expect(accounts[0]!.history).toMatchObject([
+      { balance: 2000, association: { kind: "confirmed", accountLast4: "1234" } },
+    ]);
+    expect(banks[0]!.unassignedReadings).toMatchObject([
+      {
+        balance: 3000,
+        association: { kind: "suggested", accountLast4: "1234", reason: "sole-account" },
+      },
+      { balance: 1000, association: { kind: "suggested", accountLast4: "1234" } },
+    ]);
+  });
+
+  it("does not suggest a sole confirmed account in another currency", () => {
+    const messages: ParsedSms[] = [
+      sms("confirmed", "VM-TEST-A", 1000, {
+        bankName: "Test Bank",
+        bal: "1000.00",
+        acc: "XX1234",
+        currency: "INR",
+      }),
+      sms("unknown", "VM-TEST-A", 2000, {
+        bankName: "Test Bank",
+        bal: "50.00",
+        acc: null,
+        currency: "USD",
+      }),
+    ];
+
+    const { banks } = deriveDashboard(messages);
+
+    expect(banks[0]!.unassignedReadings).toMatchObject([
+      { balance: 50, currency: "USD", association: { kind: "unassigned" } },
+    ]);
   });
 
   it("merges different mask styles when the exact trailing digits match", () => {
@@ -318,6 +471,117 @@ describe("deriveDashboard — account identity", () => {
     expect(accounts[0]!.history).toHaveLength(2);
   });
 
+  it("keeps repeated balance SMS under one account when bank-name formatting differs", () => {
+    const june = Date.UTC(2026, 5, 10);
+    const july = Date.UTC(2026, 6, 10);
+    const messages: ParsedSms[] = [
+      sms("june-balance", "VM-SBIINB", june, {
+        bankName: "State Bank of India",
+        bal: "105614.00",
+        acc: "XX7521",
+      }),
+      sms("july-balance", "VM-SBIINB", july, {
+        bankName: "  STATE   BANK OF INDIA ",
+        bal: "1999.00",
+        acc: "XX7521",
+      }),
+    ];
+
+    const { accounts } = deriveDashboard(messages);
+
+    expect(accounts).toHaveLength(1);
+    expect(accounts[0]).toMatchObject({
+      bankName: "State Bank of India",
+      last4: "7521",
+      balance: 1999,
+      asOf: july,
+    });
+    expect(accounts[0]!.history).toEqual([
+      {
+        balance: 1999,
+        currency: "INR",
+        asOf: july,
+        detectedBankName: "  STATE   BANK OF INDIA ",
+        detectedAccount: "XX7521",
+        association: { kind: "confirmed", accountLast4: "7521" },
+        sender: "VM-SBIINB",
+        reconciliation: {
+          previousAsOf: june,
+          capturedIncome: 0,
+          capturedExpense: 0,
+          capturedChange: 0,
+          capturedTransactionCount: 0,
+          expectedBalance: 105614,
+          delta: -103615,
+        },
+      },
+      {
+        balance: 105614,
+        currency: "INR",
+        asOf: june,
+        detectedBankName: "State Bank of India",
+        detectedAccount: "XX7521",
+        association: { kind: "confirmed", accountLast4: "7521" },
+        sender: "VM-SBIINB",
+        reconciliation: null,
+      },
+    ]);
+  });
+
+  it("does not broaden transaction attribution when balance bank names are normalized", () => {
+    const messages: ParsedSms[] = [
+      sms("balance", "VM-SBIINB", 1000, {
+        bankName: "State Bank of India",
+        bal: "1000.00",
+        acc: "XX7521",
+      }),
+      sms("expense", "VM-SBIINB", 2000, {
+        bankName: "STATE BANK OF INDIA",
+        trx: "200.00",
+        trxTypeRich: "EXPENSE",
+        acc: "XX7521",
+      }),
+    ];
+
+    const { accounts, banks } = deriveDashboard(messages);
+
+    expect(banks).toHaveLength(1);
+    expect(accounts[0]).toMatchObject({
+      balance: 1000,
+      estimatedBalance: 1000,
+      capturedTransactionCount: 0,
+    });
+  });
+
+  it("keeps three balance SMS with the same bank and account in one card", () => {
+    const messages: ParsedSms[] = [
+      sms("may", "VM-SBIINB", Date.UTC(2026, 4, 10), {
+        bankName: "State Bank of India",
+        bal: "1000",
+        acc: "XX7521",
+      }),
+      sms("june", "VM-SBIINB", Date.UTC(2026, 5, 10), {
+        bankName: "State Bank of India",
+        bal: "900",
+        acc: "XX7521",
+      }),
+      sms("july", "VM-SBIINB", Date.UTC(2026, 6, 10), {
+        bankName: "State Bank of India",
+        bal: "800",
+        acc: "XX7521",
+      }),
+    ];
+
+    const { accounts } = deriveDashboard(messages);
+
+    expect(accounts).toHaveLength(1);
+    expect(accounts[0]!.history).toHaveLength(3);
+    expect(accounts[0]!.history.map((reading) => reading.balance)).toEqual([800, 900, 1000]);
+    expect(accounts[0]!.history.every((reading) => reading.association.kind === "confirmed")).toBe(
+      true,
+    );
+  });
+
   it("does not pad or suffix-merge partial account digits", () => {
     const messages: ParsedSms[] = [
       sms("1", "VM-TEST-A", 1000, {
@@ -338,7 +602,7 @@ describe("deriveDashboard — account identity", () => {
     expect(accounts.map((account) => account.last4).sort()).toEqual(["0012", "12"]);
   });
 
-  it("does not merge an unknown account into a numbered account from the same sender", () => {
+  it("keeps an unknown reading unassigned when two confirmed accounts are possible", () => {
     const messages: ParsedSms[] = [
       sms("1", "VM-TEST-A", 1000, {
         bankName: "Test Bank",
@@ -350,13 +614,20 @@ describe("deriveDashboard — account identity", () => {
         bal: "2000.00",
         acc: "XX1234",
       }),
+      sms("3", "VM-TEST-A", 3000, {
+        bankName: "Test Bank",
+        bal: "3000.00",
+        acc: "XX5678",
+      }),
     ];
 
-    const { accounts } = deriveDashboard(messages);
+    const { accounts, banks } = deriveDashboard(messages);
 
     expect(accounts).toHaveLength(2);
-    expect(accounts.map((account) => account.last4)).toContain(null);
-    expect(accounts.map((account) => account.last4)).toContain("1234");
+    expect(accounts.map((account) => account.last4).sort()).toEqual(["1234", "5678"]);
+    expect(banks[0]!.unassignedReadings).toMatchObject([
+      { balance: 1000, association: { kind: "unassigned" } },
+    ]);
   });
 });
 
