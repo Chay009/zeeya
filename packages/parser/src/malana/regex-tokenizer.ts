@@ -1912,6 +1912,27 @@ export function regexTokenize(message: string, currencyRegistry: CurrencyRegistr
     const sub = lc.substring(i);
     const origSub = message.substring(i);
 
+    // URL is a real terminal referenced by grammar rules across bank, bill,
+    // travel, delivery, telecom, and offer categories, but the ported numeric
+    // FSA has no URL state. Recognize only explicit web prefixes here; bare
+    // domains remain untouched to avoid turning ordinary dotted text into a
+    // structural grammar token.
+    const urlMatch = origSub.match(/^(?:https?:\/\/|www\.)[^\s<>"']+/i);
+    const url = urlMatch?.[0].replace(/[.,;:!?]+$/, "");
+    if (url) {
+      tokens.push({
+        type: "URL",
+        raw: url,
+        text: url,
+        values: { url },
+        locked: false,
+        matched: false,
+        children: [],
+      });
+      i += url.length;
+      continue;
+    }
+
     // Detect a UPI Mandate's UMN ("UMN:<hex>@<handle>"), our own addition, not part
     // of the ported FSA — Truecaller's real VPD (Virtual Payment Address) state only
     // activates after a phone-number-shaped digit run, so it never fires on a UMN's

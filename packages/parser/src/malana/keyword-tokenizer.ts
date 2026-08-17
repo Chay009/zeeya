@@ -22,24 +22,27 @@ function parseTokenKey(key: string): {
   type: string;
   attrs: Record<string, string>;
   positionalKeys: string[];
+  annotationKeys: string[];
 } {
   const bracketIdx = key.indexOf("[");
-  if (bracketIdx === -1) return { type: baseType(key), attrs: {}, positionalKeys: [] };
+  if (bracketIdx === -1)
+    return { type: baseType(key), attrs: {}, positionalKeys: [], annotationKeys: [] };
   const rawType = key.slice(0, bracketIdx);
   const attrStr = key.slice(bracketIdx + 1, key.length - 1);
   const attrs: Record<string, string> = {};
   const positionalKeys: string[] = [];
+  const annotationKeys: string[] = [];
 
   for (const rawPart of attrStr.split(",")) {
     const part = rawPart.trim();
     if (!part) continue;
+    const eq = part.indexOf("=");
+    annotationKeys.push((eq === -1 ? part : part.slice(0, eq)).replace(/^_/, "").trim());
 
     if (part.startsWith("_")) {
       // _key=value — strip leading underscore, store as named attr
-      const eq = part.indexOf("=");
       if (eq !== -1) attrs[part.slice(1, eq)] = part.slice(eq + 1);
     } else {
-      const eq = part.indexOf("=");
       if (eq !== -1) {
         // key=value — plain named attr (no underscore)
         attrs[part.slice(0, eq).trim()] = part.slice(eq + 1).trim();
@@ -51,7 +54,40 @@ function parseTokenKey(key: string): {
     }
   }
 
-  return { type: baseType(rawType), attrs, positionalKeys };
+  return { type: baseType(rawType), attrs, positionalKeys, annotationKeys };
+}
+
+function parseDictionaryEntry(
+  entry: string,
+  positionalKeys: string[],
+  annotationKeys: string[],
+): { keyword: string; normalized: string; attrs: Record<string, string> } {
+  let value = entry;
+  let annotationValues: string[] | null = null;
+  const annotation = value.match(/\[([^\]]*)\]$/);
+  if (annotation?.index !== undefined) {
+    value = value.slice(0, annotation.index);
+    if (value.endsWith("|")) value = value.slice(0, -1);
+    annotationValues = annotation[1]!.split(";");
+  }
+
+  const pipeIdx = value.indexOf("|");
+  const keyword = pipeIdx === -1 ? value : value.slice(0, pipeIdx);
+  let normalized = pipeIdx === -1 ? value : value.slice(pipeIdx + 1);
+  const attrs: Record<string, string> = {};
+
+  if (annotationValues) {
+    for (let index = 0; index < annotationKeys.length; index++) {
+      const annotationValue = annotationValues[index]?.trim();
+      if (annotationValue) attrs[annotationKeys[index]!] = annotationValue;
+    }
+    const positionalValue = positionalKeys
+      .map((key) => annotationValues![annotationKeys.indexOf(key)]?.trim())
+      .find(Boolean);
+    if (positionalValue) normalized = positionalValue;
+  }
+
+  return { keyword, normalized: normalized || keyword, attrs };
 }
 
 function newNode(): TrieNode {
@@ -90,15 +126,22 @@ export class KeywordTokenizer {
 
   constructor(tokensDict: Record<string, string>) {
     for (const [rawKey, rawValues] of Object.entries(tokensDict)) {
-      const { type, attrs, positionalKeys } = parseTokenKey(rawKey);
+      const { type, attrs, positionalKeys, annotationKeys } = parseTokenKey(rawKey);
       for (const entry of rawValues.split(",")) {
         const trimmed = entry.trim();
         if (!trimmed) continue;
-        const pipeIdx = trimmed.indexOf("|");
-        const keyword = pipeIdx !== -1 ? trimmed.slice(0, pipeIdx) : trimmed;
-        const normalized = pipeIdx !== -1 ? trimmed.slice(pipeIdx + 1) : trimmed;
+        const parsed = parseDictionaryEntry(trimmed, positionalKeys, annotationKeys);
+        const entryAttrs = { ...attrs, ...parsed.attrs };
+        const { keyword, normalized } = parsed;
         if (keyword)
-          insertTrie(this.root, keyword.toLowerCase(), type, normalized, attrs, positionalKeys);
+          insertTrie(
+            this.root,
+            keyword.toLowerCase(),
+            type,
+            normalized,
+            entryAttrs,
+            positionalKeys,
+          );
       }
     }
   }

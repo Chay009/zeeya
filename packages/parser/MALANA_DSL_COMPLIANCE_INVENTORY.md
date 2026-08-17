@@ -283,8 +283,8 @@ Computed a fixed point: starting from every terminal token **type**
 attrs and the trailing-digit numbered-variant suffix the way
 `keyword-tokenizer.ts`'s `baseType()` does — this is a count of distinct
 _type names_, not the 1,167 keyword _phrase entries_ tallied in §6, which
-is a different measurement of the same dictionary — plus 24
-`regex-tokenizer.ts` output types, 407 terminals total), then repeatedly
+is a different measurement of the same dictionary — plus 25
+`regex-tokenizer.ts` output types, 408 terminals total), then repeatedly
 mark a `GRMR` result-symbol reachable once **at least one of its
 comma-separated rule alternatives** has every referenced input type
 reachable (not "all tokens across every alternative combined" — the first
@@ -293,36 +293,29 @@ satisfy a dependency (the most generous possible "everything is globally
 merged, no collisions, no ordering issues" scenario).
 
 - 512 distinct `GRMR` result-symbols total, across 1,232 rule alternatives.
-- **475 reachable** — including `TRANSINTENT` and `INTENT`, both confirmed
+- **496 reachable** — including `TRANSINTENT` and `INTENT`, both confirmed
   reachable, matching their observed runtime behavior directly (verified:
   `engine.parse("Rs.500 debited...")` does produce a `TRANSINTENT`-derived
   result in practice). The first pass's flat dependency-merge had wrongly
   marked both unreachable because _some_ alternative among several
   referenced an exotic token — the fix requires only one full alternative
   to work, matching how `grammar-runner.ts` actually evaluates rules.
-- **37 remain unreachable** even under the most generous global-merge
-  hypothesis (down from the erroneous 169).
+- **16 remain unreachable** even under the most generous global-merge
+  hypothesis (down from 37 after implementing the missing `URL` terminal,
+  and from the original erroneous 169).
 
-### Where the 37 actually cluster
+### Where the remaining 16 cluster
 
-| Blocked on                                              | Count                                                        | Symbols                                                                                                                                                                                                                                                                                                                          |
-| ------------------------------------------------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `URL`                                                   | 18 direct (+3 more transitively, via a `URL`-blocked symbol) | `ACKNWLDGDLVRYURL`, `AVAILURL`, `CASHBCKURL`, `JOINURL`, `LINKADHRURL`, `LOGINURL`, `MANAGEDLVRYURL`, `MANAGEURL`, `MNGDATAURL`, `MOREINFOURL`, `ORDERURL`, `PAYLINK`, `RCHRGURL`, `RECEIPTURL`, `TRACKDLVRYURL`, `TRACKMISSEDCALLSURL`, `VIEWBRDINGPASSURL`, `WBCHKURL` (+ `CHECKTRXURL`, `FEEDBACKURL`, `PAYURL` transitively) |
-| `IDVAL`                                                 | 4                                                            | `BKNGID`, `BUSID`, `OTPIDVAL`, `TICKETNUM`                                                                                                                                                                                                                                                                                       |
-| other (`SEATNUM`, `AIRPORT`, `LOCATION`, `VHRGID`, ...) | 15                                                           | see appendix                                                                                                                                                                                                                                                                                                                     |
+| Blocked on                                              | Count | Symbols                                    |
+| ------------------------------------------------------- | ----- | ------------------------------------------ |
+| `IDVAL`                                                 | 4     | `BKNGID`, `BUSID`, `OTPIDVAL`, `TICKETNUM` |
+| other (`SEATNUM`, `AIRPORT`, `LOCATION`, `VHRGID`, ...) | 12    | see appendix                               |
 
-**New finding from the correction: `URL` is now the dominant blocker (21
-of 37, ~57%), not `IDVAL`.** Confirmed by direct inspection — there is no
-`TOKENS` key named `URL`, and grepping `regex-tokenizer.ts` for any
-URL-detection logic (`http`, `https`, `www`, a URL regex pattern) returns
-nothing. The Java engine almost certainly has a URL-matching rule (real
-bank/delivery/offer SMS routinely contain bit.ly-style or direct links)
-that the TS port's regex-tokenizer simply never implemented. Unlike the
-`IDVAL`/`CLASSIFIER.CLS_ID` connection below, this doesn't need bytecode
-tracing to be plausible — it's a concrete, well-defined, checkable gap:
-does `regex-tokenizer.ts` need a `TY_URL` pattern. Worth a quick check
-against real SMS samples containing links before assuming it's the
-explanation, but it's the more actionable of the two leads right now.
+**Resolved: `URL` previously blocked 21 of 37 symbols.** The regex tokenizer
+now emits one `URL` terminal for explicit `http://`, `https://`, and `www.`
+links instead of splitting a link into misleading keyword/number tokens.
+The public corpus test covers the behavior, and the mechanically recomputed
+reachability count is now 496/512, leaving 16 unreachable symbols.
 
 **`IDVAL`/`CLASSIFIER.CLS_ID` remains a good hypothesis, at reduced
 scope.** `IDVAL` is referenced by `REFNO`, `TRXID`, `BKNGID`, `PNRID`,
@@ -338,7 +331,7 @@ up closely with the _remaining_ stuck symbols, so the hypothesis that
 `CLASSIFIER.CLS_ID` drives a generic identifier-marker mechanism outside
 `TOKENS`/`GRMR` is retained — but the earlier claim that it would resolve
 "roughly a third of the 169" is withdrawn as unsupported. At the corrected
-scale it would resolve 4 of 37 symbols directly, plus whatever it
+scale it would resolve 4 of 16 symbols directly, plus whatever it
 transitively unblocks (not separately computed here).
 
 Two smaller anomalies, unaffected by either correction (flagged for manual
@@ -348,7 +341,7 @@ word `for` instead of a token type name (from `"APPROVE {3:for}AMT"`) —
 most likely a seed-data quirk, not a porting gap, since no token is ever
 typed `"for"` regardless of how the graph is built.
 
-Full 37-symbol list with each one's specific blocking dependency is in the
+Full 16-symbol list with each one's specific blocking dependency is in the
 appendix at the bottom of this document.
 
 ## 4b. `PATTERN` / `STRUCT` compliance (91 + 20 = 111 entries)
@@ -497,22 +490,12 @@ Every keyword entry across all `TOKENS` values, classified by syntax shape
 | `phrase\|[a;b;c;d]`         | 2     | `expire\|[verb;past]`, `picked\|[pickedup;;past;verb]` |
 | `phrase[a;b;c;d]` (no pipe) | 1     | `picked up[pickedup;;past;verb]`                       |
 
-Low raw frequency (3 entries total), but both forms are mishandled by
-`keyword-tokenizer.ts:97-99`, which splits on the first `|` only:
-
-- `"picked|[pickedup;;past;verb]"` → keyword `"picked"`, normalized value =
-  the **literal string** `"[pickedup;;past;verb]"` (never decoded into
-  separate normalized-value/POS/tense/status fields).
-- `"picked up[pickedup;;past;verb]"` → no `|` present, so the **entire
-  string including the brackets** becomes the search keyword. This can
-  never match real SMS text — confirmed dead code path, not a rare-edge
-  theoretical concern.
-
-Practical impact: the delivery-status keyword "picked up" (a genuinely
-common real-world SMS phrase for courier pickups) never matches through
-this entry. There may be a second, working path to the same signal
-elsewhere in `TOKENS` (not verified here) — but this specific entry is
-confirmed non-functional.
+These three entries were previously mishandled: bracket text became a
+literal normalized value, and the no-pipe `picked up[...]` form became an
+unmatchable keyword. `keyword-tokenizer.ts` now decodes annotation fields
+against the token key's declared attribute order. Public corpus coverage
+confirms `picked up` produces `status=pickedup`, `tense=past`, and
+`pos=verb`, while `expire|[verb;past]` produces its POS/tense metadata.
 
 ## 7. `_pos` / `_tense` / `_negation` / `_chunk` / `_context` inventory
 
@@ -641,23 +624,23 @@ matters and hard-`assert`s a few invariants directly (all 111
 `PATTERN`+`STRUCT` entries accounted for; `TRANSINTENT`/`INTENT`
 reachable, matching confirmed runtime behavior; every file in `data/`
 covered by some script). Run with `python3 scripts/dsl-audit/<script>.py`
-from `packages/parser/`; requires `networkx` for
-`seed_grammar_inventory.py`'s SCC computation.
+from `packages/parser/`; the SCC implementation is self-contained and has
+no third-party Python dependency.
 
 ## 8. Summary table
 
 | #   | Construct                                                        | TS status                                                                                                                                                                                                                   | Confidence                                                                                             |
 | --- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | 1   | `<N>` multiplier                                                 | Parsed, stored, never read (140/533 rules affected)                                                                                                                                                                         | Confirmed                                                                                              |
-| 2   | `phrase\|[a;b;c;d]` bracket annotation                           | Literal string, fields never decoded (2 entries)                                                                                                                                                                            | Confirmed                                                                                              |
-| 2b  | `phrase[a;b;c;d]` (no pipe)                                      | Entire string becomes unmatchable keyword (1 entry)                                                                                                                                                                         | Confirmed                                                                                              |
+| 2   | `phrase\|[a;b;c;d]` bracket annotation                           | Decoded into the token key's declared normalized/POS/tense attributes (2 entries)                                                                                                                                           | Fixed with public corpus coverage                                                                      |
+| 2b  | `phrase[a;b;c;d]` (no pipe)                                      | Multi-word keyword and annotations decoded without requiring a pipe (1 entry)                                                                                                                                               | Fixed with public corpus coverage                                                                      |
 | 3   | `_chunk`, `_context`, `_pos`, `_tense`, `_negation`              | TS parses all into `values` but reads none. Java `ra3.bar.d()` interprets `chunk=true`; downstream call sites remain open                                                                                                   | TS gap and Java predicate confirmed                                                                    |
 | 4   | Cross-category grammar composition                               | 39 required + 18 ambiguous edges, 8-category SCC, 9 naive-merge collisions. Java's per-message default resolves to 12 seed categories: it includes `GRM_VOID`, requests absent `GRM_BLACKLIST`, and omits `GRM_APPOINTMENT` | Configuration confirmed; runtime traversal/resolution still unconfirmed                                |
 | 5   | `RECURR`/`SUBSCRPTN`/`AUTORENEW`/`EMANDATE`/`STNDNGINS`/`AUTDBT` | Only `RECURR` is grammar-unused; the rest are real seed-grammar inputs the TS engine doesn't specifically surface                                                                                                           | Corrected this session — see below                                                                     |
 | 6   | `PATTERN` versus `STRUCT` execution                              | Java loads but does not compile any of the 91 PATTERN entries; it compiles the 20 STRUCT entries as token edges plus `#capture`. TS concatenates and executes both tables through one richer interpreter                    | Java compilation and TS divergence confirmed; Java STRUCT traversal still open                         |
 | 6b  | TS-only PATTERN matching                                         | 24 PATTERN entries produce zero captures because `{N}\|#name` is swallowed into a skip stop type. Fixing this would extend behavior beyond this APK, not restore parity                                                     | Confirmed TS behavior; withdrawn as Java bug and merchant-label root cause                             |
-| 7   | `CLASSIFIER.CLS_ID`                                              | Validated by schema, never read; plausibly the producer of `IDVAL` (4 of 37 unreachable symbols) — `URL` (21 of 37) is now the bigger, more concrete lead                                                                   | Confirmed unused; production-mechanism hypothesis unconfirmed, reduced scope after correction          |
-| 8   | `URL` token type                                                 | No `TOKENS` entry, no regex-tokenizer rule — real bank/delivery/offer links in SMS have nowhere to match                                                                                                                    | New this pass — concrete, checkable without bytecode                                                   |
+| 7   | `CLASSIFIER.CLS_ID`                                              | Validated by schema, never read; plausibly the producer of `IDVAL` (4 of the remaining 16 unreachable symbols)                                                                                                              | Confirmed unused; production-mechanism hypothesis unconfirmed, reduced scope after correction          |
+| 8   | `URL` token type                                                 | Explicit web links now emit one `URL` terminal; this made 21 previously blocked grammar symbols reachable                                                                                                                   | Fixed with public corpus coverage and mechanically recomputed reachability                             |
 | 9   | `TRX`/`NEGATION` negation pairing                                | Both halves exist in seed (`TRX[..._negation=negatable]`, `NEGATION[_negation=negater]`); TS parses both, combines neither. Runtime-confirmed: `trxTypeRich` set on a negated debit/credit SMS                              | Confirmed both statically and at runtime; `trx` stays null so today's dashboard totals aren't affected |
 | 10  | `blacklist.json`                                                 | Real shingle/n-gram spam-detection config, zero TS consumers — a wholesale missing subsystem, not a redundant duplicate of the working Naive Bayes classifier                                                               | Confirmed unused                                                                                       |
 
@@ -684,7 +667,7 @@ Re-verified directly against `GRMR`/`PATTERN`/`STRUCT`:
 
 Checked against the corrected reachability analysis (§4): `AUTOPAYRQSTAMNT`,
 `AUTPAYEMNDT`, `DUEAMT`, and `RENTALBILL` are all **reachable** under the
-global-merge hypothesis (none appear in the corrected 37-symbol
+global-merge hypothesis (none appear in the corrected 16-symbol
 unreachable list) — the earlier framing here, written before the
 reachability bug was found and fixed, incorrectly implied several of them
 might not be. "The token is a real grammar input" and "the rule that
@@ -696,54 +679,33 @@ apply.
 
 ---
 
-## Appendix: full corrected 37-symbol unreachable list
+## Appendix: full corrected 16-symbol unreachable list
 
 Each symbol's _best_ (fewest-missing-dependency) alternative is shown —
 i.e. even its most promising rule alternative still can't be satisfied
 under the most generous global-merge hypothesis.
 
 ```
-ACKNWLDGDLVRYURL     blocked on URL
 AIRPORTS             blocked on AIRPORT
-AVAILURL             blocked on URL
 BAGTAGNUM            blocked on FLTIDVAL
 BKNGID               blocked on IDVAL
 BUSID                blocked on IDVAL
 CABBKIG              blocked on VHRGID
-CASHBCKURL           blocked on URL
-CHECKTRXURL          blocked on MOREINFOURL
 EMANDTTRXINTENT      blocked on EMANDTACTIV
 EMANDTTRXINTENT2     blocked on EMANDTTRXINTENT
-FEEDBACKURL          blocked on MOREINFOURL
 FLTALERT             blocked on FLTIDVAL
 GATALERT             blocked on FLTIDVAL
 ITINERARY            blocked on LOCATION
-JOINURL              blocked on URL
-LINKADHRURL          blocked on URL
-LOGINURL             blocked on URL
-MANAGEDLVRYURL       blocked on URL
-MANAGEURL            blocked on URL
-MNGDATAURL           blocked on URL
-MOREINFOURL          blocked on URL
 NEWLOAN              blocked on INS3
-ORDERURL             blocked on URL
 OTPIDVAL             blocked on IDVAL
-PAYLINK              blocked on URL
-PAYURL               blocked on LOGINURL
-RCHRGURL             blocked on URL
-RECEIPTURL           blocked on URL
 SEATNUMB             blocked on SEATNUM
 SMSCDNO              blocked on SMSCODE
 SMSTONO              blocked on SMSCODE
 TICKETNUM            blocked on IDVAL
-TRACKDLVRYURL        blocked on URL
-TRACKMISSEDCALLSURL  blocked on URL
-VIEWBRDINGPASSURL    blocked on URL
-WBCHKURL             blocked on URL
 ```
 
-21 of 37 (57%) trace to `URL` (18 directly, 3 transitively through
-`MOREINFOURL`/`LOGINURL`). 4 trace to `IDVAL`. The remaining 12 are
+The 21 symbols that traced to `URL` are now reachable. 4 of the remaining
+16 trace to `IDVAL`. The other 12 are
 scattered single-symbol dead ends (`AIRPORT`, `VHRGID`, `LOCATION`,
 `INS3`, `SEATNUM`, `SMSCODE`, `FLTIDVAL`, `EMANDTACTIV` — each referenced
 by 1-3 symbols, none individually as consequential as `URL` or `IDVAL`).

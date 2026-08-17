@@ -17,27 +17,63 @@ Run: python3 scripts/dsl-audit/seed_grammar_inventory.py
 """
 import json
 import re
-import sys
 from collections import defaultdict, Counter
 from pathlib import Path
-
-try:
-    import networkx as nx
-except ImportError:
-    print("This script requires networkx (pip install networkx)", file=sys.stderr)
-    sys.exit(1)
 
 SEED_PATH = Path(__file__).parent.parent.parent / "src/malana/data/seeddata.json"
 
 REGEX_TOKENIZER_TYPES = {
     "NUM", "TAGNUM", "AMT", "PCT", "DST", "WGT", "INSTRNO", "TYP", "RATE", "DATE",
     "TIME", "TIMES", "TIMERANGE", "NUMRANGE", "STR", "PHN", "DATA", "MLTPL", "VPD",
-    "USSD", "NUM_MINS", "DATERANGE", "CALLFORWARD", "MANDATEID",
+    "USSD", "NUM_MINS", "DATERANGE", "CALLFORWARD", "MANDATEID", "URL",
 }
 
 P1 = re.compile(r"^\{([^}]*)\}(.*)$")
 P2 = re.compile(r"^(.*)<(.*)>(.*)$")
 P3 = re.compile(r"^(.*)\[(.*)\]$")
+
+
+def strongly_connected_components(nodes, edges):
+    adjacency = {node: [] for node in nodes}
+    for source, target in edges:
+        adjacency[source].append(target)
+
+    index = 0
+    indices = {}
+    lowlinks = {}
+    stack = []
+    on_stack = set()
+    components = []
+
+    def visit(node):
+        nonlocal index
+        indices[node] = index
+        lowlinks[node] = index
+        index += 1
+        stack.append(node)
+        on_stack.add(node)
+
+        for neighbor in adjacency[node]:
+            if neighbor not in indices:
+                visit(neighbor)
+                lowlinks[node] = min(lowlinks[node], lowlinks[neighbor])
+            elif neighbor in on_stack:
+                lowlinks[node] = min(lowlinks[node], indices[neighbor])
+
+        if lowlinks[node] == indices[node]:
+            component = set()
+            while True:
+                member = stack.pop()
+                on_stack.remove(member)
+                component.add(member)
+                if member == node:
+                    break
+            components.append(component)
+
+    for node in nodes:
+        if node not in indices:
+            visit(node)
+    return components
 
 
 def base_type_from_tokens_key(key: str) -> str:
@@ -91,7 +127,7 @@ def parse_rhs_alt(alt: str):
 
 
 def main():
-    with open(SEED_PATH) as f:
+    with open(SEED_PATH, encoding="utf-8") as f:
         seed = json.load(f)
     grammar = seed["GRAMMAR"]
     tokens = seed["TOKENS"]
@@ -175,11 +211,7 @@ def main():
     print(f"[assertion] Ambiguous cross-category edges: {sum(len(v) for v in ambiguous_edges.values())} symbol instances, {len(ambiguous_edges)} category pairs")
     print()
 
-    G_req = nx.DiGraph()
-    G_req.add_nodes_from(categories)
-    for c, p in required_edges:
-        G_req.add_edge(c, p)
-    sccs = sorted(nx.strongly_connected_components(G_req), key=len, reverse=True)
+    sccs = sorted(strongly_connected_components(categories, required_edges), key=len, reverse=True)
     big_scc = [s for s in sccs if len(s) > 1]
     print(f"[assertion] SCCs from required-only edges: {[sorted(s) for s in big_scc]}")
     print()

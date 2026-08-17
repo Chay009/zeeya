@@ -203,4 +203,50 @@ describe("Malana golden SMS corpus", () => {
       trxTypeRich: "EXPENSE",
     });
   });
+
+  it("decodes annotated multi-word keyword values from the seed", () => {
+    const result = engine.parse("picked up", "", "GRM_DELIVERY");
+
+    expect(result.tokens).toContainEqual(
+      expect.objectContaining({
+        type: "RETPICKUP",
+        text: "picked up",
+        values: expect.objectContaining({
+          _norm: "pickedup",
+          status: "pickedup",
+          negation: "negatable",
+          tense: "past",
+          pos: "verb",
+        }),
+      }),
+    );
+
+    expect(engine.parse("expire").tokens).toContainEqual(
+      expect.objectContaining({
+        type: "EXPIRE",
+        text: "expire",
+        values: expect.objectContaining({ _norm: "expire", tense: "past", pos: "verb" }),
+      }),
+    );
+  });
+
+  it("tokenizes an HTTPS link as the seed's URL terminal", () => {
+    const result = engine.parse("https://bank.example/transaction?id=123");
+
+    expect(result.tokens).toContainEqual(
+      expect.objectContaining({
+        type: "URL",
+        raw: "https://bank.example/transaction?id=123",
+        text: "https://bank.example/transaction?id=123",
+      }),
+    );
+
+    expect(engine.parse("www.bank.example/pay.").tokens).toContainEqual(
+      expect.objectContaining({
+        type: "URL",
+        raw: "www.bank.example/pay",
+        text: "www.bank.example/pay",
+      }),
+    );
+  });
 });
