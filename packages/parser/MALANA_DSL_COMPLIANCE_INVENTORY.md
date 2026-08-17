@@ -317,8 +317,8 @@ links instead of splitting a link into misleading keyword/number tokens.
 The public corpus test covers the behavior, and the mechanically recomputed
 reachability count is now 496/512, leaving 16 unreachable symbols.
 
-**`IDVAL`/`CLASSIFIER.CLS_ID` remains a good hypothesis, at reduced
-scope.** `IDVAL` is referenced by `REFNO`, `TRXID`, `BKNGID`, `PNRID`,
+**`IDVAL`/`CLASSIFIER.CLS_ID` is not safe to implement from the supplied
+APK export.** `IDVAL` is referenced by `REFNO`, `TRXID`, `BKNGID`, `PNRID`,
 `TICKETNUM`, `ORDERIDVAL`, `TRACKINGIDVAL`, `OTPIDVAL`, `TRIPCODEVAL`,
 `BUSID` — but only 4 of those (`BKNGID`, `BUSID`, `OTPIDVAL`,
 `TICKETNUM`) are actually unreachable overall, because `REFNO`,
@@ -327,12 +327,16 @@ already-reachable alternatives that don't need `IDVAL` at all — the exact
 kind of thing the alternative-level fix was needed to see correctly.
 `CLASSIFIER.CLS_ID`'s word list (`REF`, `PNR`, `TICKETNO`, `TRIPCODE`,
 `BUSNO`, `TRANSID`, `ORDERID`, `TRACKINGID`, `BOOKINGID`, ...) still lines
-up closely with the _remaining_ stuck symbols, so the hypothesis that
-`CLASSIFIER.CLS_ID` drives a generic identifier-marker mechanism outside
-`TOKENS`/`GRMR` is retained — but the earlier claim that it would resolve
-"roughly a third of the 169" is withdrawn as unsupported. At the corrected
-scale it would resolve 4 of 16 symbols directly, plus whatever it
-transitively unblocks (not separately computed here).
+up closely with the _remaining_ stuck symbols. However, the supplied Java
+source proves only that `ga3.baz.c()` loads every CLASSIFIER array into
+`f79802i`; that field has no read-site anywhere in the supplied Malana
+sources. Separately, `m82.a` contains an `IDVAL` emission path after an
+internal span is tokenized, but the export contains no connection from
+that path to `f79802i` or `CLS_ID`. The apparent naming alignment therefore
+remains circumstantial and is not an implementation specification. The
+earlier claim that it would resolve "roughly a third of the 169" remains
+withdrawn; at most 4 of the current 16 unreachable symbols depend directly
+on `IDVAL`.
 
 Two smaller anomalies, unaffected by either correction (flagged for manual
 review, not folded into the main count): `APRVEDAMT` and `CHQCLRING` are
@@ -639,7 +643,7 @@ no third-party Python dependency.
 | 5   | `RECURR`/`SUBSCRPTN`/`AUTORENEW`/`EMANDATE`/`STNDNGINS`/`AUTDBT` | Only `RECURR` is grammar-unused; the rest are real seed-grammar inputs the TS engine doesn't specifically surface                                                                                                           | Corrected this session — see below                                                                     |
 | 6   | `PATTERN` versus `STRUCT` execution                              | Java loads but does not compile any of the 91 PATTERN entries; it compiles the 20 STRUCT entries as token edges plus `#capture`. TS concatenates and executes both tables through one richer interpreter                    | Java compilation and TS divergence confirmed; Java STRUCT traversal still open                         |
 | 6b  | TS-only PATTERN matching                                         | 24 PATTERN entries produce zero captures because `{N}\|#name` is swallowed into a skip stop type. Fixing this would extend behavior beyond this APK, not restore parity                                                     | Confirmed TS behavior; withdrawn as Java bug and merchant-label root cause                             |
-| 7   | `CLASSIFIER.CLS_ID`                                              | Validated by schema, never read; plausibly the producer of `IDVAL` (4 of the remaining 16 unreachable symbols)                                                                                                              | Confirmed unused; production-mechanism hypothesis unconfirmed, reduced scope after correction          |
+| 7   | `CLASSIFIER.CLS_ID`                                              | Validated and loaded by Java, but its stored map has no read-site in the supplied Malana sources; a separate `IDVAL` emission path exists with no proven connection to it                                                   | Confirmed unused in TS; insufficient exported Java evidence to implement safely                        |
 | 8   | `URL` token type                                                 | Explicit web links now emit one `URL` terminal; this made 21 previously blocked grammar symbols reachable                                                                                                                   | Fixed with public corpus coverage and mechanically recomputed reachability                             |
 | 9   | `TRX`/`NEGATION` negation pairing                                | Both halves exist in seed (`TRX[..._negation=negatable]`, `NEGATION[_negation=negater]`); TS parses both, combines neither. Runtime-confirmed: `trxTypeRich` set on a negated debit/credit SMS                              | Confirmed both statically and at runtime; `trx` stays null so today's dashboard totals aren't affected |
 | 10  | `blacklist.json`                                                 | Real shingle/n-gram spam-detection config, zero TS consumers — a wholesale missing subsystem, not a redundant duplicate of the working Naive Bayes classifier                                                               | Confirmed unused                                                                                       |

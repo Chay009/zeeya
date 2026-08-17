@@ -481,7 +481,18 @@ export class MalanaEngine {
       delete tagCurrencies["trx"];
     }
     const trxTypeRich = deriveRichType(tags, kwToks);
-    const preferredCurrency = tags["trx"] ? tagCurrencies["trx"] : tagCurrencies["bal"];
+    // A confirmed recharge has its own seed tag (`rechrgsucc`) rather than
+    // the generic `trx` tag. Expose that confirmed amount through `trx` too,
+    // because budget consumers use `trx` as the common transaction-amount
+    // field. Expiry/reminder messages never reach this branch: deriveRichType
+    // only returns RECHARGE for a confirmed recharge.
+    const transactionAmount =
+      tags["trx"] || (trxTypeRich === "RECHARGE" ? tags["rechrgsucc"] : undefined);
+    const preferredCurrency = transactionAmount
+      ? tags["trx"]
+        ? tagCurrencies["trx"]
+        : tagCurrencies["rechrgsucc"]
+      : tagCurrencies["bal"];
     const currency = detectCurrency(this.currencyRegistry, kwToks, regexToks, preferredCurrency);
     const isFromCard = kwToks.some(
       (t) =>
@@ -504,7 +515,7 @@ export class MalanaEngine {
       subcategory: detectSubcategory(tags),
 
       // Bank fields
-      trx: tags["trx"] || null,
+      trx: transactionAmount || null,
       bal: tags["bal"] || null,
       acc: tags["acc"] || tags["instrno"] || null,
       trxType: tags["type"] || null,

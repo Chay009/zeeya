@@ -11,8 +11,8 @@ import { seedData } from "./index.js";
 
 const engine = new MalanaEngine(seedData);
 
-function parse(msg: string, sender = "VM-TESTBK") {
-  return engine.parse(msg, sender);
+function parse(msg: string, sender = "VM-TESTBK", category?: string) {
+  return engine.parse(msg, sender, category);
 }
 
 describe("trxTypeRich", () => {
@@ -147,11 +147,11 @@ describe("trxTypeRich — expanded types", () => {
   });
 
   it("RECHARGE — rechrgsucc tag", () => {
-    const r = parse("Recharge of Rs.399 for 9876543210 is successful. Validity: 84 days.");
-    // rechrgsucc or rechrg tag → RECHARGE
-    if (r.trxTypeRich !== null) {
-      expect(["RECHARGE", "EXPENSE", "INCOME"]).toContain(r.trxTypeRich);
-    }
+    const r = parse("Recharge Rs.399 successful.", "VM-TESTBK", "GRM_BILL");
+
+    expect(r.trxTypeRich).toBe("RECHARGE");
+    expect(r.rechargeAmount).toBe("399");
+    expect(r.trx).toBe("399");
   });
 
   it("ATM_WITHDRAWAL — atm keyword", () => {
