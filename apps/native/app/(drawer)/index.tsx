@@ -234,7 +234,7 @@ export default function Home() {
                 ))}
 
                 {dashboard.accounts.map((acc) => (
-                  <AccountCard key={`${acc.bankName}-${acc.last4 ?? ""}`} account={acc} />
+                  <AccountCard key={`${acc.bankName}-${acc.last4 ?? acc.sender}`} account={acc} />
                 ))}
 
                 {dashboard.mandatesByMerchant.length > 0 && (
@@ -416,6 +416,9 @@ function Stat({
 
 function AccountCard({ account }: { account: AccountBalance }) {
   const older = account.history.filter((r) => r.asOf !== account.asOf);
+  const hasEstimate = account.capturedTransactionCount > 0;
+  const displayedBalance = hasEstimate ? account.estimatedBalance : account.balance;
+  const reconciliation = account.reconciliationDelta;
   return (
     <Card style={{ marginBottom: 16 }}>
       <Text style={{ color: t.textMuted, fontSize: 12, letterSpacing: 0.5, marginBottom: 8 }}>
@@ -423,11 +426,42 @@ function AccountCard({ account }: { account: AccountBalance }) {
         {account.last4 ? ` ••${account.last4}` : ""}
       </Text>
       <Text style={{ color: t.textPrimary, fontSize: 32, fontWeight: "800" }}>
-        {formatMoney(account.balance, account.currency)}
+        {formatMoney(displayedBalance, account.currency)}
       </Text>
       <Text style={{ color: t.textMuted, fontSize: 12, marginTop: 2 }}>
-        As of {formatDateTimeFull(account.asOf)} · {account.sender}
+        {hasEstimate ? "Estimated" : "Bank reported"} as of{" "}
+        {formatDateTimeFull(hasEstimate ? account.estimatedAsOf : account.asOf)}
       </Text>
+      {hasEstimate && (
+        <View style={{ marginTop: 8, gap: 3 }}>
+          <Text style={{ color: t.textMuted, fontSize: 11 }}>
+            Bank reported {formatMoney(account.balance, account.currency)} on{" "}
+            {formatDateTimeFull(account.asOf)} · {account.sender}
+          </Text>
+          <Text style={{ color: t.textMuted, fontSize: 11 }}>
+            Captured change {account.capturedChange >= 0 ? "+" : "−"}
+            {formatMoney(Math.abs(account.capturedChange), account.currency)} from{" "}
+            {account.capturedTransactionCount} transaction
+            {account.capturedTransactionCount === 1 ? "" : "s"}
+          </Text>
+        </View>
+      )}
+      {reconciliation !== null && (
+        <Text
+          style={{
+            color: reconciliation === 0 ? t.positive : t.textMuted,
+            fontSize: 11,
+            marginTop: 6,
+          }}
+        >
+          Last reconciliation:{" "}
+          {reconciliation === 0
+            ? "matched captured activity"
+            : `${formatMoney(Math.abs(reconciliation), account.currency)} ${
+                reconciliation > 0 ? "higher" : "lower"
+              } than the captured estimate`}
+        </Text>
+      )}
       {older.length > 0 && (
         <View style={{ marginTop: 10, gap: 4 }}>
           {older.map((r) => (

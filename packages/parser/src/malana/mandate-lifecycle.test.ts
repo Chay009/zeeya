@@ -70,6 +70,11 @@ describe("UPI mandate lifecycle", () => {
     expect(r.mandateAmount).toBe("1999.00");
   });
 
+  it("does not mistake the mandate amount for an account balance", () => {
+    const r = engine.parse(CREATED, "VA-SBIUPI-S");
+    expect(r.bal).toBeNull();
+  });
+
   it("does not extract a mandate merchant when there is no mandateId", () => {
     const r = engine.parse("Package delivered towards your address for verification", "VM-TESTBK");
     expect(r.mandateMerchant).toBeNull();

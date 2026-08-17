@@ -20,10 +20,22 @@ export interface BalanceReading {
 export interface AccountBalance {
   bankName: string;
   last4: string | null;
+  // Latest balance explicitly reported by the bank. This remains the
+  // reconciliation anchor and is never overwritten by our estimate.
   balance: number;
   currency: string;
   asOf: number;
   sender: string;
+  // Best local estimate after applying captured transactions newer than
+  // `asOf`. It is explicitly labelled as estimated in the UI.
+  estimatedBalance: number;
+  capturedChange: number;
+  capturedTransactionCount: number;
+  estimatedAsOf: number;
+  // Latest reported balance minus the balance predicted from the previous
+  // report and captured transactions between them. A non-zero value exposes
+  // activity the SMS window/parser did not capture instead of hiding drift.
+  reconciliationDelta: number | null;
   // Every balance reading seen for this account, newest first, including
   // ones older than the current `balance` — nothing the parser extracted is
   // dropped, it's just not all shown as the headline figure.
@@ -90,6 +102,40 @@ function normalizeAcc(acc: string | null): string {
   return digits.slice(-4);
 }
 
+function accountKey(bankName: string, acc: string | null, sender: string): string {
+  const normalizedAcc = normalizeAcc(acc);
+  const identity = normalizedAcc || `sender:${sender.trim().toLowerCase()}`;
+  return `${bankName}|${identity}`;
+}
+
+function signedTransactionChange(message: ParsedSms): number | null {
+  const { result } = message;
+  if (!result.trxTypeRich) return null;
+  const amount = parseAmount(result.trx);
+  if (amount === null) return null;
+  const direction = trxDirection(result.trxTypeRich);
+  if (direction === "neutral") return null;
+  return direction === "income" ? amount : -amount;
+}
+
+function resolveTransactionAccountKey(
+  message: ParsedSms,
+  accountsByKey: Map<string, AccountBalance>,
+): string | null {
+  const { result } = message;
+  if (!result.bankName) return null;
+  const currency = result.currency ?? "INR";
+  const exactKey = accountKey(result.bankName, result.acc, message.sender);
+  const exactAccount = accountsByKey.get(exactKey);
+  if (exactAccount?.currency === currency) return exactKey;
+  if (normalizeAcc(result.acc)) return null;
+
+  const candidates = [...accountsByKey.entries()].filter(
+    ([, account]) => account.bankName === result.bankName && account.currency === currency,
+  );
+  return candidates.length === 1 ? candidates[0]![0] : null;
+}
+
 function referencedTransactionKey(message: ParsedSms): string | null {
   const { result } = message;
   const amount = parseAmount(result.trx);
@@ -130,7 +176,7 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
     if (!current || message.date > current.date) newestReferencedTransaction.set(key, message);
   }
   const processedReferencedTransactions = new Set<string>();
-  const subscriptionMessages: ParsedSms[] = [];
+  const deduplicatedMessages: ParsedSms[] = [];
 
   for (const m of messages) {
     const { result } = m;
@@ -144,7 +190,7 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
     if (transactionKey && !isDuplicateTransaction) {
       processedReferencedTransactions.add(transactionKey);
     }
-    if (!isDuplicateTransaction) subscriptionMessages.push(m);
+    if (!isDuplicateTransaction) deduplicatedMessages.push(m);
 
     if (result.mandateId) {
       const merchant = result.mandateMerchant ?? result.brandName ?? result.bankName ?? m.sender;
@@ -182,8 +228,7 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
       // exist, sender keeps separate bank channels from collapsing together.
       // Do not pad or suffix-match partial digits ("12" vs "0012"): that can
       // silently merge two real accounts and show the wrong balance.
-      const accountIdentity = normalizedAcc || `sender:${m.sender.trim().toLowerCase()}`;
-      const key = `${result.bankName}|${accountIdentity}`;
+      const key = accountKey(result.bankName, result.acc, m.sender);
       const balance = parseAmount(result.bal);
       if (balance !== null) {
         const currency = result.currency ?? "INR";
@@ -197,6 +242,11 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
             currency,
             asOf: m.date,
             sender: m.sender,
+            estimatedBalance: balance,
+            capturedChange: 0,
+            capturedTransactionCount: 0,
+            estimatedAsOf: m.date,
+            reconciliationDelta: null,
             history: [reading],
           });
         } else {
@@ -206,6 +256,10 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
             existing.asOf = m.date;
             existing.sender = m.sender;
             existing.currency = currency;
+            existing.estimatedBalance = balance;
+            existing.capturedChange = 0;
+            existing.capturedTransactionCount = 0;
+            existing.estimatedAsOf = m.date;
           }
         }
       }
@@ -233,7 +287,36 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
     }
   }
 
-  const subscriptions = deriveSubscriptions(subscriptionMessages, now);
+  const ledgerEntries = deduplicatedMessages.flatMap((message) => {
+    const key = resolveTransactionAccountKey(message, accountsByKey);
+    const change = signedTransactionChange(message);
+    return key && change !== null ? [{ key, change, message }] : [];
+  });
+
+  for (const [key, account] of accountsByKey) {
+    const readings = [...account.history].sort((a, b) => b.asOf - a.asOf);
+    const previous = readings[1];
+    if (previous && previous.currency === account.currency) {
+      let capturedBetweenReports = 0;
+      for (const { key: transactionKey, change, message } of ledgerEntries) {
+        if (transactionKey !== key) continue;
+        if (message.date <= previous.asOf || message.date >= account.asOf) continue;
+        capturedBetweenReports += change;
+      }
+      account.reconciliationDelta = account.balance - (previous.balance + capturedBetweenReports);
+    }
+
+    for (const { key: transactionKey, change, message } of ledgerEntries) {
+      if (transactionKey !== key) continue;
+      if (message.date <= account.asOf) continue;
+      account.estimatedBalance += change;
+      account.capturedChange += change;
+      account.capturedTransactionCount++;
+      if (message.date > account.estimatedAsOf) account.estimatedAsOf = message.date;
+    }
+  }
+
+  const subscriptions = deriveSubscriptions(deduplicatedMessages, now);
 
   recognized.sort((a, b) => b.date - a.date);
 

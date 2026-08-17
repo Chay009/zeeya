@@ -77,6 +77,175 @@ function sms(id: string, sender: string, date: number, r: Partial<MalanaResult>)
 }
 
 describe("deriveDashboard — account identity", () => {
+  it("estimates the current balance from captured transactions after the latest report", () => {
+    const messages: ParsedSms[] = [
+      sms("balance", "VM-TEST-A", 1000, {
+        bankName: "Test Bank",
+        bal: "1000.00",
+        acc: "XX1234",
+      }),
+      sms("expense", "VM-TEST-A", 2000, {
+        bankName: "Test Bank",
+        trx: "200.00",
+        trxTypeRich: "EXPENSE",
+        acc: "XX1234",
+      }),
+    ];
+
+    const { accounts } = deriveDashboard(messages);
+
+    expect(accounts[0]).toMatchObject({
+      balance: 1000,
+      estimatedBalance: 800,
+      capturedChange: -200,
+      capturedTransactionCount: 1,
+      estimatedAsOf: 2000,
+    });
+  });
+
+  it("adds captured income and ignores transactions in another currency", () => {
+    const messages: ParsedSms[] = [
+      sms("balance", "VM-TEST-A", 1000, {
+        bankName: "Test Bank",
+        bal: "1000.00",
+        acc: "XX1234",
+        currency: "INR",
+      }),
+      sms("income", "VM-TEST-A", 2000, {
+        bankName: "Test Bank",
+        trx: "300.00",
+        trxTypeRich: "INCOME",
+        acc: "XX1234",
+        currency: "INR",
+      }),
+      sms("foreign-expense", "VM-TEST-A", 3000, {
+        bankName: "Test Bank",
+        trx: "50.00",
+        trxTypeRich: "EXPENSE",
+        acc: "XX1234",
+        currency: "USD",
+      }),
+    ];
+
+    const { accounts } = deriveDashboard(messages);
+
+    expect(accounts[0]).toMatchObject({
+      estimatedBalance: 1300,
+      capturedChange: 300,
+      capturedTransactionCount: 1,
+    });
+  });
+
+  it("reconciles a new reported balance against captured activity since the previous report", () => {
+    const messages: ParsedSms[] = [
+      sms("old-balance", "VM-TEST-A", 1000, {
+        bankName: "Test Bank",
+        bal: "1000.00",
+        acc: "XX1234",
+      }),
+      sms("captured-expense", "VM-TEST-A", 2000, {
+        bankName: "Test Bank",
+        trx: "200.00",
+        trxTypeRich: "EXPENSE",
+        acc: "XX1234",
+      }),
+      sms("new-balance", "VM-TEST-A", 3000, {
+        bankName: "Test Bank",
+        bal: "700.00",
+        acc: "XX1234",
+      }),
+      sms("newer-expense", "VM-TEST-A", 4000, {
+        bankName: "Test Bank",
+        trx: "50.00",
+        trxTypeRich: "EXPENSE",
+        acc: "XX1234",
+      }),
+    ];
+
+    const { accounts } = deriveDashboard(messages);
+
+    expect(accounts[0]).toMatchObject({
+      balance: 700,
+      estimatedBalance: 650,
+      capturedChange: -50,
+      capturedTransactionCount: 1,
+      reconciliationDelta: -100,
+    });
+  });
+
+  it("assigns an account-less transaction to the sole account for that bank and currency", () => {
+    const messages: ParsedSms[] = [
+      sms("balance", "VM-BALANCE", 1000, {
+        bankName: "Test Bank",
+        bal: "1000.00",
+        acc: "XX1234",
+        currency: "INR",
+      }),
+      sms("expense", "VM-TRANSACTION", 2000, {
+        bankName: "Test Bank",
+        trx: "200.00",
+        trxTypeRich: "EXPENSE",
+        acc: null,
+        currency: "INR",
+      }),
+    ];
+
+    const { accounts } = deriveDashboard(messages);
+
+    expect(accounts[0]).toMatchObject({ estimatedBalance: 800, capturedTransactionCount: 1 });
+  });
+
+  it("does not assign an account-less transaction when multiple accounts are possible", () => {
+    const messages: ParsedSms[] = [
+      sms("balance-1", "VM-BALANCE", 1000, {
+        bankName: "Test Bank",
+        bal: "1000.00",
+        acc: "XX1234",
+      }),
+      sms("balance-2", "VM-BALANCE", 1000, {
+        bankName: "Test Bank",
+        bal: "2000.00",
+        acc: "XX5678",
+      }),
+      sms("expense", "VM-TRANSACTION", 2000, {
+        bankName: "Test Bank",
+        trx: "200.00",
+        trxTypeRich: "EXPENSE",
+        acc: null,
+      }),
+    ];
+
+    const { accounts } = deriveDashboard(messages);
+
+    expect(accounts.map((account) => account.estimatedBalance).sort((a, b) => a - b)).toEqual([
+      1000, 2000,
+    ]);
+    expect(accounts.every((account) => account.capturedTransactionCount === 0)).toBe(true);
+  });
+
+  it("applies duplicate referenced transaction notifications to the estimate only once", () => {
+    const transaction = {
+      bankName: "Test Bank",
+      trx: "200.00",
+      trxTypeRich: "EXPENSE" as const,
+      acc: "XX1234",
+      ref: "REF-123",
+    };
+    const messages: ParsedSms[] = [
+      sms("balance", "VM-TEST-A", 1000, {
+        bankName: "Test Bank",
+        bal: "1000.00",
+        acc: "XX1234",
+      }),
+      sms("expense-1", "VM-TEST-A", 2000, transaction),
+      sms("expense-2", "VM-TEST-A", 3000, transaction),
+    ];
+
+    const { accounts } = deriveDashboard(messages);
+
+    expect(accounts[0]).toMatchObject({ estimatedBalance: 800, capturedTransactionCount: 1 });
+  });
+
   it("does not merge unknown accounts from different bank sender IDs", () => {
     const messages: ParsedSms[] = [
       sms("1", "VM-TEST-A", 1000, {
