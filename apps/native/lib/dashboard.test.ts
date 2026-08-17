@@ -90,16 +90,24 @@ describe("deriveDashboard — account identity", () => {
         trxTypeRich: "EXPENSE",
         acc: "XX1234",
       }),
+      sms("income", "VM-TEST-A", 3000, {
+        bankName: "Test Bank",
+        trx: "300.00",
+        trxTypeRich: "INCOME",
+        acc: "XX1234",
+      }),
     ];
 
     const { accounts } = deriveDashboard(messages);
 
     expect(accounts[0]).toMatchObject({
       balance: 1000,
-      estimatedBalance: 800,
-      capturedChange: -200,
-      capturedTransactionCount: 1,
-      estimatedAsOf: 2000,
+      estimatedBalance: 1100,
+      capturedIncome: 300,
+      capturedExpense: 200,
+      capturedChange: 100,
+      capturedTransactionCount: 2,
+      estimatedAsOf: 3000,
     });
   });
 
@@ -167,6 +175,8 @@ describe("deriveDashboard — account identity", () => {
     expect(accounts[0]).toMatchObject({
       balance: 700,
       estimatedBalance: 650,
+      capturedIncome: 0,
+      capturedExpense: 50,
       capturedChange: -50,
       capturedTransactionCount: 1,
       reconciliationDelta: -100,

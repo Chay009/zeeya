@@ -29,6 +29,8 @@ export interface AccountBalance {
   // Best local estimate after applying captured transactions newer than
   // `asOf`. It is explicitly labelled as estimated in the UI.
   estimatedBalance: number;
+  capturedIncome: number;
+  capturedExpense: number;
   capturedChange: number;
   capturedTransactionCount: number;
   estimatedAsOf: number;
@@ -243,6 +245,8 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
             asOf: m.date,
             sender: m.sender,
             estimatedBalance: balance,
+            capturedIncome: 0,
+            capturedExpense: 0,
             capturedChange: 0,
             capturedTransactionCount: 0,
             estimatedAsOf: m.date,
@@ -257,6 +261,8 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
             existing.sender = m.sender;
             existing.currency = currency;
             existing.estimatedBalance = balance;
+            existing.capturedIncome = 0;
+            existing.capturedExpense = 0;
             existing.capturedChange = 0;
             existing.capturedTransactionCount = 0;
             existing.estimatedAsOf = m.date;
@@ -310,6 +316,8 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
       if (transactionKey !== key) continue;
       if (message.date <= account.asOf) continue;
       account.estimatedBalance += change;
+      if (change > 0) account.capturedIncome += change;
+      else account.capturedExpense += Math.abs(change);
       account.capturedChange += change;
       account.capturedTransactionCount++;
       if (message.date > account.estimatedAsOf) account.estimatedAsOf = message.date;

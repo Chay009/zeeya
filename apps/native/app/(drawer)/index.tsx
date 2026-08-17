@@ -433,13 +433,32 @@ function AccountCard({ account }: { account: AccountBalance }) {
         {formatDateTimeFull(hasEstimate ? account.estimatedAsOf : account.asOf)}
       </Text>
       {hasEstimate && (
-        <View style={{ marginTop: 8, gap: 3 }}>
+        <View style={{ marginTop: 12, gap: 8 }}>
+          <View>
+            <Text style={{ color: t.textMuted, fontSize: 11 }}>Last bank balance</Text>
+            <Text style={{ color: t.textPrimary, fontSize: 17, fontWeight: "700" }}>
+              {formatMoney(account.balance, account.currency)}
+            </Text>
+            <Text style={{ color: t.textMuted, fontSize: 11 }}>
+              {formatDateTimeFull(account.asOf)} · {account.sender}
+            </Text>
+          </View>
+          <View style={{ flexDirection: "row", gap: 16 }}>
+            <View>
+              <Text style={{ color: t.textMuted, fontSize: 11 }}>Added since then</Text>
+              <Text style={{ color: t.positive, fontSize: 14, fontWeight: "700" }}>
+                +{formatMoney(account.capturedIncome, account.currency)}
+              </Text>
+            </View>
+            <View>
+              <Text style={{ color: t.textMuted, fontSize: 11 }}>Spent since then</Text>
+              <Text style={{ color: t.negative, fontSize: 14, fontWeight: "700" }}>
+                −{formatMoney(account.capturedExpense, account.currency)}
+              </Text>
+            </View>
+          </View>
           <Text style={{ color: t.textMuted, fontSize: 11 }}>
-            Bank reported {formatMoney(account.balance, account.currency)} on{" "}
-            {formatDateTimeFull(account.asOf)} · {account.sender}
-          </Text>
-          <Text style={{ color: t.textMuted, fontSize: 11 }}>
-            Captured change {account.capturedChange >= 0 ? "+" : "−"}
+            Net captured change {account.capturedChange >= 0 ? "+" : "−"}
             {formatMoney(Math.abs(account.capturedChange), account.currency)} from{" "}
             {account.capturedTransactionCount} transaction
             {account.capturedTransactionCount === 1 ? "" : "s"}
