@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { deriveDashboard, isRecurringTransaction } from "./dashboard";
 import type { ParsedSms } from "./sms";
-import type { MalanaResult } from "@zeeya/parser/malana";
+import { createMalanaEngine, type MalanaResult } from "@zeeya/parser/malana";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const now = Date.now();
@@ -206,6 +206,160 @@ describe("isRecurringTransaction", () => {
   });
 });
 
+describe("deriveDashboard — duplicate referenced transactions", () => {
+  it("deduplicates references extracted by Malana from raw SMS text", () => {
+    const engine = createMalanaEngine();
+    const body = "Rs.500 debited from A/c XX1234. Ref No 123456789012.";
+    const messages: ParsedSms[] = [
+      {
+        id: "sms-1",
+        sender: "VM-TESTBK",
+        body,
+        date: now,
+        result: engine.parse(body, "VM-TESTBK"),
+      },
+      {
+        id: "sms-2",
+        sender: "VM-TESTBK",
+        body,
+        date: now + 1000,
+        result: engine.parse(body, "VM-TESTBK"),
+      },
+    ];
+
+    const { monthExpenseByCurrency, recent } = deriveDashboard(messages);
+
+    expect(monthExpenseByCurrency["INR"]).toBe(500);
+    expect(recent.map((message) => message.id)).toEqual(["sms-2"]);
+  });
+
+  it("counts duplicate notifications for one referenced transaction only once", () => {
+    const transaction = {
+      bankName: "Test Bank",
+      acc: "XX1234",
+      trxType: "debit",
+      trxTypeRich: "EXPENSE" as const,
+      trx: "500.00",
+      currency: "INR",
+      ref: "REF-123",
+    };
+    const messages: ParsedSms[] = [
+      sms("sms-1", "VM-TESTBK", now, transaction),
+      sms("sms-2", "VM-TESTBK", now + 1000, transaction),
+    ];
+
+    const { monthExpenseByCurrency, recent } = deriveDashboard(messages);
+
+    expect(monthExpenseByCurrency["INR"]).toBe(500);
+    expect(recent).toHaveLength(1);
+  });
+
+  it("keeps the newest notification when duplicate input is not pre-sorted", () => {
+    const transaction = {
+      bankName: "Test Bank",
+      acc: "XX1234",
+      trxTypeRich: "EXPENSE" as const,
+      trx: "500.00",
+      currency: "INR",
+      ref: "REF-123",
+    };
+    const messages: ParsedSms[] = [
+      sms("older", "VM-TESTBK", now - 1000, transaction),
+      sms("newer", "VM-TESTBK", now, transaction),
+    ];
+
+    const { recent } = deriveDashboard(messages);
+
+    expect(recent.map((message) => message.id)).toEqual(["newer"]);
+  });
+
+  it("does not merge a debit with its refund when they share a reference", () => {
+    const messages: ParsedSms[] = [
+      sms("debit", "VM-TESTBK", now - 1000, {
+        bankName: "Test Bank",
+        acc: "XX1234",
+        trxType: "debit",
+        trxTypeRich: "EXPENSE",
+        trx: "500.00",
+        currency: "INR",
+        ref: "REF-123",
+      }),
+      sms("refund", "VM-TESTBK", now, {
+        bankName: "Test Bank",
+        acc: "XX1234",
+        trxType: "credit",
+        trxTypeRich: "INCOME",
+        trx: "500.00",
+        currency: "INR",
+        ref: "REF-123",
+      }),
+    ];
+
+    const { monthExpenseByCurrency, monthIncomeByCurrency, recent } = deriveDashboard(messages);
+
+    expect(monthExpenseByCurrency["INR"]).toBe(500);
+    expect(monthIncomeByCurrency["INR"]).toBe(500);
+    expect(recent).toHaveLength(2);
+  });
+
+  it("does not guess that identical no-reference transactions are duplicates", () => {
+    const transaction = {
+      bankName: "Test Bank",
+      acc: "XX1234",
+      trxTypeRich: "EXPENSE" as const,
+      trx: "500.00",
+      currency: "INR",
+    };
+    const messages: ParsedSms[] = [
+      sms("sms-1", "VM-TESTBK", now - 1000, transaction),
+      sms("sms-2", "VM-TESTBK", now, transaction),
+    ];
+
+    const { monthExpenseByCurrency, recent } = deriveDashboard(messages);
+
+    expect(monthExpenseByCurrency["INR"]).toBe(1000);
+    expect(recent).toHaveLength(2);
+  });
+
+  it("keeps matching references separate across accounts and currencies", () => {
+    const base = {
+      bankName: "Test Bank",
+      trxTypeRich: "EXPENSE" as const,
+      trx: "500.00",
+      ref: "REF-123",
+    };
+    const messages: ParsedSms[] = [
+      sms("inr-1", "VM-TESTBK", now, { ...base, acc: "XX1234", currency: "INR" }),
+      sms("inr-2", "VM-TESTBK", now, { ...base, acc: "XX5678", currency: "INR" }),
+      sms("usd", "VM-TESTBK", now, { ...base, acc: "XX1234", currency: "USD" }),
+    ];
+
+    const { monthExpenseByCurrency, recent } = deriveDashboard(messages);
+
+    expect(monthExpenseByCurrency).toEqual({ INR: 1000, USD: 500 });
+    expect(recent).toHaveLength(3);
+  });
+
+  it("deduplicates referenced neutral wallet movements in recent activity", () => {
+    const transaction = {
+      bankName: "Test Wallet",
+      acc: "XX1234",
+      trxTypeRich: "WALLET_CREDIT" as const,
+      trx: "500.00",
+      currency: "INR",
+      ref: "REF-123",
+    };
+    const messages: ParsedSms[] = [
+      sms("sms-1", "VM-WALLET", now - 1000, transaction),
+      sms("sms-2", "VM-WALLET", now, transaction),
+    ];
+
+    const { recent } = deriveDashboard(messages);
+
+    expect(recent.map((message) => message.id)).toEqual(["sms-2"]);
+  });
+});
+
 describe("deriveDashboard — currency-separated monthly totals", () => {
   it("keeps a TRANSFER debit out of income and counts it as an expense", () => {
     const messages: ParsedSms[] = [
@@ -262,6 +416,26 @@ describe("deriveDashboard — currency-separated monthly totals", () => {
 // subscriptions.ts's output through — the heuristic's own cadence/
 // tolerance/recency behavior is exhaustively covered in subscriptions.test.ts.
 describe("deriveDashboard — subscriptions integration", () => {
+  it("does not infer a subscription from duplicate notifications sharing a reference", () => {
+    const transaction = {
+      bankName: "Test Bank",
+      acc: "XX1234",
+      trxTypeRich: "EXPENSE" as const,
+      trx: "199.00",
+      currency: "INR",
+      ref: "REF-123",
+      vendor: "Netflix",
+    };
+    const messages: ParsedSms[] = [
+      sms("sms-1", "VM-TESTBK", now - 30 * DAY_MS, transaction),
+      sms("sms-2", "VM-TESTBK", now, transaction),
+    ];
+
+    const { subscriptions } = deriveDashboard(messages);
+
+    expect(subscriptions).toHaveLength(0);
+  });
+
   it("surfaces a recognized recurring charge in dashboard.subscriptions", () => {
     const messages: ParsedSms[] = [
       sms("1", "VM-TESTBK", now - 30 * DAY_MS, {

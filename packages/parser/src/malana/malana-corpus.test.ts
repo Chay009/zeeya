@@ -4,7 +4,10 @@ import { MalanaEngine } from "./malana.js";
 import type { MalanaResult } from "./types.js";
 
 type FinancialExpectation = Partial<
-  Pick<MalanaResult, "category" | "trx" | "bal" | "acc" | "trxTypeRich" | "currency" | "otp">
+  Pick<
+    MalanaResult,
+    "category" | "trx" | "bal" | "acc" | "trxTypeRich" | "currency" | "otp" | "ref"
+  >
 >;
 
 interface GoldenSmsCase {
@@ -27,6 +30,15 @@ const GOLDEN_SMS_CASES: GoldenSmsCase[] = [
       acc: "XX1234",
       trxTypeRich: "EXPENSE",
       currency: "INR",
+    },
+  },
+  {
+    name: "debit reference is available for downstream duplicate detection",
+    message: "Rs.500 debited from A/c XX1234. Ref No 123456789012.",
+    expected: {
+      trx: "500",
+      trxTypeRich: "EXPENSE",
+      ref: "123456789012",
     },
   },
   {

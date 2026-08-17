@@ -90,6 +90,18 @@ function normalizeAcc(acc: string | null): string {
   return digits.slice(-4);
 }
 
+function referencedTransactionKey(message: ParsedSms): string | null {
+  const { result } = message;
+  const amount = parseAmount(result.trx);
+  if (!result.ref || !result.trxTypeRich || amount === null) return null;
+
+  const direction = trxDirection(result.trxTypeRich);
+  const institution = (result.bankName ?? message.sender).trim().toLowerCase();
+  const reference = result.ref.replace(/\s/g, "").toLowerCase();
+  const currency = result.currency ?? "INR";
+  return [institution, normalizeAcc(result.acc), reference, amount, currency, direction].join("|");
+}
+
 // Orchestrates the Dashboard model: latest known balance per bank account,
 // currency-separated income/expense totals for the current month, mandate
 // (Autopay) lifecycle aggregation — confirmed parser data, kept here rather
@@ -109,10 +121,30 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
   const monthExpenseByCurrency: Record<string, number> = {};
   const mandatesById = new Map<string, Mandate>();
   const recognized: ParsedSms[] = [];
+  const newestReferencedTransaction = new Map<string, ParsedSms>();
+  for (const message of messages) {
+    if (message.result.category === null) continue;
+    const key = referencedTransactionKey(message);
+    if (!key) continue;
+    const current = newestReferencedTransaction.get(key);
+    if (!current || message.date > current.date) newestReferencedTransaction.set(key, message);
+  }
+  const processedReferencedTransactions = new Set<string>();
+  const subscriptionMessages: ParsedSms[] = [];
 
   for (const m of messages) {
     const { result } = m;
     if (result.category === null) continue;
+
+    const transactionKey = referencedTransactionKey(m);
+    const isDuplicateTransaction = transactionKey
+      ? newestReferencedTransaction.get(transactionKey) !== m ||
+        processedReferencedTransactions.has(transactionKey)
+      : false;
+    if (transactionKey && !isDuplicateTransaction) {
+      processedReferencedTransactions.add(transactionKey);
+    }
+    if (!isDuplicateTransaction) subscriptionMessages.push(m);
 
     if (result.mandateId) {
       const merchant = result.mandateMerchant ?? result.brandName ?? result.bankName ?? m.sender;
@@ -173,7 +205,7 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
       }
     }
 
-    if (result.trxTypeRich && isSameMonth(new Date(m.date), now)) {
+    if (!isDuplicateTransaction && result.trxTypeRich && isSameMonth(new Date(m.date), now)) {
       const amount = parseAmount(result.trx);
       if (amount !== null) {
         const currency = result.currency ?? "INR";
@@ -190,10 +222,12 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
     // telecom "your plan is valid till..." notice can trigger the RECHARGE
     // tag without being a real recharge purchase. Require a real parsed
     // amount too, so informational notices don't show up as transactions.
-    if (result.trxTypeRich && parseAmount(result.trx) !== null) recognized.push(m);
+    if (!isDuplicateTransaction && result.trxTypeRich && parseAmount(result.trx) !== null) {
+      recognized.push(m);
+    }
   }
 
-  const subscriptions = deriveSubscriptions(messages, now);
+  const subscriptions = deriveSubscriptions(subscriptionMessages, now);
 
   recognized.sort((a, b) => b.date - a.date);
 

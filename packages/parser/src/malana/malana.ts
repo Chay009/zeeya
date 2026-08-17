@@ -437,6 +437,22 @@ export class MalanaEngine {
       }
     }
 
+    // The seed's REFNO grammar accepts REF NUM/NUMBER, but common bank copy
+    // inserts the independently-tokenized word "No" (REF NO NUM). Preserve
+    // the seed's token vocabulary while bridging that one-token gap so the
+    // dashboard can identify duplicate notifications for the same transfer.
+    if (!tags["ref"]) {
+      for (let i = 0; i < processed.length; i++) {
+        if (processed[i]!.type !== "REF") continue;
+        const valueIndex = processed[i + 1]?.type === "NO" ? i + 2 : i + 1;
+        const valueToken = processed[valueIndex];
+        if (valueToken?.type === "NUM" || valueToken?.type === "NUMBER") {
+          tags["ref"] = valueToken.text || valueToken.raw;
+          break;
+        }
+      }
+    }
+
     // Step 6: PATTERN/STRUCT extraction — extract named captures (#vendor, #item, etc.)
     const patternCaptures = runPatterns(this.getPatternsFor(category), processed);
     // Merge into tags (don't overwrite grammar-derived values)
