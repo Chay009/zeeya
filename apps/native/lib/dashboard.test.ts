@@ -76,6 +76,111 @@ function sms(id: string, sender: string, date: number, r: Partial<MalanaResult>)
   return { id, sender, body: "", date, result: result(r) };
 }
 
+describe("deriveDashboard — account identity", () => {
+  it("does not merge unknown accounts from different bank sender IDs", () => {
+    const messages: ParsedSms[] = [
+      sms("1", "VM-TEST-A", 1000, {
+        bankName: "Test Bank",
+        bal: "1000.00",
+        acc: null,
+      }),
+      sms("2", "VM-TEST-B", 2000, {
+        bankName: "Test Bank",
+        bal: "2000.00",
+        acc: null,
+      }),
+    ];
+
+    const { accounts } = deriveDashboard(messages);
+
+    expect(accounts).toHaveLength(2);
+    expect(accounts.map((account) => account.sender).sort()).toEqual(["VM-TEST-A", "VM-TEST-B"]);
+  });
+
+  it("keeps unknown-account history together for the same bank sender", () => {
+    const messages: ParsedSms[] = [
+      sms("1", "VM-TEST-A", 1000, {
+        bankName: "Test Bank",
+        bal: "1000.00",
+        acc: null,
+      }),
+      sms("2", "vm-test-a", 2000, {
+        bankName: "Test Bank",
+        bal: "2000.00",
+        acc: null,
+      }),
+    ];
+
+    const { accounts } = deriveDashboard(messages);
+
+    expect(accounts).toHaveLength(1);
+    expect(accounts[0]).toMatchObject({ balance: 2000, last4: null, sender: "vm-test-a" });
+    expect(accounts[0]!.history).toHaveLength(2);
+  });
+
+  it("merges different mask styles when the exact trailing digits match", () => {
+    const messages: ParsedSms[] = [
+      sms("1", "VM-TEST-A", 1000, {
+        bankName: "Test Bank",
+        bal: "1000.00",
+        acc: "XX1234",
+      }),
+      sms("2", "VM-TEST-B", 2000, {
+        bankName: "Test Bank",
+        bal: "2000.00",
+        acc: "**1234",
+      }),
+    ];
+
+    const { accounts } = deriveDashboard(messages);
+
+    expect(accounts).toHaveLength(1);
+    expect(accounts[0]).toMatchObject({ balance: 2000, last4: "1234" });
+    expect(accounts[0]!.history).toHaveLength(2);
+  });
+
+  it("does not pad or suffix-merge partial account digits", () => {
+    const messages: ParsedSms[] = [
+      sms("1", "VM-TEST-A", 1000, {
+        bankName: "Test Bank",
+        bal: "1000.00",
+        acc: "XX12",
+      }),
+      sms("2", "VM-TEST-A", 2000, {
+        bankName: "Test Bank",
+        bal: "2000.00",
+        acc: "XX0012",
+      }),
+    ];
+
+    const { accounts } = deriveDashboard(messages);
+
+    expect(accounts).toHaveLength(2);
+    expect(accounts.map((account) => account.last4).sort()).toEqual(["0012", "12"]);
+  });
+
+  it("does not merge an unknown account into a numbered account from the same sender", () => {
+    const messages: ParsedSms[] = [
+      sms("1", "VM-TEST-A", 1000, {
+        bankName: "Test Bank",
+        bal: "1000.00",
+        acc: null,
+      }),
+      sms("2", "VM-TEST-A", 2000, {
+        bankName: "Test Bank",
+        bal: "2000.00",
+        acc: "XX1234",
+      }),
+    ];
+
+    const { accounts } = deriveDashboard(messages);
+
+    expect(accounts).toHaveLength(2);
+    expect(accounts.map((account) => account.last4)).toContain(null);
+    expect(accounts.map((account) => account.last4)).toContain("1234");
+  });
+});
+
 describe("deriveDashboard — mandates", () => {
   it("groups messages sharing a mandateId into one mandate with full event history", () => {
     const messages: ParsedSms[] = [

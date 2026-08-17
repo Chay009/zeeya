@@ -177,7 +177,13 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
     }
 
     if (result.bal && result.bankName) {
-      const key = `${result.bankName}|${normalizeAcc(result.acc)}`;
+      const normalizedAcc = normalizeAcc(result.acc);
+      // Exact available digits are the strongest identity we have. When none
+      // exist, sender keeps separate bank channels from collapsing together.
+      // Do not pad or suffix-match partial digits ("12" vs "0012"): that can
+      // silently merge two real accounts and show the wrong balance.
+      const accountIdentity = normalizedAcc || `sender:${m.sender.trim().toLowerCase()}`;
+      const key = `${result.bankName}|${accountIdentity}`;
       const balance = parseAmount(result.bal);
       if (balance !== null) {
         const currency = result.currency ?? "INR";
@@ -186,7 +192,7 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
         if (!existing) {
           accountsByKey.set(key, {
             bankName: result.bankName,
-            last4: normalizeAcc(result.acc) || result.acc,
+            last4: normalizedAcc || result.acc,
             balance,
             currency,
             asOf: m.date,
