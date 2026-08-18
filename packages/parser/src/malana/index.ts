@@ -3,7 +3,16 @@ import { MalanaEngine } from "./malana";
 import { parseSeedData } from "./asset-schemas";
 
 export { MalanaEngine } from "./malana";
-export type { SeedData, MalanaResult, Token, TrxTypeRich } from "./types";
+export type {
+  SeedData,
+  MalanaResult,
+  Token,
+  TrxTypeRich,
+  MalanaCategory,
+  MalanaCategoryEvidence,
+  MalanaCategoryMatch,
+  MalanaCategoryRole,
+} from "./types";
 export {
   detectBank,
   detectMerchantCategory,

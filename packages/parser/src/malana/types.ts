@@ -40,8 +40,43 @@ export type TrxTypeRich =
   | "WALLET_DEBIT" // wallet spend or deduction
   | "ATM_WITHDRAWAL"; // ATM cash withdrawal
 
+export type MalanaCategory =
+  | "GRM_BANK"
+  | "GRM_BILL"
+  | "GRM_STOCKUPDATES"
+  | "GRM_TRAVEL"
+  | "GRM_DELIVERY"
+  | "GRM_EVENT"
+  | "GRM_APPOINTMENT"
+  | "GRM_NOTIF"
+  | "GRM_OTP"
+  | "GRM_OFFERS"
+  | "GRM_TELECOM"
+  | "GRM_CALLALERTS"
+  | "GRM_VOID";
+
+export type MalanaCategoryRole = "financial" | "information" | "safety" | "internal";
+
+export type MalanaCategoryEvidence =
+  | { kind: "grammar-tag"; value: string }
+  | { kind: "marker"; value: string }
+  | { kind: "policy"; value: "inactive-status" | "route" };
+
+export interface MalanaCategoryMatch {
+  category: MalanaCategory;
+  role: MalanaCategoryRole;
+  /** Typed facts that proved this category matched; ordered for deterministic diagnostics. */
+  evidence: MalanaCategoryEvidence[];
+  /** Category-local tags, retained so one facet does not overwrite another facet's facts. */
+  tags: Record<string, string>;
+}
+
 export interface MalanaResult {
   category: string | null; // GRM_BANK | GRM_OTP | GRM_TRAVEL | GRM_BILL | GRM_DELIVERY | etc.
+  /** Ordered category matches. Optional only for backwards-compatible user-created fixtures. */
+  matchedCategories?: MalanaCategory[];
+  /** Per-category provenance. Optional only for backwards-compatible user-created fixtures. */
+  categoryMatches?: MalanaCategoryMatch[];
   tags: Record<string, string>; // all grammar tags: trx, bal, acc, type, ref, bene, etc.
   tokens: Token[];
 

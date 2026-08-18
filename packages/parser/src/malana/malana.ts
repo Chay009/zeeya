@@ -1,10 +1,25 @@
-import type { Token, SeedData, MalanaResult, TrxTypeRich } from "./types";
+import type {
+  Token,
+  SeedData,
+  MalanaResult,
+  TrxTypeRich,
+  MalanaCategory,
+  MalanaCategoryEvidence,
+} from "./types";
 import { regexTokenize } from "./regex-tokenizer";
 import { KeywordTokenizer } from "./keyword-tokenizer";
 import { compileSeed } from "./grammar-compiler";
 import { runGrammar } from "./grammar-runner";
 import { compilePatterns, runPatterns } from "./pattern-extractor";
 import { CurrencyRegistry } from "./currency-registry";
+import {
+  categoryMarkerEvidence,
+  isMalanaCategory,
+  isProductCategory,
+  routePrimaryCategory,
+  selectCategoryCandidates,
+} from "./category-policy";
+import { composeCategoryResults, type ParsedCategory } from "./category-result";
 import {
   detectBank,
   detectMerchantCategory,
@@ -21,27 +36,6 @@ import {
 } from "./enrichment";
 
 // ── Grammar auto-routing ───────────────────────────────────────────────────────
-// Token types produced by the keyword tokenizer that identify a specific grammar.
-// Priority order: earlier rows win (OTP before TRAVEL before DELIVERY, etc.)
-const GRAMMAR_ROUTING: Array<[readonly string[], string]> = [
-  [["OTP", "PINCODE"], "GRM_OTP"],
-  [
-    ["FLIGHT", "PNR", "TICKET", "TICKETNO", "TRIPCODE", "BUSNO", "BOOKINGID", "MTICKET", "FLTID"],
-    "GRM_TRAVEL",
-  ],
-  [["ORDERID", "TRACKINGID", "ORDER", "TRACK"], "GRM_DELIVERY"],
-  [["OFFER", "OFFERSINTRX", "OFFERCODE", "USECODE", "OFFERS"], "GRM_OFFERS"],
-  [["STOCKEXCHNG", "STOCKTRADE", "STOCKUNITS"], "GRM_STOCKUPDATES"],
-];
-
-function routeGrammar(tokens: Token[], defaultCategory: string): string {
-  const types = new Set(tokens.map((t) => t.type));
-  for (const [markers, grammar] of GRAMMAR_ROUTING) {
-    if (markers.some((m) => types.has(m))) return grammar;
-  }
-  return defaultCategory;
-}
-
 // ── Token merge ────────────────────────────────────────────────────────────────
 // Merge regex-extracted tokens with keyword tokens, sorted by position in message.
 // Regex tokens take priority; keyword tokens only fill uncovered positions.
@@ -179,7 +173,7 @@ function hasInactiveTransactionStatus(message: string, tags: Record<string, stri
   // broad stemming in the keyword tokenizer would change every grammar family.
   // Require transaction context and a status-shaped ending so merchant/free
   // text such as "Declined Cafe" cannot invalidate a completed debit.
-  return /\b(?:transaction|txn|payment|purchase|withdrawal|debit|credit|charge)\b[^.!?]{0,80}\b(?:declined|failed|unsuccessful)\b(?=\s+(?:due|because|for|by|as)\b|[.!?,;]|$)/i.test(
+  return /\b(?:transaction|txn|payment|purchase|withdrawal|transfer|recharge|debit|credit|charge)\b[\s\S]{0,120}?\b(?:declined|failed|unsuccessful|reversed|pending|on hold)\b(?=\s+(?:at|due|because|for|by|as|since|until|with)\b|[.!?,;]|$)/i.test(
     message,
   );
 }
@@ -296,22 +290,61 @@ export class MalanaEngine {
   }
 
   parse(message: string, sender = "", defaultCategory = "GRM_BANK"): MalanaResult {
-    // Step 1: Tokenize
-    const regexToks = regexTokenize(message, this.currencyRegistry);
-    const kwToks = this.keywordTokenizer.tokenize(message);
-    const allTokens = mergeTokens(regexToks, kwToks, message);
-
-    // Step 2: Auto-route to the correct grammar category.
-    // Token-type routing wins (OTP/PNR/ORDER tokens are strongest signal — banks also send OTPs).
-    // Sender addr.json lookup is the fallback when no specific token type is detected.
-    const tokenCategory = routeGrammar(allTokens, "");
+    // Preserve the existing primary-category routing contract. Composition
+    // stays behind this interface so callers never manage grammar candidates.
+    const regexTokens = regexTokenize(message, this.currencyRegistry);
+    const keywordTokens = this.keywordTokenizer.tokenize(message);
+    const tokens = mergeTokens(regexTokens, keywordTokens, message);
     const senderGrammar = grammarForSender(sender);
-    const category = tokenCategory || senderGrammar || defaultCategory;
+    const requestedCategory = senderGrammar || defaultCategory;
+    const recognizedCategory = isMalanaCategory(requestedCategory) ? requestedCategory : null;
+    const fallbackCategory: MalanaCategory =
+      recognizedCategory && isProductCategory(recognizedCategory) ? recognizedCategory : "GRM_BANK";
+    const primaryCategory = routePrimaryCategory(tokens, fallbackCategory);
+    const detectedByRouting =
+      primaryCategory !== fallbackCategory ||
+      (Boolean(senderGrammar) && fallbackCategory !== defaultCategory);
+    const candidates = selectCategoryCandidates(tokens, primaryCategory);
+    if (hasInactiveTransactionStatus(message, {}) && !candidates.includes("GRM_NOTIF")) {
+      candidates.push("GRM_NOTIF");
+    }
 
+    const parsedByCategory = new Map<MalanaCategory, ParsedCategory>();
+    for (const category of candidates) {
+      const parsed = this.parseCategory(
+        message,
+        sender,
+        category,
+        category === primaryCategory && detectedByRouting,
+        regexTokens,
+        keywordTokens,
+        tokens,
+      );
+      parsed.evidence.push(...categoryMarkerEvidence(category, tokens));
+      if (category === "GRM_NOTIF" && hasInactiveTransactionStatus(message, parsed.result.tags)) {
+        parsed.evidence.push({ kind: "policy", value: "inactive-status" });
+      }
+      parsedByCategory.set(category, parsed);
+    }
+
+    return composeCategoryResults(primaryCategory, candidates, parsedByCategory, tokens);
+  }
+
+  private parseCategory(
+    message: string,
+    sender: string,
+    category: MalanaCategory,
+    detectedByRouting: boolean,
+    regexToks: Token[],
+    kwToks: Token[],
+    allTokens: Token[],
+  ): ParsedCategory {
     // Step 3: Compile grammar layers for category (cached — see getLayersFor)
     const layers = this.getLayersFor(category);
-    // Routing itself constitutes detection when we've moved away from the default
-    let detectedCategory: string | null = category !== defaultCategory ? category : null;
+    // Routing is evidence for the legacy primary category. Additional
+    // categories must prove themselves through category-local grammar tags.
+    let detectedCategory: string | null = detectedByRouting ? category : null;
+    const evidence: MalanaCategoryEvidence[] = [];
 
     // Step 4: Run grammar FSA passes
     const processed = runGrammar(allTokens, layers);
@@ -341,6 +374,7 @@ export class MalanaEngine {
           const tagValue = pickTagValue(tag, token.values);
           if (tagValue) {
             tags[tag] = tagValue;
+            evidence.push({ kind: "grammar-tag", value: tag });
             delete tagCurrencies[tag];
             if (token.values["currency"]) tagCurrencies[tag] = token.values["currency"];
           }
@@ -457,7 +491,9 @@ export class MalanaEngine {
     const patternCaptures = runPatterns(this.getPatternsFor(category), processed);
     // Merge into tags (don't overwrite grammar-derived values)
     for (const [k, v] of Object.entries(patternCaptures)) {
-      if (v && !tags[k]) tags[k] = v;
+      if (v && !tags[k]) {
+        tags[k] = v;
+      }
     }
 
     // Step 7: Brand enrichment — check extracted merchant text first, then fall back to raw message
@@ -592,7 +628,7 @@ export class MalanaEngine {
       spamScore: spam.score,
     };
 
-    return result;
+    return { result, evidence };
   }
 }
 
