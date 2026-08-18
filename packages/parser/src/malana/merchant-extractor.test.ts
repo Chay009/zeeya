@@ -3,6 +3,8 @@ import { MalanaEngine } from "./malana.js";
 import { seedData } from "./index.js";
 import {
   extractRawMerchant,
+  extractMerchantWithAnchors,
+  compileAnchors,
   isValidMerchantCandidate,
   extractLegacyMerchant,
 } from "./merchant-extractor.js";
@@ -153,6 +155,56 @@ describe("isValidMerchantName / isValidMerchantCandidate — mirrors Cashiro's i
 
   it("rejects a no-letter candidate even when it isn't purely digits", () => {
     expect(isValidMerchantCandidate("12-34")).toBe(false);
+  });
+});
+
+describe("bank-scoped anchors — mechanism only, no real production rules yet", () => {
+  // Synthetic rules, not merchant-patterns.json entries: proves the
+  // bank-scoping wiring itself (priority order, bankName matching) without
+  // adding invented bank-specific patterns to the shared, evidence-only
+  // rule file. merchant-patterns.json stays empty of "banks" entries until
+  // a real garbled label from a specific bank demonstrates the generic
+  // Cashiro anchors miss it.
+  const anchors = compileAnchors([
+    { id: "generic_to", before: "to\\s+", after: "(?:\\s+on|\\s+Ref)" },
+    {
+      id: "hdfc_paid_towards",
+      before: "paid\\s+towards\\s+",
+      after: "\\s+on",
+      banks: ["HDFC Bank"],
+    },
+  ]);
+
+  it("tries a matching bank-scoped anchor before the generic one", () => {
+    const msg = "You paid towards Local Grocer on 15-08-26.";
+    // The generic "to" anchor doesn't match this message shape at all, so
+    // this alone doesn't prove priority order — see the next test for that.
+    expect(extractMerchantWithAnchors(msg, anchors, "HDFC Bank")).toBe("Local Grocer");
+  });
+
+  it("skips a bank-scoped anchor when bankName doesn't match, falling through to the generic one", () => {
+    const msg = "You paid towards Local Grocer on 15-08-26.";
+    expect(extractMerchantWithAnchors(msg, anchors, "ICICI Bank")).toBeNull();
+    expect(extractMerchantWithAnchors(msg, anchors, null)).toBeNull();
+  });
+
+  it("prefers the bank-scoped match over a generic anchor that would also match", () => {
+    const bothMatch = compileAnchors([
+      { id: "generic_to", before: "to\\s+", after: "(?:\\s+on|\\s+Ref)" },
+      { id: "hdfc_to", before: "to\\s+", after: "\\s+Ref", banks: ["HDFC Bank"] },
+    ]);
+    const msg = "You paid to Real Merchant Ref 12345 on 15-08-26.";
+    // Both anchors can match this message; the bank-scoped one must win
+    // when the bank matches, since it's tried first (Cashiro's own
+    // subclass-before-base-class order).
+    expect(extractMerchantWithAnchors(msg, bothMatch, "HDFC Bank")).toBe("Real Merchant");
+  });
+
+  it("merchant-patterns.json itself has no bank-scoped rules yet (evidence-first)", async () => {
+    const raw = (await import("./data/merchant-patterns.json")).default as Array<{
+      banks?: string[];
+    }>;
+    expect(raw.every((rule) => !rule.banks)).toBe(true);
   });
 });
 

@@ -491,13 +491,17 @@ export class MalanaEngine {
     // to mandate messages specifically and could false-match unrelated text.
     const mandateMerchantMatch = tags["mandateid"] ? extractMandateMerchant(message) : null;
 
+    // Computed once, ahead of the result literal, so extractRawMerchant can
+    // scope bank-specific anchors to the same bankName the result exposes.
+    const detectedBankName = detectBank(sender, message);
+
     // Build typed result
     const result: MalanaResult = {
       category: detectedCategory,
       tags,
       tokens: processed,
 
-      bankName: detectBank(sender, message),
+      bankName: detectedBankName,
       merchantCategory: brandMatch?.category ?? detectMerchantCategory(merchantText),
       subcategory: detectSubcategory(tags),
 
@@ -517,7 +521,7 @@ export class MalanaEngine {
       // #vendor/#billvendor/#merchant capture (also validated) — see
       // merchant-extractor.ts for why raw text is tried first.
       vendor:
-        extractRawMerchant(message) ??
+        extractRawMerchant(message, detectedBankName) ??
         extractLegacyMerchant(tags["vendor"] || tags["billvendor"] || tags["merchant"] || null),
       location: tags["location"] || detectLocation(message),
 

@@ -99,11 +99,23 @@ interface AnchorRule {
   id: string;
   before: string;
   after: string;
+  // Optional bank scoping, mirroring Cashiro's per-bank parser overrides
+  // (e.g. AxisBankParser/HSBCBankParser extending the base BankParser and
+  // trying their own patterns before falling back to the generic ones).
+  // Match against MalanaResult.bankName's canonical name (from
+  // enrichment.ts's detectBank / bank.json), e.g. "HDFC Bank",
+  // "State Bank of India". Omit for a bank-agnostic anchor. Deliberately
+  // empty in merchant-patterns.json right now — no rule here should be
+  // bank-scoped until a real garbled label from that bank proves the
+  // generic anchors miss it; this is the mechanism, not pre-populated
+  // guesses.
+  banks?: string[];
 }
 
 interface CompiledAnchor {
   id: string;
   regex: RegExp;
+  banks: string[] | null;
 }
 
 // Capture shape ported from Cashiro's own anchors: [^.\n]+? (non-greedy, any
@@ -120,7 +132,11 @@ function compileAnchors(rules: AnchorRule[]): CompiledAnchor[] {
   return rules.map((rule) => {
     const pattern = `(?:${rule.before})([^.\\n]{1,${CAPTURE_MAX}}?)(?=${rule.after})`;
     try {
-      return { id: rule.id, regex: new RegExp(pattern, "i") };
+      return {
+        id: rule.id,
+        regex: new RegExp(pattern, "i"),
+        banks: rule.banks && rule.banks.length > 0 ? rule.banks : null,
+      };
     } catch (err) {
       throw new Error(`merchant-patterns.json: invalid anchor "${rule.id}": ${String(err)}`);
     }
@@ -256,15 +272,37 @@ export function isValidMerchantCandidate(candidate: string): boolean {
   return true;
 }
 
-// Try anchors in file order — Cashiro's own ALL_PATTERNS order: TO, FROM,
-// AT, FOR (CompiledPatterns.kt line 50) — mirroring BankParser.extractMerchant
-// (lines 307-318): for each anchor, take its first match only, clean it,
-// validate it, and return on the first anchor whose result survives; an
-// anchor whose match fails validation is abandoned entirely (no retry against
-// a later occurrence of the same anchor in the message) and the loop moves to
-// the next anchor.
-export function extractRawMerchant(message: string): string | null {
-  for (const anchor of compiledAnchors) {
+// Bank-scoped anchors (banks !== null) are tried first, in file order, then
+// bank-agnostic ones — mirroring Cashiro's class hierarchy, where a bank's
+// own BankParser override (e.g. AxisBankParser.extractMerchant) is tried
+// before falling back to the generic BankParser.extractMerchant.
+function anchorsInPriorityOrder(anchors: CompiledAnchor[]): CompiledAnchor[] {
+  const scoped = anchors.filter((a) => a.banks !== null);
+  const unscoped = anchors.filter((a) => a.banks === null);
+  return [...scoped, ...unscoped];
+}
+// Computed once per module load since the real rule set (merchant-patterns.json)
+// is static.
+const prioritizedAnchors = anchorsInPriorityOrder(compiledAnchors);
+
+// Try anchors in priority order (bank-scoped first, then Cashiro's own
+// ALL_PATTERNS order: TO, FROM, AT, FOR — CompiledPatterns.kt line 50) —
+// mirroring BankParser.extractMerchant (lines 307-318): for each anchor,
+// take its first match only, clean it, validate it, and return on the first
+// anchor whose result survives; an anchor whose match fails validation is
+// abandoned entirely (no retry against a later occurrence of the same
+// anchor in the message) and the loop moves to the next anchor.
+//
+// Split out from extractRawMerchant so tests can exercise the bank-scoping
+// mechanism against a synthetic rule set, without adding fake production
+// rules to merchant-patterns.json just to prove the wiring works.
+export function extractMerchantWithAnchors(
+  message: string,
+  anchors: CompiledAnchor[],
+  bankName?: string | null,
+): string | null {
+  for (const anchor of anchorsInPriorityOrder(anchors)) {
+    if (anchor.banks && (!bankName || !anchor.banks.includes(bankName))) continue;
     const match = anchor.regex.exec(message);
     const raw = match?.[1];
     if (!raw) continue;
@@ -274,6 +312,20 @@ export function extractRawMerchant(message: string): string | null {
   }
   return null;
 }
+
+// bankName scopes which bank-specific anchors are eligible — pass the
+// canonical name from MalanaResult.bankName (enrichment.ts's detectBank).
+// null/undefined means only bank-agnostic anchors run.
+export function extractRawMerchant(message: string, bankName?: string | null): string | null {
+  return extractMerchantWithAnchors(message, prioritizedAnchors, bankName);
+}
+
+// Exposed for tests only — lets a test compile a synthetic anchor rule set
+// (e.g. a fake bank-scoped rule) through the same compileAnchors codepath
+// real rules go through, instead of hand-building CompiledAnchor objects
+// that could drift from what compileAnchors actually produces.
+export { compileAnchors };
+export type { AnchorRule, CompiledAnchor };
 
 // Validates the existing token-based #vendor/#billvendor/#merchant capture
 // through the same gate the raw-anchor path uses, so a candidate's origin
