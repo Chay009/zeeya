@@ -533,6 +533,9 @@ function TransactionRow({ item, isRecurring }: { item: ParsedSms; isRecurring: b
           {formatDate(item.date)}
           {isRecurring ? " · Recurring" : ""}
         </Text>
+        {result.bankName && result.bankName !== label && (
+          <Text style={{ color: t.textMuted, fontSize: 11 }}>{result.bankName}</Text>
+        )}
       </View>
       {amount !== null && (
         <Text
