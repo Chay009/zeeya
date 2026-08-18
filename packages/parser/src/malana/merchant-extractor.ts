@@ -105,7 +105,7 @@
 // not chased with an ever-growing reject list.
 
 import merchantPatternsRaw from "./data/merchant-patterns.json";
-import { regexTokenize } from "./regex-tokenizer.js";
+import { regexTokenize } from "./regex-tokenizer";
 
 interface AnchorRule {
   id: string;
