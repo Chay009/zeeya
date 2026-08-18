@@ -464,14 +464,28 @@ export class MalanaEngine {
       if (v && !tags[k]) tags[k] = v;
     }
 
-    // Step 7: Brand enrichment — check extracted merchant text first, then fall back to raw message
-    const merchantText =
-      tags["bene"] ||
-      tags["vendor"] ||
-      tags["billvendor"] ||
-      tags["merchant"] ||
-      tags["item"] ||
-      "";
+    // Computed once, ahead of Step 7, so both brand detection and the
+    // result's own `vendor` field use the exact same validated merchant
+    // text — previously brand detection ran against the raw, unvalidated
+    // #vendor/#billvendor/#merchant capture (the same swallowed-capture-bug
+    // text merchant-extractor.ts was built to stop showing), so brandName
+    // could come out wrong/garbled even after vendor itself was fixed, and
+    // the UI shows brandName ahead of vendor (see apps/native's
+    // TransactionRow: `brandName ?? vendor ?? bankName ?? sender`) — so a
+    // bad brandName silently masked the vendor fix entirely. Confirmed via
+    // real device testing after the vendor fix landed: Recent transactions
+    // still showed bad names because this path was untouched.
+    const detectedBankName = detectBank(sender, message);
+    const resolvedVendor =
+      extractRawMerchant(message, detectedBankName) ??
+      extractLegacyMerchant(tags["vendor"] || tags["billvendor"] || tags["merchant"] || null);
+
+    // Step 7: Brand enrichment — check the validated merchant text first,
+    // then fall back to raw message. The raw-message fallback is a known
+    // residual risk (substring match against the entire SMS body can hit
+    // an unrelated brand token) — not addressed here, only the primary
+    // input being unvalidated garbage is.
+    const merchantText = resolvedVendor || tags["bene"] || tags["merchant"] || tags["item"] || "";
     const brandMatch = detectBrand(merchantText) ?? detectBrand(message);
 
     // Step 8: UPI handle detection — if bene/vendor looks like a VPA, confirm handle
@@ -490,10 +504,6 @@ export class MalanaEngine {
     // already confirmed present — its "towards X for Y" anchor isn't scoped
     // to mandate messages specifically and could false-match unrelated text.
     const mandateMerchantMatch = tags["mandateid"] ? extractMandateMerchant(message) : null;
-
-    // Computed once, ahead of the result literal, so extractRawMerchant can
-    // scope bank-specific anchors to the same bankName the result exposes.
-    const detectedBankName = detectBank(sender, message);
 
     // Build typed result
     const result: MalanaResult = {
@@ -519,10 +529,9 @@ export class MalanaEngine {
       beneAcc: tags["beneacc"] || null,
       // Raw-text anchor match first (validated), then the token-based
       // #vendor/#billvendor/#merchant capture (also validated) — see
-      // merchant-extractor.ts for why raw text is tried first.
-      vendor:
-        extractRawMerchant(message, detectedBankName) ??
-        extractLegacyMerchant(tags["vendor"] || tags["billvendor"] || tags["merchant"] || null),
+      // merchant-extractor.ts for why raw text is tried first. Computed
+      // once, above, as resolvedVendor — also feeds brand detection.
+      vendor: resolvedVendor,
       location: tags["location"] || detectLocation(message),
 
       // OTP fields
