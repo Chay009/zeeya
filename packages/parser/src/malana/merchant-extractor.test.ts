@@ -97,8 +97,14 @@ describe("isValidMerchantCandidate — rejection gate", () => {
     expect(isValidMerchantCandidate("To The Moon Cafe")).toBe(true);
   });
 
-  it("rejects the confirmed real boilerplate phrase", () => {
+  it("rejects a boilerplate phrase loaded from merchant-boilerplate.json", () => {
     expect(isValidMerchantCandidate("avoid as per T&C Ignore")).toBe(false);
+  });
+
+  it("merchant-boilerplate.json is a growable list — adding a phrase there needs no code change", async () => {
+    const phrases = (await import("./data/merchant-boilerplate.json")).default as string[];
+    expect(phrases.length).toBeGreaterThan(0);
+    expect(phrases.every((p) => typeof p === "string")).toBe(true);
   });
 
   it("rejects punctuation-only noise", () => {

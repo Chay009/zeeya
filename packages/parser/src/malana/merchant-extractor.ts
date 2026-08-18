@@ -93,6 +93,7 @@
 // ported Cashiro logic.
 
 import merchantPatternsRaw from "./data/merchant-patterns.json";
+import merchantBoilerplateRaw from "./data/merchant-boilerplate.json";
 import { regexTokenize } from "./regex-tokenizer.js";
 
 interface AnchorRule {
@@ -239,10 +240,14 @@ function isValidMerchantName(name: string): boolean {
 }
 
 // Confirmed from a real garbled label ("avoid as per T&C Ignore" — see
-// task #7). Deliberately a short, evidence-backed list, not a guess at every
-// possible disclaimer phrasing — extend only when a real example demands it.
+// task #7). Data-driven (merchant-boilerplate.json) so a newly confirmed
+// phrase is a JSON row, not a code change — deliberately a short,
+// evidence-backed list, not a guess at every possible disclaimer phrasing;
+// extend only when a real example demands it.
 // NOT part of the Cashiro port — an app-specific guard.
-const BOILERPLATE_SUBSTRINGS = ["avoid as per t&c"];
+const BOILERPLATE_SUBSTRINGS = (merchantBoilerplateRaw as string[]).map((phrase) =>
+  phrase.toLowerCase(),
+);
 
 // NOT part of the Cashiro port — app-specific guards for shapes Cashiro's
 // own validator doesn't need to reject (its raw-text anchors and calling
