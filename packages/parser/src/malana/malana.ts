@@ -4,6 +4,7 @@ import { KeywordTokenizer } from "./keyword-tokenizer";
 import { compileSeed } from "./grammar-compiler";
 import { runGrammar } from "./grammar-runner";
 import { compilePatterns, runPatterns } from "./pattern-extractor";
+import { extractRawMerchant, extractLegacyMerchant } from "./merchant-extractor";
 import {
   detectBank,
   detectMerchantCategory,
@@ -512,7 +513,12 @@ export class MalanaEngine {
       ref: tags["ref"] || null,
       bene: tags["bene"] || null,
       beneAcc: tags["beneacc"] || null,
-      vendor: tags["vendor"] || tags["billvendor"] || tags["merchant"] || null,
+      // Raw-text anchor match first (validated), then the token-based
+      // #vendor/#billvendor/#merchant capture (also validated) — see
+      // merchant-extractor.ts for why raw text is tried first.
+      vendor:
+        extractRawMerchant(message) ??
+        extractLegacyMerchant(tags["vendor"] || tags["billvendor"] || tags["merchant"] || null),
       location: tags["location"] || detectLocation(message),
 
       // OTP fields

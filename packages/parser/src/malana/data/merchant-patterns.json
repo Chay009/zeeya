@@ -1,0 +1,7 @@
+[
+  {
+    "id": "upi_trf_to_ref",
+    "before": "\\btrf\\s+to\\s+",
+    "after": "\\s+ref(?:\\s*no)?\\b"
+  }
+]
