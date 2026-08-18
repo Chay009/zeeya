@@ -36,6 +36,28 @@ describe("MalanaEngine.parse() — vendor field uses the raw anchor over the gar
     const r = engine.parse(msg, "VM-SBIUPI");
     expect(r.vendor).toBe("shopname");
   });
+
+  it("real UPI debit to ZERODHA BROKING — anchor recovers the correct merchant", () => {
+    const msg =
+      "Dear UPI user A/C X1434 debited by 999.00 on date 15Jul26 trf to ZERODHA BROKING Refno 046545973198 If not u? call-1800111109 for other services-18001234-SBI";
+    const r = engine.parse(msg, "VM-SBIUPI");
+    expect(r.vendor).toBe("ZERODHA BROKING");
+  });
+
+  // Real garbled label (task #7): "avoid as per T&C ignore" was shown as a
+  // merchant name. Traced to root cause: every word in that phrase tokenizes
+  // as a real Truecaller keyword (AVOID/AS/PER/PREMOREINFOURL/IGNORE), not
+  // free text — the legacy token-based #vendor capture can only ever grab
+  // recognized dictionary vocabulary, never a genuine merchant name, so it
+  // was removed as a fallback entirely (see merchant-extractor.ts's header
+  // comment). No anchor matches this message shape (it's a payment
+  // reminder, not "X trf to Y"), so vendor must be null now, not garbage.
+  it("HDFC overdraft reminder — no anchor matches, vendor is null instead of the disclaimer text", () => {
+    const msg =
+      "Long Overdue Alert:\nYour HDFC Bank CSA Overdraft A/c xxxxxxxx4317 is still overdue.Pay Rs.300 today to avoid action as per T&C.\nignore if paid.";
+    const r = engine.parse(msg, "VM-HDFCBK");
+    expect(r.vendor).toBeNull();
+  });
 });
 
 describe("isValidMerchantCandidate — rejection gate", () => {

@@ -4,7 +4,7 @@ import { KeywordTokenizer } from "./keyword-tokenizer";
 import { compileSeed } from "./grammar-compiler";
 import { runGrammar } from "./grammar-runner";
 import { compilePatterns, runPatterns } from "./pattern-extractor";
-import { extractRawMerchant, extractLegacyMerchant } from "./merchant-extractor";
+import { extractRawMerchant } from "./merchant-extractor";
 import {
   detectBank,
   detectMerchantCategory,
@@ -466,19 +466,30 @@ export class MalanaEngine {
 
     // Computed once, ahead of Step 7, so both brand detection and the
     // result's own `vendor` field use the exact same validated merchant
-    // text — previously brand detection ran against the raw, unvalidated
-    // #vendor/#billvendor/#merchant capture (the same swallowed-capture-bug
-    // text merchant-extractor.ts was built to stop showing), so brandName
-    // could come out wrong/garbled even after vendor itself was fixed, and
-    // the UI shows brandName ahead of vendor (see apps/native's
-    // TransactionRow: `brandName ?? vendor ?? bankName ?? sender`) — so a
-    // bad brandName silently masked the vendor fix entirely. Confirmed via
-    // real device testing after the vendor fix landed: Recent transactions
-    // still showed bad names because this path was untouched.
+    // text.
+    //
+    // extractLegacyMerchant (the token-based #vendor/#billvendor/#merchant
+    // PATTERN capture) was dropped entirely as a fallback here — not just
+    // patched again. Traced two real messages and found this isn't an
+    // occasional bug, it's structural: pattern-extractor.ts's free-text
+    // capture only ever sees tokens that made it into the token stream,
+    // and in this token model, a genuine merchant name (e.g. "shopname")
+    // is USUALLY ABSENT from the stream entirely — neither tokenizer
+    // recognizes it as anything, so there's no token for the capture to
+    // grab. What the capture actually grabs instead is boilerplate/
+    // disclaimer language, because THAT is real recognized seed
+    // vocabulary: confirmed directly — "avoid as per T&C ignore" (a real
+    // garbled label) is tokenized as AVOID/AS/PER/PREMOREINFOURL/IGNORE,
+    // five individually-typed keyword tokens, not free text at all. So
+    // this fallback can only ever capture recognized dictionary keywords,
+    // and a real merchant name is almost never a sequence of grammar
+    // keywords — it was never capable of recovering a correct name, only
+    // capable of occasionally guessing right when captured text happened
+    // to look plausible. Better to return null (falls back to bankName/
+    // sender in the UI) than trust a mechanism proven structurally unable
+    // to produce a merchant name.
     const detectedBankName = detectBank(sender, message);
-    const resolvedVendor =
-      extractRawMerchant(message, detectedBankName) ??
-      extractLegacyMerchant(tags["vendor"] || tags["billvendor"] || tags["merchant"] || null);
+    const resolvedVendor = extractRawMerchant(message, detectedBankName);
 
     // Step 7: Brand enrichment — check the validated merchant text first,
     // then fall back to raw message. The raw-message fallback is a known

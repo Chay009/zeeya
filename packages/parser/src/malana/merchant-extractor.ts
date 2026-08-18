@@ -79,17 +79,31 @@
 // alongside.
 //
 // ---------------------------------------------------------------------------
-// Two extraction paths, one shared validation gate:
-//   extractRawMerchant   — anchor-based, matches this file's JSON patterns
-//   extractLegacyMerchant — validates the existing token-based #vendor/
-//                           #billvendor/#merchant capture as a fallback
-// Neither path is trusted on its own; isValidMerchantCandidate is the single
-// gate both go through before a name is ever shown. isValidMerchantCandidate
-// wraps the faithfully-ported isValidMerchantName with a few additional,
-// evidence-backed guards that are NOT present in Cashiro's source (masked
-// account numbers, decimal amounts, tokenizer-recognized structured values).
-// Those extra guards predate this port and are called out explicitly below
-// so they are never mistaken for ported Cashiro logic.
+// extractRawMerchant (anchor-based, matches this file's JSON patterns) is
+// the only extraction path malana.ts uses for the vendor field.
+// isValidMerchantCandidate is the gate its result goes through before a
+// name is ever shown. It wraps the faithfully-ported isValidMerchantName
+// with a few additional, evidence-backed guards that are NOT present in
+// Cashiro's source (masked account numbers, decimal amounts, tokenizer-
+// recognized structured values). Those extra guards predate this port and
+// are called out explicitly below so they are never mistaken for ported
+// Cashiro logic.
+//
+// extractLegacyMerchant validates the token-based #vendor/#billvendor/
+// #merchant PATTERN capture the same way, but is NOT used by malana.ts
+// anymore (kept here, tested, as a standalone utility only). It was
+// removed as a fallback after tracing a real garbled label ("avoid as per
+// T&C ignore") to its root cause: pattern-extractor.ts's free-text capture
+// only ever sees tokens present in the token stream, and in this token
+// model a genuine merchant name is usually ABSENT from the stream
+// entirely — unrecognized by either tokenizer, so there's no token for it
+// to grab (confirmed separately with "shopname"). What it grabs instead is
+// recognized seed vocabulary that happens not to be on its structural stop
+// list — confirmed directly: "avoid as per T&C ignore" tokenizes as five
+// individually-typed keywords (AVOID/AS/PER/PREMOREINFOURL/IGNORE), not
+// free text. So this capture can only ever produce dictionary-keyword
+// text, and a real merchant name is almost never a sequence of grammar
+// keywords — it was never capable of reliably recovering a correct name.
 //
 // Deliberately NOT here: a growable list of rejected boilerplate/disclaimer
 // substrings. That was tried and removed — disclaimer phrasing is
@@ -98,11 +112,7 @@
 // forever while still missing the next phrasing. Every check in this file
 // is instead a bounded, enumerable category (a closed word set, "is this
 // entirely a number/date/amount", "is this a masked account shape") that
-// doesn't need to grow as more examples are found. A boilerplate string
-// that slips through should be fixed at its source — why did the anchor or
-// the legacy token capture produce it as a candidate at all — the same way
-// the DATE/DT/SAL swallowing bug was root-caused in pattern-extractor.ts,
-// not chased with an ever-growing reject list.
+// doesn't need to grow as more examples are found.
 
 import merchantPatternsRaw from "./data/merchant-patterns.json";
 import { regexTokenize } from "./regex-tokenizer";
