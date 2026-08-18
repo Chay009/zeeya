@@ -97,15 +97,11 @@ describe("isValidMerchantCandidate — rejection gate", () => {
     expect(isValidMerchantCandidate("To The Moon Cafe")).toBe(true);
   });
 
-  it("rejects a boilerplate phrase loaded from merchant-boilerplate.json", () => {
-    expect(isValidMerchantCandidate("avoid as per T&C Ignore")).toBe(false);
-  });
-
-  it("merchant-boilerplate.json is a growable list — adding a phrase there needs no code change", async () => {
-    const phrases = (await import("./data/merchant-boilerplate.json")).default as string[];
-    expect(phrases.length).toBeGreaterThan(0);
-    expect(phrases.every((p) => typeof p === "string")).toBe(true);
-  });
+  // A prior pass rejected "avoid as per T&C Ignore" via a growable
+  // boilerplate-substring denylist. Removed deliberately: disclaimer
+  // phrasing is open-ended, so a denylist of specific strings never
+  // converges. Only bounded, enumerable categories are checked now — see
+  // the file-header comment in merchant-extractor.ts for why.
 
   it("rejects punctuation-only noise", () => {
     expect(isValidMerchantCandidate("...")).toBe(false);

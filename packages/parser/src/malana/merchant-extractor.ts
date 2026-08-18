@@ -87,13 +87,24 @@
 // gate both go through before a name is ever shown. isValidMerchantCandidate
 // wraps the faithfully-ported isValidMerchantName with a few additional,
 // evidence-backed guards that are NOT present in Cashiro's source (masked
-// account numbers, a confirmed real boilerplate phrase, decimal amounts,
-// tokenizer-recognized structured values). Those extra guards predate this
-// port and are called out explicitly below so they are never mistaken for
-// ported Cashiro logic.
+// account numbers, decimal amounts, tokenizer-recognized structured values).
+// Those extra guards predate this port and are called out explicitly below
+// so they are never mistaken for ported Cashiro logic.
+//
+// Deliberately NOT here: a growable list of rejected boilerplate/disclaimer
+// substrings. That was tried and removed — disclaimer phrasing is
+// open-ended (banks can phrase "ignore if not you" a thousand different
+// ways), so a denylist of specific strings never converges; it only grows
+// forever while still missing the next phrasing. Every check in this file
+// is instead a bounded, enumerable category (a closed word set, "is this
+// entirely a number/date/amount", "is this a masked account shape") that
+// doesn't need to grow as more examples are found. A boilerplate string
+// that slips through should be fixed at its source — why did the anchor or
+// the legacy token capture produce it as a candidate at all — the same way
+// the DATE/DT/SAL swallowing bug was root-caused in pattern-extractor.ts,
+// not chased with an ever-growing reject list.
 
 import merchantPatternsRaw from "./data/merchant-patterns.json";
-import merchantBoilerplateRaw from "./data/merchant-boilerplate.json";
 import { regexTokenize } from "./regex-tokenizer.js";
 
 interface AnchorRule {
@@ -239,16 +250,6 @@ function isValidMerchantName(name: string): boolean {
   );
 }
 
-// Confirmed from a real garbled label ("avoid as per T&C Ignore" — see
-// task #7). Data-driven (merchant-boilerplate.json) so a newly confirmed
-// phrase is a JSON row, not a code change — deliberately a short,
-// evidence-backed list, not a guess at every possible disclaimer phrasing;
-// extend only when a real example demands it.
-// NOT part of the Cashiro port — an app-specific guard.
-const BOILERPLATE_SUBSTRINGS = (merchantBoilerplateRaw as string[]).map((phrase) =>
-  phrase.toLowerCase(),
-);
-
 // NOT part of the Cashiro port — app-specific guards for shapes Cashiro's
 // own validator doesn't need to reject (its raw-text anchors and calling
 // context differ from ours).
@@ -266,9 +267,6 @@ const PURE_NUMBER_RE = /^\d+([.,]\d+)?$/; // catches decimals ("50.00"), which
 // isValidMerchantName plus the app-specific extra guards documented above.
 export function isValidMerchantCandidate(candidate: string): boolean {
   if (!isValidMerchantName(candidate)) return false;
-
-  const lower = candidate.toLowerCase();
-  if (BOILERPLATE_SUBSTRINGS.some((phrase) => lower.includes(phrase))) return false;
 
   if (PURE_NUMBER_RE.test(candidate)) return false;
   if (MASKED_ACCOUNT_RE.test(candidate)) return false;
