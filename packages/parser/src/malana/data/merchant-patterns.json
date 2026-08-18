@@ -1,7 +1,22 @@
 [
   {
-    "id": "upi_trf_to_ref",
-    "before": "\\btrf\\s+to\\s+",
-    "after": "\\s+ref(?:\\s*no)?\\b"
+    "id": "cashiro_to",
+    "before": "to\\s+",
+    "after": "(?:\\s+on|\\s+at|\\s+Ref|\\s+UPI)"
+  },
+  {
+    "id": "cashiro_from",
+    "before": "from\\s+",
+    "after": "(?:\\s+on|\\s+at|\\s+Ref|\\s+UPI)"
+  },
+  {
+    "id": "cashiro_at",
+    "before": "at\\s+",
+    "after": "(?:\\s+on|\\s+Ref)"
+  },
+  {
+    "id": "cashiro_for",
+    "before": "for\\s+",
+    "after": "(?:\\s+on|\\s+at|\\s+Ref)"
   }
 ]

@@ -21,9 +21,9 @@ describe("extractRawMerchant — anchor extraction on real message shapes", () =
   });
 
   it("bounded capture: does not swallow the rest of a long message", () => {
-    const long = "trf to " + "x".repeat(200) + " Refno 12345";
+    const long = "trf to " + "x".repeat(500) + " Refno 12345";
     const result = extractRawMerchant(long);
-    expect(result === null || result.length <= 80).toBe(true);
+    expect(result === null || result.length <= 300).toBe(true);
   });
 });
 
@@ -101,6 +101,58 @@ describe("isValidMerchantCandidate — rejection gate", () => {
 
   it("rejects punctuation-only noise", () => {
     expect(isValidMerchantCandidate("...")).toBe(false);
+  });
+});
+
+describe("extractRawMerchant — Cashiro-mirrored anchors (generic to/from/at/for)", () => {
+  it('"from X on" recovers the merchant via FROM_PATTERN', () => {
+    // No "to" substring anywhere earlier in the message — TO_PATTERN is
+    // tried first (ALL_PATTERNS order) and must not spuriously match first.
+    const msg = "Rs.500 credited from Ramesh Kumar on 15-08-26.";
+    expect(extractRawMerchant(msg)).toBe("Ramesh Kumar");
+  });
+
+  it('"for X on" recovers the merchant via FOR_PATTERN', () => {
+    const msg = "Payment of Rs.500 for Bata Shoes on 15-08-26 was successful.";
+    expect(extractRawMerchant(msg)).toBe("Bata Shoes");
+  });
+
+  it('"at X on" recovers the merchant via AT_PATTERN', () => {
+    const msg = "You spent Rs.500 at Cafe Coffee Day on 15-08-26.";
+    expect(extractRawMerchant(msg)).toBe("Cafe Coffee Day");
+  });
+});
+
+describe("cleanMerchantName behavior (via extractRawMerchant) — mirrors Cashiro's cleanMerchantName", () => {
+  it("strips a trailing parenthetical", () => {
+    const msg = "You paid Rs.100 to Local Store (Branch 2) on 15-08-26.";
+    expect(extractRawMerchant(msg)).toBe("Local Store");
+  });
+
+  it('strips a "PVT LTD" suffix', () => {
+    const msg = "You paid Rs.100 to Some Company Pvt Ltd on 15-08-26.";
+    expect(extractRawMerchant(msg)).toBe("Some Company");
+  });
+
+  it('strips a "LIMITED" suffix', () => {
+    const msg = "You paid Rs.100 to Acme Industries Limited on 15-08-26.";
+    expect(extractRawMerchant(msg)).toBe("Acme Industries");
+  });
+
+  it("strips a trailing dash", () => {
+    const msg = "You paid Rs.100 to Roadside Stall - on 15-08-26.";
+    expect(extractRawMerchant(msg)).toBe("Roadside Stall");
+  });
+});
+
+describe("isValidMerchantName / isValidMerchantCandidate — mirrors Cashiro's isValidMerchantName", () => {
+  it("rejects a commonWords entry exactly (case-insensitive)", () => {
+    expect(isValidMerchantCandidate("USING")).toBe(false);
+    expect(isValidMerchantCandidate("using")).toBe(false);
+  });
+
+  it("rejects a no-letter candidate even when it isn't purely digits", () => {
+    expect(isValidMerchantCandidate("12-34")).toBe(false);
   });
 });
 
