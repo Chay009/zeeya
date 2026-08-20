@@ -5,6 +5,7 @@ import {
   extractRawMerchant,
   extractMerchantWithAnchors,
   compileAnchors,
+  AnchorRuleSchema,
   isValidMerchantCandidate,
   extractLegacyMerchant,
 } from "./merchant-extractor.js";
@@ -149,6 +150,20 @@ describe("extractRawMerchant — Cashiro-mirrored anchors (generic to/from/at/fo
   });
 });
 
+describe("extractRawMerchant — word boundaries (deliberate deviation from Cashiro)", () => {
+  // Cashiro's own anchors have no \b before to/from/at/for, so "to" can
+  // match mid-word. Confirmed as a real false positive, not theoretical:
+  // this exact case returned "Grocery" before word boundaries were added.
+  it('does not match "to" inside "Photo"', () => {
+    expect(extractRawMerchant("Photo Grocery Ref 123")).toBeNull();
+  });
+
+  it('still matches a real standalone "to"', () => {
+    const msg = "Dear UPI user A/C X1234 debited by 50.00 trf to shopname Refno 123456789012";
+    expect(extractRawMerchant(msg)).toBe("shopname");
+  });
+});
+
 describe("cleanMerchantName behavior (via extractRawMerchant) — mirrors Cashiro's cleanMerchantName", () => {
   it("strips a trailing parenthetical", () => {
     const msg = "You paid Rs.100 to Local Store (Branch 2) on 15-08-26.";
@@ -244,5 +259,39 @@ describe("extractLegacyMerchant — same validation gate applied to the token-ba
 
   it("passes through and normalizes a valid legacy capture", () => {
     expect(extractLegacyMerchant("  Swiggy  ")).toBe("Swiggy");
+  });
+});
+
+describe("AnchorRuleSchema — validates merchant-patterns.json at load time", () => {
+  it("accepts a well-formed rule set", () => {
+    expect(
+      AnchorRuleSchema.safeParse([{ id: "x", before: "to\\s+", after: "\\s+on" }]).success,
+    ).toBe(true);
+  });
+
+  it("rejects an empty before/after (would compile a no-op or broken regex silently)", () => {
+    expect(AnchorRuleSchema.safeParse([{ id: "x", before: "", after: "\\s+on" }]).success).toBe(
+      false,
+    );
+    expect(AnchorRuleSchema.safeParse([{ id: "x", before: "to\\s+", after: "" }]).success).toBe(
+      false,
+    );
+  });
+
+  it("rejects a missing id", () => {
+    expect(AnchorRuleSchema.safeParse([{ before: "to\\s+", after: "\\s+on" }]).success).toBe(false);
+  });
+
+  it("rejects duplicate anchor ids", () => {
+    const rules = [
+      { id: "dup", before: "to\\s+", after: "\\s+on" },
+      { id: "dup", before: "from\\s+", after: "\\s+on" },
+    ];
+    expect(AnchorRuleSchema.safeParse(rules).success).toBe(false);
+  });
+
+  it("still throws (via compileAnchors' regex compile) on a structurally invalid regex fragment", () => {
+    const rules = AnchorRuleSchema.parse([{ id: "bad", before: "(", after: "\\s+on" }]);
+    expect(() => compileAnchors(rules)).toThrow(/invalid anchor "bad"/);
   });
 });

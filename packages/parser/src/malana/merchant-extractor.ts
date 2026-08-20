@@ -28,12 +28,17 @@
 //      same order (order matters: BankParser.extractMerchant tries them in
 //      ALL_PATTERNS order and returns the first anchor whose match survives
 //      cleaning + validation, falling through to the next PATTERN — not the
-//      next match of the same pattern — on failure). None of these four
-//      anchors use a \b word boundary before to/from/at/for in the Kotlin
-//      source, so a match can start mid-word (e.g. "...photo Ref..." would
-//      match "to Ref..." starting inside "photo"); that quirk is inherited
-//      here unchanged rather than "fixed", since this is a port, not a
-//      redesign.
+//      next match of the same pattern — on failure).
+//
+//      DELIBERATE DEVIATION from Cashiro: the Kotlin source has no \b word
+//      boundary before to/from/at/for, so a match can start mid-word.
+//      Confirmed as a real, demonstrated false positive, not a theoretical
+//      one: extractRawMerchant("Photo Grocery Ref 123") returned "Grocery"
+//      — "to\s+" matched the "to" inside "Photo". merchant-patterns.json
+//      adds \b before each anchor word to fix this. Same precedent as
+//      dropping BOILERPLATE_SUBSTRINGS: product correctness wins over
+//      literal Cashiro fidelity where the two conflict, and the deviation
+//      is recorded here rather than silently diverging from the port.
 //
 //   CompiledPatterns.kt (object Cleaning, lines 106-116) + BankParser.kt
 //   cleanMerchantName() (lines 525-536):
@@ -116,23 +121,37 @@
 
 import merchantPatternsRaw from "./data/merchant-patterns.json";
 import { regexTokenize } from "./regex-tokenizer";
+import { z } from "zod";
 
-interface AnchorRule {
-  id: string;
-  before: string;
-  after: string;
-  // Optional bank scoping, mirroring Cashiro's per-bank parser overrides
-  // (e.g. AxisBankParser/HSBCBankParser extending the base BankParser and
-  // trying their own patterns before falling back to the generic ones).
-  // Match against MalanaResult.bankName's canonical name (from
-  // enrichment.ts's detectBank / bank.json), e.g. "HDFC Bank",
-  // "State Bank of India". Omit for a bank-agnostic anchor. Deliberately
-  // empty in merchant-patterns.json right now — no rule here should be
-  // bank-scoped until a real garbled label from that bank proves the
-  // generic anchors miss it; this is the mechanism, not pre-populated
-  // guesses.
-  banks?: string[];
-}
+// Runtime-validated the same way seeddata.json/categorizer.json are
+// (asset-schemas.ts) rather than an unchecked `as AnchorRule[]` cast —
+// `before`/`after` become executable regex fragments, so malformed future
+// data (an empty string producing a `//` no-op pattern, a missing field
+// becoming `undefined` in the template literal) should fail loudly at
+// module load, not compile into a silently-wrong or crashing pattern.
+const AnchorRuleSchema = z
+  .object({
+    id: z.string().min(1),
+    before: z.string().min(1),
+    after: z.string().min(1),
+    // Optional bank scoping, mirroring Cashiro's per-bank parser overrides
+    // (e.g. AxisBankParser/HSBCBankParser extending the base BankParser and
+    // trying their own patterns before falling back to the generic ones).
+    // Match against MalanaResult.bankName's canonical name (from
+    // enrichment.ts's detectBank / bank.json), e.g. "HDFC Bank",
+    // "State Bank of India". Omit for a bank-agnostic anchor. Deliberately
+    // empty in merchant-patterns.json right now — no rule here should be
+    // bank-scoped until a real garbled label from that bank proves the
+    // generic anchors miss it; this is the mechanism, not pre-populated
+    // guesses.
+    banks: z.array(z.string().min(1)).optional(),
+  })
+  .array()
+  .refine((rules) => new Set(rules.map((r) => r.id)).size === rules.length, {
+    message: "merchant-patterns.json: duplicate anchor id",
+  });
+
+type AnchorRule = z.infer<typeof AnchorRuleSchema>[number];
 
 interface CompiledAnchor {
   id: string;
@@ -165,9 +184,9 @@ function compileAnchors(rules: AnchorRule[]): CompiledAnchor[] {
   });
 }
 
-// Compiled eagerly (not lazily) so a malformed anchor fails at import time,
-// not silently on first use.
-const compiledAnchors = compileAnchors(merchantPatternsRaw as AnchorRule[]);
+// Compiled eagerly (not lazily) so malformed or invalid anchor data fails at
+// import time, not silently on first use.
+const compiledAnchors = compileAnchors(AnchorRuleSchema.parse(merchantPatternsRaw));
 
 // ---------------------------------------------------------------------------
 // Faithful port of Cashiro's CompiledPatterns.Cleaning + BankParser.cleanMerchantName
@@ -337,7 +356,7 @@ export function extractRawMerchant(message: string, bankName?: string | null): s
 // (e.g. a fake bank-scoped rule) through the same compileAnchors codepath
 // real rules go through, instead of hand-building CompiledAnchor objects
 // that could drift from what compileAnchors actually produces.
-export { compileAnchors };
+export { compileAnchors, AnchorRuleSchema };
 export type { AnchorRule, CompiledAnchor };
 
 // Validates the existing token-based #vendor/#billvendor/#merchant capture
