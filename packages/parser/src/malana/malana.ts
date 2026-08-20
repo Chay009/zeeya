@@ -538,10 +538,12 @@ export class MalanaEngine {
       ref: tags["ref"] || null,
       bene: tags["bene"] || null,
       beneAcc: tags["beneacc"] || null,
-      // Raw-text anchor match first (validated), then the token-based
-      // #vendor/#billvendor/#merchant capture (also validated) — see
-      // merchant-extractor.ts for why raw text is tried first. Computed
-      // once, above, as resolvedVendor — also feeds brand detection.
+      // Raw-text anchor extraction is the only trusted vendor source — the
+      // token-based #vendor/#billvendor/#merchant capture was removed
+      // entirely (see merchant-extractor.ts's provenance comment for why:
+      // it can only ever produce recognized dictionary keywords, never a
+      // genuine merchant name). Computed once, above, as resolvedVendor —
+      // also feeds brand detection.
       vendor: resolvedVendor,
       location: tags["location"] || detectLocation(message),
 

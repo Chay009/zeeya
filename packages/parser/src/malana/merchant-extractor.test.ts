@@ -5,9 +5,8 @@ import {
   extractRawMerchant,
   extractMerchantWithAnchors,
   compileAnchors,
-  AnchorRuleSchema,
+  AnchorRulesSchema,
   isValidMerchantCandidate,
-  extractLegacyMerchant,
 } from "./merchant-extractor.js";
 
 const engine = new MalanaEngine(seedData);
@@ -247,39 +246,26 @@ describe("bank-scoped anchors — mechanism only, no real production rules yet",
   });
 });
 
-describe("extractLegacyMerchant — same validation gate applied to the token-based capture", () => {
-  it("rejects a null/empty candidate", () => {
-    expect(extractLegacyMerchant(null)).toBeNull();
-    expect(extractLegacyMerchant("")).toBeNull();
-  });
-
-  it("rejects a date-shaped legacy capture", () => {
-    expect(extractLegacyMerchant("15aug26")).toBeNull();
-  });
-
-  it("passes through and normalizes a valid legacy capture", () => {
-    expect(extractLegacyMerchant("  Swiggy  ")).toBe("Swiggy");
-  });
-});
-
-describe("AnchorRuleSchema — validates merchant-patterns.json at load time", () => {
+describe("AnchorRulesSchema — validates merchant-patterns.json at load time", () => {
   it("accepts a well-formed rule set", () => {
     expect(
-      AnchorRuleSchema.safeParse([{ id: "x", before: "to\\s+", after: "\\s+on" }]).success,
+      AnchorRulesSchema.safeParse([{ id: "x", before: "to\\s+", after: "\\s+on" }]).success,
     ).toBe(true);
   });
 
   it("rejects an empty before/after (would compile a no-op or broken regex silently)", () => {
-    expect(AnchorRuleSchema.safeParse([{ id: "x", before: "", after: "\\s+on" }]).success).toBe(
+    expect(AnchorRulesSchema.safeParse([{ id: "x", before: "", after: "\\s+on" }]).success).toBe(
       false,
     );
-    expect(AnchorRuleSchema.safeParse([{ id: "x", before: "to\\s+", after: "" }]).success).toBe(
+    expect(AnchorRulesSchema.safeParse([{ id: "x", before: "to\\s+", after: "" }]).success).toBe(
       false,
     );
   });
 
   it("rejects a missing id", () => {
-    expect(AnchorRuleSchema.safeParse([{ before: "to\\s+", after: "\\s+on" }]).success).toBe(false);
+    expect(AnchorRulesSchema.safeParse([{ before: "to\\s+", after: "\\s+on" }]).success).toBe(
+      false,
+    );
   });
 
   it("rejects duplicate anchor ids", () => {
@@ -287,11 +273,15 @@ describe("AnchorRuleSchema — validates merchant-patterns.json at load time", (
       { id: "dup", before: "to\\s+", after: "\\s+on" },
       { id: "dup", before: "from\\s+", after: "\\s+on" },
     ];
-    expect(AnchorRuleSchema.safeParse(rules).success).toBe(false);
+    expect(AnchorRulesSchema.safeParse(rules).success).toBe(false);
+  });
+
+  it("rejects an empty rule set (would silently disable merchant extraction)", () => {
+    expect(AnchorRulesSchema.safeParse([]).success).toBe(false);
   });
 
   it("still throws (via compileAnchors' regex compile) on a structurally invalid regex fragment", () => {
-    const rules = AnchorRuleSchema.parse([{ id: "bad", before: "(", after: "\\s+on" }]);
+    const rules = AnchorRulesSchema.parse([{ id: "bad", before: "(", after: "\\s+on" }]);
     expect(() => compileAnchors(rules)).toThrow(/invalid anchor "bad"/);
   });
 });

@@ -94,21 +94,23 @@
 // are called out explicitly below so they are never mistaken for ported
 // Cashiro logic.
 //
-// extractLegacyMerchant validates the token-based #vendor/#billvendor/
-// #merchant PATTERN capture the same way, but is NOT used by malana.ts
-// anymore (kept here, tested, as a standalone utility only). It was
-// removed as a fallback after tracing a real garbled label ("avoid as per
-// T&C ignore") to its root cause: pattern-extractor.ts's free-text capture
-// only ever sees tokens present in the token stream, and in this token
-// model a genuine merchant name is usually ABSENT from the stream
-// entirely — unrecognized by either tokenizer, so there's no token for it
-// to grab (confirmed separately with "shopname"). What it grabs instead is
+// The token-based #vendor/#billvendor/#merchant PATTERN capture
+// (extractLegacyMerchant, formerly a fallback here) was removed entirely,
+// not just unwired, after tracing a real garbled label ("avoid as per T&C
+// ignore") to its root cause: pattern-extractor.ts's free-text capture only
+// ever sees tokens present in the token stream, and in this token model a
+// genuine merchant name is usually ABSENT from the stream entirely —
+// unrecognized by either tokenizer, so there's no token for it to grab
+// (confirmed separately with "shopname"). What it grabs instead is
 // recognized seed vocabulary that happens not to be on its structural stop
 // list — confirmed directly: "avoid as per T&C ignore" tokenizes as five
 // individually-typed keywords (AVOID/AS/PER/PREMOREINFOURL/IGNORE), not
 // free text. So this capture can only ever produce dictionary-keyword
 // text, and a real merchant name is almost never a sequence of grammar
 // keywords — it was never capable of reliably recovering a correct name.
+// Deleted rather than kept as unused generality, so the architecture
+// states the decision clearly: raw-text anchor extraction is the only
+// trusted vendor source.
 //
 // Deliberately NOT here: a growable list of rejected boilerplate/disclaimer
 // substrings. That was tried and removed — disclaimer phrasing is
@@ -129,7 +131,7 @@ import { z } from "zod";
 // data (an empty string producing a `//` no-op pattern, a missing field
 // becoming `undefined` in the template literal) should fail loudly at
 // module load, not compile into a silently-wrong or crashing pattern.
-const AnchorRuleSchema = z
+const AnchorRulesSchema = z
   .object({
     id: z.string().min(1),
     before: z.string().min(1),
@@ -147,11 +149,12 @@ const AnchorRuleSchema = z
     banks: z.array(z.string().min(1)).optional(),
   })
   .array()
+  .min(1, "merchant-patterns.json: must not be empty (would silently disable merchant extraction)")
   .refine((rules) => new Set(rules.map((r) => r.id)).size === rules.length, {
     message: "merchant-patterns.json: duplicate anchor id",
   });
 
-type AnchorRule = z.infer<typeof AnchorRuleSchema>[number];
+type AnchorRule = z.infer<typeof AnchorRulesSchema>[number];
 
 interface CompiledAnchor {
   id: string;
@@ -186,7 +189,7 @@ function compileAnchors(rules: AnchorRule[]): CompiledAnchor[] {
 
 // Compiled eagerly (not lazily) so malformed or invalid anchor data fails at
 // import time, not silently on first use.
-const compiledAnchors = compileAnchors(AnchorRuleSchema.parse(merchantPatternsRaw));
+const compiledAnchors = compileAnchors(AnchorRulesSchema.parse(merchantPatternsRaw));
 
 // ---------------------------------------------------------------------------
 // Faithful port of Cashiro's CompiledPatterns.Cleaning + BankParser.cleanMerchantName
@@ -356,14 +359,5 @@ export function extractRawMerchant(message: string, bankName?: string | null): s
 // (e.g. a fake bank-scoped rule) through the same compileAnchors codepath
 // real rules go through, instead of hand-building CompiledAnchor objects
 // that could drift from what compileAnchors actually produces.
-export { compileAnchors, AnchorRuleSchema };
+export { compileAnchors, AnchorRulesSchema };
 export type { AnchorRule, CompiledAnchor };
-
-// Validates the existing token-based #vendor/#billvendor/#merchant capture
-// through the same gate the raw-anchor path uses, so a candidate's origin
-// never determines how strictly it's checked.
-export function extractLegacyMerchant(candidate: string | null | undefined): string | null {
-  if (!candidate) return null;
-  const normalized = normalizeMerchantCandidate(candidate);
-  return isValidMerchantCandidate(normalized) ? normalized : null;
-}
