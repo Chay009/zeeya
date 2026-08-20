@@ -967,6 +967,28 @@ describe("deriveDashboard — currency-separated monthly totals", () => {
   });
 });
 
+describe("deriveDashboard categorized activity", () => {
+  it("keeps non-transaction category matches in the activity feed", () => {
+    const messages: ParsedSms[] = [
+      sms("travel", "VM-AIRLINE", now, {
+        category: null,
+        matchedCategories: ["GRM_TRAVEL"],
+        pnr: "ABC123",
+      }),
+      sms("transaction", "VM-TESTBK", now - 1, {
+        matchedCategories: ["GRM_BANK"],
+        trxTypeRich: "EXPENSE",
+        trx: "500",
+      }),
+    ];
+
+    const { activity, recent } = deriveDashboard(messages);
+
+    expect(activity.map((message) => message.id)).toEqual(["travel", "transaction"]);
+    expect(recent.map((message) => message.id)).toEqual(["transaction"]);
+  });
+});
+
 // Light integration coverage proving deriveDashboard actually wires
 // subscriptions.ts's output through — the heuristic's own cadence/
 // tolerance/recency behavior is exhaustively covered in subscriptions.test.ts.

@@ -5,6 +5,7 @@ import {
   PermissionsAndroid,
   Pressable,
   RefreshControl,
+  ScrollView,
   StatusBar,
   Text,
   View,
@@ -32,6 +33,11 @@ import {
 } from "@/lib/sms";
 import { subscriptionMonthlyTotals } from "@/lib/subscriptions";
 import { trxDirection } from "@/lib/transaction-direction";
+import {
+  ACTIVITY_CATEGORY_FILTERS,
+  indexActivityByCategory,
+  type ActivityCategoryFilter,
+} from "@/lib/activity-filters";
 
 type Status = "checking" | "needs-permission" | "loading" | "ready" | "unsupported" | "error";
 
@@ -83,6 +89,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [messages, setMessages] = useState<ParsedSms[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [activityFilter, setActivityFilter] = useState<ActivityCategoryFilter>("all");
   // Bumped on every load() call so a slow, stale in-flight read can't
   // overwrite a newer one's result if a refresh is triggered before the
   // previous one finished.
@@ -144,13 +151,18 @@ export default function Home() {
   }, [load]);
 
   const dashboard = useMemo(() => deriveDashboard(messages), [messages]);
+  const activityByCategory = useMemo(
+    () => indexActivityByCategory(dashboard.activity),
+    [dashboard.activity],
+  );
+  const filteredActivity = activityByCategory.get(activityFilter) ?? [];
 
   return (
     <View style={{ flex: 1, backgroundColor: t.background }}>
       <StatusBar barStyle="light-content" />
       <FlatList
         contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
-        data={status === "ready" ? dashboard.recent.slice(0, 25) : []}
+        data={status === "ready" ? filteredActivity.slice(0, 25) : []}
         keyExtractor={(item) => item.id}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={t.accent} />
@@ -309,12 +321,52 @@ export default function Home() {
                     marginTop: 4,
                   }}
                 >
-                  Recent
+                  Recent activity
                 </Text>
 
-                {dashboard.recent.length === 0 && (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ gap: 8, paddingBottom: 14 }}
+                >
+                  {ACTIVITY_CATEGORY_FILTERS.map((option) => {
+                    const selected = activityFilter === option.value;
+                    const count =
+                      option.value === "all"
+                        ? dashboard.activity.length
+                        : (activityByCategory.get(option.value)?.length ?? 0);
+                    return (
+                      <Pressable
+                        key={option.value}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected }}
+                        onPress={() => setActivityFilter(option.value)}
+                        style={{
+                          borderRadius: 999,
+                          borderWidth: 1,
+                          borderColor: selected ? t.accent : t.border,
+                          backgroundColor: selected ? t.accentMuted : t.surfaceMuted,
+                          paddingHorizontal: 13,
+                          paddingVertical: 8,
+                        }}
+                      >
+                        <Text
+                          style={{
+                            color: selected ? t.textPrimary : t.textMuted,
+                            fontSize: 12,
+                            fontWeight: selected ? "700" : "600",
+                          }}
+                        >
+                          {option.label} {count}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+
+                {filteredActivity.length === 0 && (
                   <Text style={{ color: t.textMuted, fontSize: 13 }}>
-                    No bank or transaction messages recognized yet.
+                    No messages found in this category.
                   </Text>
                 )}
               </>
@@ -322,7 +374,7 @@ export default function Home() {
           </View>
         }
         renderItem={({ item }) => (
-          <TransactionRow item={item} isRecurring={isRecurringTransaction(item, dashboard)} />
+          <ActivityRow item={item} isRecurring={isRecurringTransaction(item, dashboard)} />
         )}
       />
     </View>
@@ -766,11 +818,14 @@ function MandateRow({ mandate }: { mandate: Mandate }) {
   );
 }
 
-function TransactionRow({ item, isRecurring }: { item: ParsedSms; isRecurring: boolean }) {
+function ActivityRow({ item, isRecurring }: { item: ParsedSms; isRecurring: boolean }) {
   const { result } = item;
   const label = result.brandName ?? result.vendor ?? result.bankName ?? item.sender;
   const direction = trxDirection(result.trxTypeRich);
   const amount = result.trx ? Number.parseFloat(result.trx.replace(/,/g, "")) : null;
+  const category = ACTIVITY_CATEGORY_FILTERS.find(
+    (option) => option.value === result.matchedCategories?.[0],
+  )?.label;
 
   return (
     <View
@@ -788,6 +843,7 @@ function TransactionRow({ item, isRecurring }: { item: ParsedSms; isRecurring: b
         <Text style={{ color: t.textPrimary, fontWeight: "600", fontSize: 15 }}>{label}</Text>
         <Text style={{ color: t.textMuted, fontSize: 12 }}>
           {formatDate(item.date)}
+          {category ? ` · ${category}` : ""}
           {isRecurring ? " · Recurring" : ""}
         </Text>
       </View>

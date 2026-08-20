@@ -5,6 +5,7 @@ import {
   type Subscription,
 } from "./subscriptions";
 import type { ParsedSms } from "./sms";
+import { hasVisibleActivityCategory } from "./activity-filters";
 
 export type { Subscription, SubscriptionConfidence } from "./subscriptions";
 
@@ -117,7 +118,15 @@ export interface Dashboard {
   subscriptions: Subscription[];
   mandates: Mandate[];
   mandatesByMerchant: MerchantMandates[];
+  // All product-visible category matches, including non-transaction travel,
+  // delivery, event, appointment, alert, OTP, and offer messages.
+  activity: ParsedSms[];
+  // Financial transactions only; retained for transaction-specific consumers.
   recent: ParsedSms[];
+}
+
+function isParserRecognized(message: ParsedSms): boolean {
+  return message.result.category !== null || (message.result.matchedCategories?.length ?? 0) > 0;
 }
 
 function parseAmount(raw: string | null): number | null {
@@ -230,7 +239,7 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
   const recognized: ParsedSms[] = [];
   const newestReferencedTransaction = new Map<string, ParsedSms>();
   for (const message of messages) {
-    if (message.result.category === null) continue;
+    if (!isParserRecognized(message)) continue;
     const key = referencedTransactionKey(message);
     if (!key) continue;
     const current = newestReferencedTransaction.get(key);
@@ -241,7 +250,7 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
 
   for (const m of messages) {
     const { result } = m;
-    if (result.category === null) continue;
+    if (!isParserRecognized(m)) continue;
 
     const transactionKey = referencedTransactionKey(m);
     const isDuplicateTransaction = transactionKey
@@ -422,6 +431,9 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
   const subscriptions = deriveSubscriptions(deduplicatedMessages, now);
 
   recognized.sort((a, b) => b.date - a.date);
+  const activity = deduplicatedMessages
+    .filter(hasVisibleActivityCategory)
+    .sort((a, b) => b.date - a.date);
 
   const accounts = [...accountsByKey.values()];
   for (const acc of accounts) acc.history.sort((a, b) => b.asOf - a.asOf);
@@ -485,6 +497,7 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
     subscriptions,
     mandates,
     mandatesByMerchant,
+    activity,
     recent: recognized,
   };
 }
