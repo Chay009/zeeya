@@ -1,0 +1,22 @@
+[
+  {
+    "id": "cashiro_to",
+    "before": "\\bto\\s+",
+    "after": "(?:\\s+on|\\s+at|\\s+Ref|\\s+UPI)"
+  },
+  {
+    "id": "cashiro_from",
+    "before": "\\bfrom\\s+",
+    "after": "(?:\\s+on|\\s+at|\\s+Ref|\\s+UPI)"
+  },
+  {
+    "id": "cashiro_at",
+    "before": "\\bat\\s+",
+    "after": "(?:\\s+on|\\s+Ref)"
+  },
+  {
+    "id": "cashiro_for",
+    "before": "\\bfor\\s+",
+    "after": "(?:\\s+on|\\s+at|\\s+Ref)"
+  }
+]

@@ -12,6 +12,7 @@ import { compileSeed } from "./grammar-compiler";
 import { runGrammar } from "./grammar-runner";
 import { compilePatterns, runPatterns } from "./pattern-extractor";
 import { CurrencyRegistry } from "./currency-registry";
+import { extractRawMerchant } from "./merchant-extractor";
 import {
   categoryMarkerEvidence,
   isMalanaCategory,
@@ -295,6 +296,8 @@ export class MalanaEngine {
     const regexTokens = regexTokenize(message, this.currencyRegistry);
     const keywordTokens = this.keywordTokenizer.tokenize(message);
     const tokens = mergeTokens(regexTokens, keywordTokens, message);
+    const detectedBankName = detectBank(sender, message);
+    const resolvedVendor = extractRawMerchant(message, this.currencyRegistry, detectedBankName);
     const senderGrammar = grammarForSender(sender);
     const requestedCategory = senderGrammar || defaultCategory;
     const recognizedCategory = isMalanaCategory(requestedCategory) ? requestedCategory : null;
@@ -319,6 +322,8 @@ export class MalanaEngine {
         regexTokens,
         keywordTokens,
         tokens,
+        detectedBankName,
+        resolvedVendor,
       );
       parsed.evidence.push(...categoryMarkerEvidence(category, tokens));
       if (category === "GRM_NOTIF" && hasInactiveTransactionStatus(message, parsed.result.tags)) {
@@ -338,6 +343,8 @@ export class MalanaEngine {
     regexToks: Token[],
     kwToks: Token[],
     allTokens: Token[],
+    detectedBankName: string | null,
+    resolvedVendor: string | null,
   ): ParsedCategory {
     // Step 3: Compile grammar layers for category (cached — see getLayersFor)
     const layers = this.getLayersFor(category);
@@ -497,17 +504,14 @@ export class MalanaEngine {
     }
 
     // Step 7: Brand enrichment — check extracted merchant text first, then fall back to raw message
-    const merchantText =
-      tags["bene"] ||
-      tags["vendor"] ||
-      tags["billvendor"] ||
-      tags["merchant"] ||
-      tags["item"] ||
-      "";
+    // Raw-text anchors are the trusted open-vocabulary merchant source.
+    // Legacy #vendor/#billvendor captures only see recognized dictionary
+    // tokens, so they are deliberately excluded from product output.
+    const merchantText = resolvedVendor || tags["bene"] || tags["merchant"] || tags["item"] || "";
     const brandMatch = detectBrand(merchantText) ?? detectBrand(message);
 
     // Step 8: UPI handle detection — if bene/vendor looks like a VPA, confirm handle
-    const vpaText = tags["bene"] || tags["vendor"] || "";
+    const vpaText = tags["bene"] || "";
     const upiHandle = detectUpiHandle(vpaText);
 
     // Step 9: Derived rich fields
@@ -546,7 +550,7 @@ export class MalanaEngine {
       tags,
       tokens: processed,
 
-      bankName: detectBank(sender, message),
+      bankName: detectedBankName,
       merchantCategory: brandMatch?.category ?? detectMerchantCategory(merchantText),
       subcategory: detectSubcategory(tags),
 
@@ -562,7 +566,7 @@ export class MalanaEngine {
       ref: tags["ref"] || null,
       bene: tags["bene"] || null,
       beneAcc: tags["beneacc"] || null,
-      vendor: tags["vendor"] || tags["billvendor"] || tags["merchant"] || null,
+      vendor: resolvedVendor,
       location: tags["location"] || detectLocation(message),
 
       // OTP fields
