@@ -20,6 +20,18 @@ describe("Malana category composition", () => {
     ).toContainEqual({ kind: "grammar-tag", value: "trx" });
   });
 
+  it("preserves one validated merchant across travel and bank composition", () => {
+    const result = engine.parse(
+      "INR 2,500 debited from A/c XX1234 to MakeMyTrip on 20-Aug-2026 for flight ticket. PNR AB1234.",
+      "VM-HDFCBK",
+    );
+
+    expect(result.vendor).toBe("MakeMyTrip");
+    expect(result.currency).toBe("INR");
+    expect(result.trx).toBe("2500");
+    expect(result.matchedCategories).toEqual(["GRM_TRAVEL", "GRM_BANK"]);
+  });
+
   it("discovers a confirmed bill recharge without a forced category", () => {
     const result = engine.parse("Recharge Rs.399 successful.");
 
