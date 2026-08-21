@@ -98,4 +98,27 @@ describe("MalanaEngine", () => {
     expect(r.trx).toBeTruthy();
     expect(r.bal).toBeTruthy();
   });
+
+  it("does not leak the legacy #vendor/#billvendor capture through raw tags", () => {
+    // Same reminder message that produced the garbled result.vendor bug
+    // ("avoid as per T&C ignore"). result.vendor is already sanitized to
+    // resolvedVendor — this checks the raw tags map, which a consumer could
+    // read directly instead of the public vendor field.
+    const msg =
+      "Long Overdue Alert:\nYour HDFC Bank CSA Overdraft A/c xxxxxxxx4317 is still overdue.Pay Rs.300 today to avoid action as per T&C.\nignore if paid.";
+    const r = engine.parse(msg, "VM-HDFCBK");
+    expect(r.vendor).toBeNull();
+    expect(r.tags["vendor"]).toBeUndefined();
+    expect(r.tags["billvendor"]).toBeUndefined();
+  });
+
+  it("upiHandle detection has no reachable tags[vendor] fallback path", () => {
+    // Real UPI-with-VPA message shape: the #vendor free-text capture never
+    // lands on the VPA span (it grabs surrounding boilerplate instead), so
+    // removing the tags["vendor"] fallback from vpaText changes nothing.
+    const msg = "Rs 250 sent to raju@okhdfcbank via UPI on 10-08-26";
+    const r = engine.parse(msg);
+    expect(r.tags["vendor"]).toBeUndefined();
+    expect(r.upiHandle).toBeNull();
+  });
 });

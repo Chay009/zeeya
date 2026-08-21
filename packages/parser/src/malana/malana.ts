@@ -463,6 +463,13 @@ export class MalanaEngine {
     for (const [k, v] of Object.entries(patternCaptures)) {
       if (v && !tags[k]) tags[k] = v;
     }
+    // #vendor/#billvendor are the same untrusted free-text capture described
+    // below (proven to grab boilerplate like "avoid as per T&C ignore", never
+    // a real merchant name) — dropped from the public `vendor` field already.
+    // Strip them here too so a consumer reading the raw `tags` map directly
+    // can't see the garbled capture that `result.vendor` was fixed to hide.
+    delete tags["vendor"];
+    delete tags["billvendor"];
 
     // Computed once, ahead of Step 7, so both brand detection and the
     // result's own `vendor` field use the exact same validated merchant
@@ -499,8 +506,12 @@ export class MalanaEngine {
     const merchantText = resolvedVendor || tags["bene"] || tags["merchant"] || tags["item"] || "";
     const brandMatch = detectBrand(merchantText) ?? detectBrand(message);
 
-    // Step 8: UPI handle detection — if bene/vendor looks like a VPA, confirm handle
-    const vpaText = tags["bene"] || tags["vendor"] || "";
+    // Step 8: UPI handle detection — if bene looks like a VPA, confirm handle.
+    // No tags["vendor"] fallback: verified against real UPI-with-VPA message
+    // shapes ("sent to raju@okhdfcbank", "paid to john@oksbi", etc.) that the
+    // #vendor free-text capture never lands on the VPA span itself — it grabs
+    // surrounding boilerplate instead — so the fallback was never reachable.
+    const vpaText = tags["bene"] || "";
     const upiHandle = detectUpiHandle(vpaText);
 
     // Step 9: Derived rich fields
