@@ -118,7 +118,13 @@ function tryMatchAt(els: MatchEl[], tokens: Token[], start: number): Record<stri
             break;
         }
 
-        // Only capture unmatched / free-text tokens; stop at structural token types
+        // Only capture unmatched / free-text tokens; stop at structural token types.
+        // DATE/DT/SAL were missing here, so a date token in a shape DATE_RE
+        // below doesn't recognize (e.g. "15Aug26", no separators) or a
+        // salutation ("Dear") could be swallowed whole into a free-text
+        // capture — confirmed directly: engine.parse() on a real "Dear UPI
+        // user ... trf to <merchant> Refno ..." message returned
+        // vendor: "15aug26" instead of the actual merchant.
         const structural = [
           "AMT",
           "BAL",
@@ -138,6 +144,9 @@ function tryMatchAt(els: MatchEl[], tokens: Token[], start: number): Record<stri
           "LOCATION",
           "FAVRG",
           "INFO",
+          "DATE",
+          "DT",
+          "SAL",
         ];
         if (structural.includes(tok.type)) break;
 

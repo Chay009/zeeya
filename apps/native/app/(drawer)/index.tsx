@@ -846,6 +846,9 @@ function ActivityRow({ item, isRecurring }: { item: ParsedSms; isRecurring: bool
           {category ? ` · ${category}` : ""}
           {isRecurring ? " · Recurring" : ""}
         </Text>
+        {result.bankName && result.bankName !== label && (
+          <Text style={{ color: t.textMuted, fontSize: 11 }}>{result.bankName}</Text>
+        )}
       </View>
       {amount !== null && (
         <Text
