@@ -58,12 +58,20 @@ export function computeFingerprint(sender: string, date: number, body: string): 
   return `${high}${low}`;
 }
 
-// ── Batch identity — group, resolve ownership, then decide what's new ──────
+// ── Batch identity — group by content, then resolve provider-id ownership ───
+//
+// A row's identity is its fingerprint, full stop — see schema.ts's own
+// comment on smsLedger.id for why that column IS the fingerprint rather
+// than "provider id when we have one, else fingerprint." providerId below
+// is a plain nullable attribute, free to move between rows via an
+// ordinary UPDATE. That's what makes ownership below a genuine, symmetric
+// contest (see planOwnership) instead of a fragile "whoever claimed it
+// first, forever" rule.
 
-interface ExistingIdentity {
-  id: string;
-  fingerprint: string;
+interface ExistingRow {
+  id: string; // == its fingerprint
   providerId: string | null;
+  date: number;
 }
 
 interface PreparedMessage {
@@ -72,30 +80,19 @@ interface PreparedMessage {
   providerId: string | null;
 }
 
-// One fingerprint's worth of the incoming batch, after merging every
-// message that shares that exact fingerprint (see groupByFingerprint).
-// Fingerprint equality means content-identical by construction (it's a
-// hash of sender|date|body), so any member of the group is a valid
-// representative — there is no order-dependence to resolve here. What its
-// provider id *should* be, when more than one same-fingerprint duplicate
-// (or a different-fingerprint group elsewhere in the batch) carries a
-// non-null provider id, is decided separately in
-// resolveBatchProviderIdOwnership below.
-interface FingerprintGroup {
+// Every message in the batch sharing one fingerprint, after merging —
+// content-identical by construction (fingerprint is a hash of
+// sender|date|body), so any member is a valid representative. A group can
+// carry more than one distinct claimed provider id when its own raw
+// duplicates disagree (two on-device copies of the same content
+// declaring different provider ids) — every one of those is preserved
+// here rather than narrowed to a single "winner" before ownership is
+// even considered, so a discarded candidate still reaches
+// identityConflicts (see planOwnership) instead of vanishing silently.
+interface ContentGroup {
   fingerprint: string;
-  providerId: string | null;
   representative: RawSms;
-}
-
-// A FingerprintGroup after batch-local provider-id ownership has been
-// resolved (see resolveBatchProviderIdOwnership) — the unit ingestSmsBatch
-// actually operates on downstream of this point.
-interface ResolvedGroup {
-  fingerprint: string;
-  providerId: string | null;
-  contestedProviderId: string | null;
-  rowId: string;
-  representative: RawSms;
+  claimedProviderIds: readonly string[]; // sorted, deduplicated, possibly empty
 }
 
 function prepareMessage(message: RawSms): PreparedMessage {
@@ -107,33 +104,9 @@ function prepareMessage(message: RawSms): PreparedMessage {
 // Collapses every message in the batch sharing a fingerprint into one
 // group — regardless of which order the caller happened to list them in.
 // Two entries with the same fingerprint are the same underlying SMS
-// content by construction, so there is exactly one identity to resolve
-// per fingerprint, not one decision per array position: picking
-// "whichever one appears first in the input array" (a previous, buggy
-// approach) meant a batch of [no-provider-id copy, provider-id copy]
-// silently discarded the provider id, while the reverse order kept it —
-// the same two messages producing two different outcomes depending on
-// array order is not a real identity rule. Sorting candidate provider ids
-// and taking the lexicographically smallest is: if more than one message
-// in the batch legitimately carries a different non-null provider id for
-// the same content (a real duplicate SMS row on-device), some
-// deterministic tiebreak is required, and any fixed one works equally
-// well since which of two real provider ids "owns" the row is not
-// otherwise distinguishable — the important property is that it doesn't
-// depend on input order.
-//
-// Deliberately does NOT merge across different fingerprints even when
-// they share a provider id — that was tried and was wrong: two entries
-// with *different* fingerprints are, by construction, different content,
-// and forcing them into one group meant picking a single representative
-// whose body/sender/date didn't necessarily match the group's own
-// (independently, lexicographically chosen) stored fingerprint — an
-// internally inconsistent row — and meant one of the two messages'
-// content was discarded outright with no record. Cross-fingerprint
-// provider-id contention is a real thing (see
-// resolveBatchProviderIdOwnership) but it's an ownership question, not a
-// content-merging one: each fingerprint keeps its own row.
-function groupByFingerprint(prepared: readonly PreparedMessage[]): FingerprintGroup[] {
+// content by construction, so there is exactly one row to resolve per
+// fingerprint, not one decision per array position.
+function groupByFingerprint(prepared: readonly PreparedMessage[]): ContentGroup[] {
   const byFingerprint = new Map<string, PreparedMessage[]>();
   for (const item of prepared) {
     const list = byFingerprint.get(item.fingerprint);
@@ -141,84 +114,14 @@ function groupByFingerprint(prepared: readonly PreparedMessage[]): FingerprintGr
     else byFingerprint.set(item.fingerprint, [item]);
   }
 
-  const groups: FingerprintGroup[] = [];
+  const groups: ContentGroup[] = [];
   for (const [fingerprint, items] of byFingerprint) {
-    const providerIds = items
-      .map((i) => i.providerId)
-      .filter((id): id is string => id !== null)
-      .sort();
-    groups.push({
-      fingerprint,
-      providerId: providerIds[0] ?? null,
-      representative: items[0]!.message,
-    });
+    const claimedProviderIds = [
+      ...new Set(items.map((i) => i.providerId).filter((id): id is string => id !== null)),
+    ].sort();
+    groups.push({ fingerprint, representative: items[0]!.message, claimedProviderIds });
   }
   return groups;
-}
-
-// Resolves which fingerprint group gets to claim a provider id that more
-// than one group in this batch carries — this is the case a same-batch
-// union-merge previously tried (wrongly) to paper over by collapsing both
-// groups into one row. The provider_id column is unique, so at most one
-// row can actually hold a contested id; the other group's content is
-// still inserted (as its own row, keyed by its own fingerprint), just
-// without that provider id, and with contestedProviderId recorded so the
-// collision leaves a trace instead of vanishing.
-//
-// The tiebreak (newest representative date; ties broken by
-// lexicographically smallest fingerprint) is a pure function of the
-// group's own content, not of array position, so two batches containing
-// the same contenders in any order resolve to the same winner — "max by a
-// total order" doesn't care which order it's folded over.
-function resolveBatchProviderIdOwnership(groups: readonly FingerprintGroup[]): ResolvedGroup[] {
-  const claimants = new Map<string, FingerprintGroup[]>();
-  for (const g of groups) {
-    if (g.providerId === null) continue;
-    const list = claimants.get(g.providerId);
-    if (list) list.push(g);
-    else claimants.set(g.providerId, [g]);
-  }
-
-  const winnerFingerprintByProviderId = new Map<string, string>();
-  for (const [providerId, contenders] of claimants) {
-    let winner = contenders[0]!;
-    for (const g of contenders.slice(1)) {
-      const isNewer = g.representative.date > winner.representative.date;
-      const isTiedButLexicallySmaller =
-        g.representative.date === winner.representative.date && g.fingerprint < winner.fingerprint;
-      if (isNewer || isTiedButLexicallySmaller) winner = g;
-    }
-    winnerFingerprintByProviderId.set(providerId, winner.fingerprint);
-  }
-
-  return groups.map((g) => {
-    if (g.providerId === null) {
-      return {
-        fingerprint: g.fingerprint,
-        providerId: null,
-        contestedProviderId: null,
-        rowId: g.fingerprint,
-        representative: g.representative,
-      };
-    }
-    if (winnerFingerprintByProviderId.get(g.providerId) === g.fingerprint) {
-      return {
-        fingerprint: g.fingerprint,
-        providerId: g.providerId,
-        contestedProviderId: null,
-        rowId: g.providerId,
-        representative: g.representative,
-      };
-    }
-    // Lost in-batch contention for this provider id.
-    return {
-      fingerprint: g.fingerprint,
-      providerId: null,
-      contestedProviderId: g.providerId,
-      rowId: g.fingerprint,
-      representative: g.representative,
-    };
-  });
 }
 
 // Android's on-device SQLite (unlike the desktop build this suite tests
@@ -256,180 +159,204 @@ function chunk<T>(items: readonly T[], size: number): T[][] {
 // both call sites rather than duplicating the chunked-query logic.
 type Queryable = Pick<Database, "select">;
 
-interface ExistingIdentities {
-  byId: Map<string, ExistingIdentity>;
-  byFingerprint: Map<string, ExistingIdentity>;
-  byProviderId: Map<string, ExistingIdentity>;
-}
-
-function findExistingIdentities(
+// Every persisted row that could possibly matter to this batch: one whose
+// id (fingerprint) matches one of ours, or whose providerId matches a
+// value one of our groups claims. `date` is included specifically so an
+// already-persisted row can be entered as a contender in the same
+// ownership contest as this batch's own proposals (see planOwnership) —
+// without it, a persisted row's claim to some provider id could only ever
+// be treated as "first, forever," which is exactly the batch-partition-
+// dependent behavior this model exists to remove.
+function findExistingRows(
   queryable: Queryable,
-  groups: readonly Pick<ResolvedGroup, "rowId" | "fingerprint" | "providerId">[],
-): ExistingIdentities {
-  const byId = new Map<string, ExistingIdentity>();
-  const byFingerprint = new Map<string, ExistingIdentity>();
-  const byProviderId = new Map<string, ExistingIdentity>();
+  fingerprints: readonly string[],
+  providerIds: readonly string[],
+): { byId: Map<string, ExistingRow>; byProviderId: Map<string, ExistingRow> } {
+  const byId = new Map<string, ExistingRow>();
+  const byProviderId = new Map<string, ExistingRow>();
 
-  for (const batch of chunk(groups, EXISTENCE_CHECK_CHUNK_SIZE)) {
-    const rowIds = batch.map((g) => g.rowId);
-    const fingerprints = batch.map((g) => g.fingerprint);
-    const providerIds = batch.map((g) => g.providerId).filter((id): id is string => id !== null);
-
-    const conditions = [
-      inArray(smsLedger.id, rowIds),
-      inArray(smsLedger.fingerprint, fingerprints),
-    ];
-    // A separate lookup against providerId itself, not just id/fingerprint:
-    // an enriched row's `id` stays whatever it was first assigned (its
-    // original fingerprint-derived value, if no provider id was available
-    // yet at the time) — enrichment only ever sets the `providerId` column,
-    // it never renames `id`. Without checking providerId directly, a later
-    // batch keyed by that same provider id but with different sender/date/
-    // body (a different fingerprint — e.g. corrected metadata from the OS)
-    // would match neither `id` nor `fingerprint` on the existing row, get
-    // treated as new, and be needlessly reparsed before its insert silently
-    // no-ops against the provider_id unique constraint.
-    if (providerIds.length > 0) {
-      conditions.push(inArray(smsLedger.providerId, providerIds));
-    }
-
-    const existingRows = queryable
-      .select({
-        id: smsLedger.id,
-        fingerprint: smsLedger.fingerprint,
-        providerId: smsLedger.providerId,
-      })
-      .from(smsLedger)
-      .where(or(...conditions))
-      .all();
-
-    for (const row of existingRows) {
-      byId.set(row.id, row);
-      byFingerprint.set(row.fingerprint, row);
-      if (row.providerId) byProviderId.set(row.providerId, row);
-    }
+  const conditions: ReturnType<typeof inArray>[] = [];
+  for (const batch of chunk(fingerprints, EXISTENCE_CHECK_CHUNK_SIZE)) {
+    conditions.push(inArray(smsLedger.id, batch));
   }
+  for (const batch of chunk(providerIds, EXISTENCE_CHECK_CHUNK_SIZE)) {
+    conditions.push(inArray(smsLedger.providerId, batch));
+  }
+  if (conditions.length === 0) return { byId, byProviderId };
 
-  return { byId, byFingerprint, byProviderId };
+  // Android's on-device SQLite (unlike the desktop build this suite tests
+  // against — verified directly: better-sqlite3's bundled SQLite handled a
+  // 3,000-item IN clause fine) has historically defaulted
+  // SQLITE_MAX_VARIABLE_NUMBER to 999 — chunking each IN clause at 250 (see
+  // EXISTENCE_CHECK_CHUNK_SIZE) keeps every bound-parameter count
+  // comfortably under that regardless of which default a given device
+  // actually ships.
+  const existingRows = queryable
+    .select({ id: smsLedger.id, providerId: smsLedger.providerId, date: smsLedger.date })
+    .from(smsLedger)
+    .where(or(...conditions))
+    .all();
+
+  for (const row of existingRows) {
+    byId.set(row.id, row);
+    if (row.providerId) byProviderId.set(row.providerId, row);
+  }
+  return { byId, byProviderId };
 }
 
-// What to do with one group, given the identities already on disk (either
-// the preflight snapshot or a transactional recheck of it). `conflicts`
-// collects every provider id this group's content could not (or, for
-// "insert", must not) claim — usually empty, occasionally one entry — to
-// be persisted as identityConflicts rows against whichever existing or
-// newly-inserted row ends up representing this content. This is the same
-// policy applied uniformly whether the conflict was detected against an
-// existing row (this call) or against another group in the same batch
-// (resolveBatchProviderIdOwnership) — a message's fate must not depend on
-// whether it happened to arrive in the same ingestSmsBatch() call as the
-// row it collides with.
-type GroupOutcome =
-  | { kind: "exists"; existingId: string; conflicts: readonly string[] }
-  | {
-      kind: "exists-enrich";
-      existingId: string;
-      providerId: string;
-      conflicts: readonly string[];
-    }
-  | { kind: "insert"; providerId: string | null; conflicts: readonly string[] };
+interface OwnershipPlan {
+  // fingerprint -> providerId to store, for a row not yet in the ledger.
+  insert: Map<string, string | null>;
+  // fingerprint (of an EXISTING row) -> providerId to write — either a
+  // fresh enrichment (existing was null) or an ownership transfer away
+  // (existing was non-null, a better-ranked contender won it instead).
+  updateProviderId: Map<string, string | null>;
+  conflicts: { smsId: string; contestedProviderId: string }[];
+  // Conflicts to mark resolved: a fingerprint that now genuinely holds
+  // (or keeps holding) a provider id that was previously recorded as
+  // contested against it.
+  resolved: { smsId: string; contestedProviderId: string }[];
+}
 
-// A group's content can match an existing row two independent ways: by
-// fingerprint (the strongest signal — content-derived, not caller-
-// supplied) and by provider id (if the group claims a non-null one).
-// Those normally agree, but don't have to, and every place they can
-// disagree is a genuine identity conflict, recorded rather than either
-// silently resolved one way or the other:
+// The single ownership policy — used identically at preflight (to decide
+// what needs parsing) and, from scratch against a fresh read, inside the
+// transaction (the actual source of truth for what gets written). Pure:
+// no I/O, so recomputing it twice is cheap and safe.
 //
-//  - The fingerprint already exists, not yet enriched, and the provider id
-//    it wants belongs to a *different* existing row: claiming it would
-//    throw on the unique index and roll back the whole transaction, so
-//    it's recorded as a conflict against the existing (fingerprint-
-//    matched) row instead of attempted.
-//  - The fingerprint already exists AND is already enriched with a
-//    *different* provider id than this message now claims: the
-//    established identity isn't overwritten, but the new claim is still
-//    recorded, not silently ignored.
-//  - There's no existing row for this exact fingerprint, but the provider
-//    id already belongs to a different row's content: this is content
-//    that doesn't yet exist and must still be inserted (under its own
-//    fingerprint, not the contested provider id) with the conflict
-//    recorded — previously this branch instead silently folded the new
-//    message into the existing provider-id owner (treating a provider id
-//    as strictly stronger evidence than content), which meant two
-//    genuinely different messages sharing a provider id were preserved
-//    when they arrived in one batch (resolveBatchProviderIdOwnership) but
-//    one silently vanished with no record when they arrived in separate
-//    calls — the same collision, two different outcomes depending on
-//    call boundaries the caller doesn't control.
-//  - The computed row id (provider id, or fingerprint when there's no
-//    usable provider id) is already taken by some *unrelated* existing
-//    row (neither its fingerprint nor its provider id matches this group)
-//    — an id-scheme collision. Vanishingly unlikely, but `onConflictDoNothing()`
-//    would otherwise silently no-op the insert with zero signal; recognizing
-//    the existing row here avoids that.
-function decideGroupOutcome(
-  group: Pick<ResolvedGroup, "fingerprint" | "providerId" | "rowId" | "contestedProviderId">,
-  identities: ExistingIdentities,
-): GroupOutcome {
-  const conflicts: string[] = group.contestedProviderId ? [group.contestedProviderId] : [];
+// Two distinct kinds of "conflict" are handled, deliberately differently:
+//
+//  1. Two duplicates of the exact same content (same fingerprint)
+//     disagreeing on provider id: there's no real ownership question here
+//     — it's the same row either way — so the smallest candidate is
+//     always the one actually stored, and every OTHER candidate the
+//     group carried is unconditionally recorded as a conflict against
+//     that one row. An already-settled fingerprint (its persisted
+//     providerId is already non-null) never budges for a new candidate
+//     either — the claim is recorded, the established identity untouched.
+//
+//  2. Two *different* fingerprints (different content) both wanting the
+//     same provider id: a genuine ownership question, decided by one
+//     deterministic rule — newest representative date wins, ties broken
+//     by the lexicographically smaller fingerprint — applied uniformly
+//     across every contender for that value, whether it's a brand-new
+//     proposal in this batch or a row some earlier, unrelated call
+//     already persisted with that provider id. A persisted incumbent can
+//     therefore lose ownership to a later-arriving, higher-ranked
+//     contender (its providerId is cleared and the loss recorded) — this
+//     is what makes final ownership converge to the same answer whether
+//     two colliding messages arrive in one batch or split across several,
+//     in either order: the rule only ever depends on the messages' own
+//     content (date, fingerprint), never on arrival order.
+//
+// Case 1 rows never enter case 2's contest: a fingerprint whose persisted
+// providerId is already settled to some value X is not a free contender
+// for a *different* value Y just because a duplicate-content message
+// happens to also mention Y — X stays, Y is recorded as a conflict, full
+// stop. Only content with no settled provider id yet (new, or persisted
+// but still null) competes in the cross-fingerprint contest.
+function planOwnership(
+  groups: readonly ContentGroup[],
+  existing: { byId: Map<string, ExistingRow>; byProviderId: Map<string, ExistingRow> },
+): OwnershipPlan {
+  const insert = new Map<string, string | null>();
+  const updateProviderId = new Map<string, string | null>();
+  const conflicts: { smsId: string; contestedProviderId: string }[] = [];
+  const resolved: { smsId: string; contestedProviderId: string }[] = [];
 
-  const existingByFingerprint = identities.byFingerprint.get(group.fingerprint);
-  const existingByProviderId = group.providerId
-    ? identities.byProviderId.get(group.providerId)
-    : undefined;
+  interface Proposal {
+    fingerprint: string;
+    date: number;
+    proposedProviderId: string | null;
+    existingRow: ExistingRow | undefined;
+  }
+  const proposals: Proposal[] = [];
 
-  if (existingByFingerprint) {
-    if (group.providerId) {
-      if (!existingByFingerprint.providerId) {
-        if (existingByProviderId && existingByProviderId.id !== existingByFingerprint.id) {
-          conflicts.push(group.providerId);
-          return { kind: "exists", existingId: existingByFingerprint.id, conflicts };
-        }
-        return {
-          kind: "exists-enrich",
-          existingId: existingByFingerprint.id,
-          providerId: group.providerId,
-          conflicts,
-        };
-      }
-      if (existingByFingerprint.providerId !== group.providerId) {
-        conflicts.push(group.providerId);
-      }
+  for (const g of groups) {
+    const existingRow = existing.byId.get(g.fingerprint);
+    const proposedProviderId = g.claimedProviderIds[0] ?? null; // smallest of this group's own candidates
+    for (const extra of g.claimedProviderIds.slice(1)) {
+      conflicts.push({ smsId: g.fingerprint, contestedProviderId: extra });
     }
-    return { kind: "exists", existingId: existingByFingerprint.id, conflicts };
+
+    if (existingRow && existingRow.providerId !== null) {
+      if (proposedProviderId !== null && proposedProviderId !== existingRow.providerId) {
+        conflicts.push({ smsId: g.fingerprint, contestedProviderId: proposedProviderId });
+      } else if (proposedProviderId !== null) {
+        resolved.push({ smsId: g.fingerprint, contestedProviderId: proposedProviderId });
+      }
+      continue; // settled — not a contender in the contest below.
+    }
+
+    proposals.push({
+      fingerprint: g.fingerprint,
+      date: g.representative.date,
+      proposedProviderId,
+      existingRow,
+    });
   }
 
-  if (group.providerId && existingByProviderId) {
-    conflicts.push(group.providerId);
-    return { kind: "insert", providerId: null, conflicts };
+  interface Contender {
+    fingerprint: string;
+    date: number;
+    persisted: boolean;
+  }
+  const contendersByProviderId = new Map<string, Contender[]>();
+  for (const p of proposals) {
+    if (p.proposedProviderId === null) continue;
+    const list = contendersByProviderId.get(p.proposedProviderId);
+    const entry: Contender = { fingerprint: p.fingerprint, date: p.date, persisted: false };
+    if (list) list.push(entry);
+    else contendersByProviderId.set(p.proposedProviderId, [entry]);
+  }
+  for (const [providerId, list] of contendersByProviderId) {
+    const currentOwner = existing.byProviderId.get(providerId);
+    if (currentOwner && !list.some((c) => c.fingerprint === currentOwner.id)) {
+      list.push({ fingerprint: currentOwner.id, date: currentOwner.date, persisted: true });
+    }
   }
 
-  // Checked after (not before) the provider-id conflict above: when
-  // group.providerId is set and unclaimed, rowId equals it, and byId/
-  // byProviderId key the same rows off the same query results — so if
-  // existingByProviderId found nothing, byId can't meaningfully add a
-  // provider-id match here. What it still catches: rowId falling back to
-  // the fingerprint (no usable provider id) happening to equal some
-  // unrelated existing row's real primary key — a cross-scheme string
-  // collision, vanishingly unlikely but not structurally impossible.
-  // `onConflictDoNothing()` would otherwise silently no-op that insert
-  // with zero signal; recognizing the existing row here avoids that.
-  const existingById = identities.byId.get(group.rowId);
-  if (existingById) {
-    return { kind: "exists", existingId: existingById.id, conflicts };
+  const winnerByProviderId = new Map<string, string>();
+  for (const [providerId, contenders] of contendersByProviderId) {
+    let winner = contenders[0]!;
+    for (const c of contenders.slice(1)) {
+      const better =
+        c.date > winner.date || (c.date === winner.date && c.fingerprint < winner.fingerprint);
+      if (better) winner = c;
+    }
+    winnerByProviderId.set(providerId, winner.fingerprint);
+    for (const c of contenders) {
+      if (c.fingerprint === winner.fingerprint) continue;
+      conflicts.push({ smsId: c.fingerprint, contestedProviderId: providerId });
+      if (c.persisted) updateProviderId.set(c.fingerprint, null); // ownership transferred away
+    }
+    if (winner.persisted)
+      resolved.push({ smsId: winner.fingerprint, contestedProviderId: providerId });
   }
 
-  return { kind: "insert", providerId: group.providerId, conflicts };
+  for (const p of proposals) {
+    const finalProviderId =
+      p.proposedProviderId !== null &&
+      winnerByProviderId.get(p.proposedProviderId) === p.fingerprint
+        ? p.proposedProviderId
+        : null;
+    if (p.existingRow) {
+      if (p.existingRow.providerId !== finalProviderId)
+        updateProviderId.set(p.fingerprint, finalProviderId);
+    } else {
+      insert.set(p.fingerprint, finalProviderId);
+    }
+  }
+
+  return { insert, updateProviderId, conflicts, resolved };
 }
 
 // Parses one message into the content fields a ledger row needs —
-// deliberately everything EXCEPT identity (id/fingerprint/providerId):
-// which provider id (if any) a group's row ends up storing can only be
-// finalized against the transaction's own recheck (see ingestSmsBatch), so
-// baking it in here, before that recheck runs, would risk inserting an
-// identity decision that's already stale by write time. Isolated per-
-// message so one bad message (a parser throw) can't abort the whole batch.
+// deliberately everything EXCEPT identity (id/providerId): which provider
+// id (if any) a group's row ends up storing can only be finalized against
+// the transaction's own recheck (see ingestSmsBatch), so baking it in
+// here, before that recheck runs, would risk inserting an identity
+// decision that's already stale by write time. Isolated per-message so
+// one bad message (a parser throw) can't abort the whole batch.
 function parseMessageContent(message: RawSms) {
   const storedBody = message.body ?? "";
   const base = {
@@ -469,40 +396,36 @@ function yieldToEventLoop(): Promise<void> {
 
 // Idempotent and re-parse-free: safe to call repeatedly with overlapping or
 // fully-duplicate batches (refresh, restart, background catch-up, backfill
-// all call this the same way). A message already present by row id,
-// fingerprint, or provider id is never re-parsed. This is what makes
-// "restart does not require reparsing the entire inbox" (issue #17's
-// acceptance criterion) actually true.
+// all call this the same way). A message already present by fingerprint is
+// never re-parsed. This is what makes "restart does not require reparsing
+// the entire inbox" (issue #17's acceptance criterion) actually true.
 //
-// If a row was first ingested with only a fingerprint-derived id (no
-// provider id available at the time) and a later batch supplies a real
-// provider id for that same fingerprint (or provider id), the existing row
-// is enriched with that provider id — not re-parsed.
+// If a row was first ingested with no provider id available and a later
+// batch supplies one for that same fingerprint, the existing row is
+// enriched with it — not re-parsed. If a provider id is contested between
+// two different fingerprints (this batch's own messages, or one of them
+// against an already-persisted row), planOwnership decides one canonical
+// owner via a single deterministic rule and every other claimant is
+// recorded in identityConflicts rather than silently dropped or silently
+// preferred by arrival order — see planOwnership's own comment for the
+// full policy.
 //
-// Flow: (1) group the incoming batch by fingerprint (groupByFingerprint)
-// and resolve which group gets to claim a provider id more than one group
-// claims (resolveBatchProviderIdOwnership — deterministic, order-
-// independent; the loser is still inserted, just without that provider id
-// and with the conflict recorded); (2) a read-only preflight existence
-// check, no transaction, deciding each group's outcome (decideGroupOutcome
-// — the same conflict policy whether the collision is against another
-// group in this batch or an already-persisted row from an earlier call);
-// (3) parse only genuinely-new groups' content, yielding to the event loop
-// after every PARSE_YIELD_EVERY actual parse calls (not merely every N
-// loop iterations) so a large batch's parsing itself can't freeze the JS
-// thread for its whole duration — identity fields (id/providerId) are
-// deliberately not finalized yet, since they can only be trusted against
-// the transaction's own recheck; (4) a short transaction that rechecks
-// insertions, enrichments, AND proposed provider-id ownership against
-// current state — another call could have inserted, enriched, or claimed
-// a provider id in the window since the preflight read — inserts rows
-// with identity fields finalized against that recheck, applies
-// enrichments only where both the target row's providerId is still null
-// AND the proposed provider id isn't now owned by a different row,
-// persists every detected conflict as its own identityConflicts row, and
-// conditionally advances the checkpoint.
+// Flow: (1) group the incoming batch by fingerprint (groupByFingerprint);
+// (2) a read-only preflight read of every potentially-relevant existing
+// row (findExistingRows) feeds planOwnership, whose insert map says which
+// fingerprints are genuinely new — those get parsed, yielding to the event
+// loop after every PARSE_YIELD_EVERY actual parse calls (not merely every
+// N loop iterations) so a large batch's parsing itself can't freeze the JS
+// thread for its whole duration; (3) a short transaction re-reads current
+// state and recomputes the *entire* plan from scratch against it — another
+// call could have inserted, enriched, or transferred a provider id in the
+// window since the preflight read, so nothing from the preflight plan is
+// trusted for the actual writes — then applies every insert, every
+// providerId update (enrichment or transfer-away), every conflict, every
+// resolution, and conditionally advances the checkpoint, all in one
+// transaction.
 //
-// That final transaction body is a plain (non-async) function on purpose:
+// That transaction body is a plain (non-async) function on purpose:
 // drizzle's expo-sqlite transaction does NOT await its callback before
 // committing (confirmed directly against its source — it calls the
 // callback, then immediately runs COMMIT on the next line), so an async
@@ -512,41 +435,29 @@ export async function ingestSmsBatch(messages: RawSms[]): Promise<void> {
   const database = requireDb();
   if (messages.length === 0) return;
 
-  const groups = resolveBatchProviderIdOwnership(groupByFingerprint(messages.map(prepareMessage)));
-  const preflight = findExistingIdentities(database, groups);
+  const groups = groupByFingerprint(messages.map(prepareMessage));
+  const fingerprints = groups.map((g) => g.fingerprint);
+  const allClaimedProviderIds = [...new Set(groups.flatMap((g) => g.claimedProviderIds))];
 
-  const toInsertGroups: ResolvedGroup[] = [];
-  const toEnrich = new Map<string, string>(); // existing row id -> provider id to set
-  const conflicts: { smsId: string; contestedProviderId: string }[] = [];
-
-  for (const group of groups) {
-    const outcome = decideGroupOutcome(group, preflight);
-    if (outcome.kind === "exists-enrich") toEnrich.set(outcome.existingId, outcome.providerId);
-    else if (outcome.kind === "exists") {
-      for (const contestedProviderId of outcome.conflicts) {
-        conflicts.push({ smsId: outcome.existingId, contestedProviderId });
-      }
-    } else if (outcome.kind === "insert") toInsertGroups.push(group);
-  }
+  const preflight = findExistingRows(database, fingerprints, allClaimedProviderIds);
+  const preflightPlan = planOwnership(groups, preflight);
 
   const contentByFingerprint = new Map<string, ReturnType<typeof parseMessageContent>>();
   let parseCallsSinceYield = 0;
-  for (const group of toInsertGroups) {
-    contentByFingerprint.set(group.fingerprint, parseMessageContent(group.representative));
+  for (const [fingerprint] of preflightPlan.insert) {
+    const group = groups.find((g) => g.fingerprint === fingerprint)!;
+    contentByFingerprint.set(fingerprint, parseMessageContent(group.representative));
     if (++parseCallsSinceYield >= PARSE_YIELD_EVERY) {
       await yieldToEventLoop();
       parseCallsSinceYield = 0;
     }
   }
 
-  // Derived from the maximum date across the raw, ungrouped messages —
-  // deliberately not from any per-group representative. A representative
-  // is picked per fingerprint for storage purposes, but which fingerprint
-  // group happens to contain "the" newest raw message is exactly the kind
-  // of incidental, structure-dependent fact this purely-informational
-  // checkpoint field must not depend on. Ties at the max date are broken
-  // lexicographically by provider id, not by array position, so this is
-  // order-independent the same way the ledger's own identity resolution is.
+  // Derived from the maximum date across the raw, ungrouped messages, with
+  // a deterministic tiebreak (lexicographically smallest provider id among
+  // those tied for the max date) — purely informational (getSyncStatus),
+  // not part of identity resolution, but still must not depend on array
+  // order.
   const batchNewestDate = Math.max(...messages.map((m) => m.date));
   const batchNewestProviderId =
     messages
@@ -556,80 +467,48 @@ export async function ingestSmsBatch(messages: RawSms[]): Promise<void> {
       .sort()[0] ?? null;
 
   database.transaction((tx) => {
-    // Recheck insertions against current state rather than trusting the
-    // preflight snapshot: another ingestSmsBatch call could have inserted,
-    // enriched, or claimed a provider id for one of these rows in the
-    // window between the preflight read and this transaction opening —
-    // the same decideGroupOutcome call is used here as at preflight, so a
-    // group's identity fields are only ever finalized against this
-    // up-to-date read, never the possibly-stale preflight one.
-    const recheck = findExistingIdentities(tx, toInsertGroups);
-    for (const group of toInsertGroups) {
-      const outcome = decideGroupOutcome(group, recheck);
-      if (outcome.kind === "exists-enrich") toEnrich.set(outcome.existingId, outcome.providerId);
-      else if (outcome.kind === "exists") {
-        for (const contestedProviderId of outcome.conflicts) {
-          conflicts.push({ smsId: outcome.existingId, contestedProviderId });
-        }
-      } else if (outcome.kind === "insert") {
-        const id = outcome.providerId ?? group.fingerprint;
-        const content = contentByFingerprint.get(group.fingerprint)!;
-        tx.insert(smsLedger)
-          .values({
-            id,
-            fingerprint: group.fingerprint,
-            providerId: outcome.providerId,
-            ...content,
-          })
-          .onConflictDoNothing()
-          .run();
-        for (const contestedProviderId of outcome.conflicts) {
-          conflicts.push({ smsId: id, contestedProviderId });
-        }
+    // The entire plan is recomputed from scratch against a fresh read,
+    // not incrementally patched from the preflight one: another call
+    // could have changed ownership of any provider id in the window since
+    // the preflight read, so the preflight plan's insert/update decisions
+    // cannot be trusted for the actual writes — only which fingerprints
+    // needed parsing (already done, content cached above) survives from
+    // that first pass.
+    const recheck = findExistingRows(tx, fingerprints, allClaimedProviderIds);
+    const plan = planOwnership(groups, recheck);
+
+    // Releases (a losing row's providerId set to null) run before any
+    // claim (a new insert, or a different row's enrichment) — an ordinary
+    // ordering constraint that has nothing to do with SQL execution order
+    // otherwise, but matters here specifically because a claim and the
+    // release that frees it up can target the exact same provider_id
+    // value within this one transaction: claiming it first would still
+    // violate the unique index while the loser hasn't given it up yet,
+    // and onConflictDoNothing() would then silently no-op that insert
+    // rather than throw — releasing first avoids the collision outright.
+    for (const [fingerprint, providerId] of plan.updateProviderId) {
+      if (providerId === null) {
+        tx.update(smsLedger).set({ providerId: null }).where(eq(smsLedger.id, fingerprint)).run();
       }
     }
 
-    // Enrichment candidates from the preflight are revalidated here too,
-    // not just applied blindly: another call could have enriched the
-    // target row, or claimed the proposed provider id for a *different*
-    // row, in that same window. Both are checked immediately before the
-    // write — the exact race that previously reached the unique index
-    // itself and threw, rolling back the whole batch — so a genuine
-    // conflict is recorded instead of attempted.
-    if (toEnrich.size > 0) {
-      const enrichIds = [...toEnrich.keys()];
-      const proposedProviderIds = [...new Set(toEnrich.values())];
+    for (const [fingerprint, providerId] of plan.insert) {
+      const content = contentByFingerprint.get(fingerprint);
+      // Absent only if this fingerprint wasn't new at preflight time but
+      // is new now — impossible, since existence is monotonic (rows are
+      // never deleted mid-ingestion); kept as a guard rather than a
+      // silent `!` to fail loudly instead of inserting undefined content
+      // if that invariant is ever violated.
+      if (!content) continue;
+      tx.insert(smsLedger)
+        .values({ id: fingerprint, providerId, ...content })
+        .onConflictDoNothing()
+        .run();
+    }
 
-      const currentProviderIdByRowId = new Map<string, string | null>();
-      for (const batch of chunk(enrichIds, EXISTENCE_CHECK_CHUNK_SIZE)) {
-        for (const row of tx
-          .select({ id: smsLedger.id, providerId: smsLedger.providerId })
-          .from(smsLedger)
-          .where(inArray(smsLedger.id, batch))
-          .all()) {
-          currentProviderIdByRowId.set(row.id, row.providerId);
-        }
-      }
-
-      const ownerRowIdByProviderId = new Map<string, string>();
-      for (const batch of chunk(proposedProviderIds, EXISTENCE_CHECK_CHUNK_SIZE)) {
-        for (const row of tx
-          .select({ id: smsLedger.id, providerId: smsLedger.providerId })
-          .from(smsLedger)
-          .where(inArray(smsLedger.providerId, batch))
-          .all()) {
-          if (row.providerId) ownerRowIdByProviderId.set(row.providerId, row.id);
-        }
-      }
-
-      for (const [existingId, providerId] of toEnrich) {
-        if (currentProviderIdByRowId.get(existingId) !== null) continue;
-        const currentOwner = ownerRowIdByProviderId.get(providerId);
-        if (currentOwner && currentOwner !== existingId) {
-          conflicts.push({ smsId: existingId, contestedProviderId: providerId });
-          continue;
-        }
-        tx.update(smsLedger).set({ providerId }).where(eq(smsLedger.id, existingId)).run();
+    for (const [fingerprint, providerId] of plan.updateProviderId) {
+      if (providerId !== null) {
+        tx.update(smsLedger).set({ providerId }).where(eq(smsLedger.id, fingerprint)).run();
       }
     }
 
@@ -638,14 +517,28 @@ export async function ingestSmsBatch(messages: RawSms[]): Promise<void> {
     // there couldn't represent this. onConflictDoNothing() against the
     // partial unique index (open contests only) makes re-recording the
     // same still-open contest a no-op rather than a duplicate row.
-    if (conflicts.length > 0) {
+    if (plan.conflicts.length > 0) {
       const detectedAt = Date.now();
-      for (const batch of chunk(conflicts, EXISTENCE_CHECK_CHUNK_SIZE)) {
+      for (const batch of chunk(plan.conflicts, EXISTENCE_CHECK_CHUNK_SIZE)) {
         tx.insert(identityConflicts)
           .values(batch.map((c) => ({ ...c, detectedAt })))
           .onConflictDoNothing()
           .run();
       }
+    }
+
+    // Marks a previously-open conflict resolved when the fingerprint it
+    // was recorded against now genuinely holds that same provider id —
+    // either because it just won a contest for it, or because it always
+    // held it and a re-run of the contest confirmed that. A no-op when no
+    // matching open row exists.
+    for (const { smsId, contestedProviderId } of plan.resolved) {
+      tx.update(identityConflicts)
+        .set({ resolvedAt: Date.now() })
+        .where(
+          sql`${identityConflicts.smsId} = ${smsId} AND ${identityConflicts.contestedProviderId} = ${contestedProviderId} AND ${identityConflicts.resolvedAt} IS NULL`,
+        )
+        .run();
     }
 
     // A single conditional upsert, not read-then-write: two overlapping

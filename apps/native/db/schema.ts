@@ -25,17 +25,18 @@ import { sqliteTable, text, integer, index, uniqueIndex, check } from "drizzle-o
 export const smsLedger = sqliteTable(
   "sms_ledger",
   {
-    // Primary identity: the Android content-provider `_id` when the caller
-    // has one (RawSms.id from lib/sms.ts), otherwise the fingerprint below.
+    // The row's sole identity: computeFingerprint(sender, date, body) —
+    // see ingestion.ts. Deliberately NOT the Android content-provider
+    // `_id`: an internal id built from a caller-supplied external
+    // identifier (which may be absent, may get reused across genuinely
+    // different messages, or may need to move between rows) makes
+    // ownership transfer and cross-namespace collision handling
+    // needlessly hard — a row's own primary key should never need to
+    // change hands. providerId below is purely an attribute: nullable,
+    // unique when present, and free to be set, cleared, or reassigned to
+    // a different row via an ordinary UPDATE, exactly like any other
+    // column.
     id: text("id").primaryKey(),
-    // ALWAYS computed (sender|date|body digest), regardless of whether a
-    // provider id exists. A provider id alone isn't a sufficient dedup key
-    // on its own: the same message can reach ingestSmsBatch once keyed by
-    // fingerprint (provider id unavailable at that time) and later keyed by
-    // a real provider id once one becomes available. Unique-indexing this
-    // separately from `id` lets ingestion detect that cross-scheme collision
-    // instead of silently creating a second row for the same SMS.
-    fingerprint: text("fingerprint").notNull(),
     providerId: text("provider_id"),
     sender: text("sender").notNull(),
     body: text("body").notNull(),
@@ -54,7 +55,6 @@ export const smsLedger = sqliteTable(
   },
   (table) => [
     index("sms_ledger_date_idx").on(table.date),
-    uniqueIndex("sms_ledger_fingerprint_idx").on(table.fingerprint),
     uniqueIndex("sms_ledger_provider_id_idx").on(table.providerId),
     check(
       "sms_ledger_parsed_result_matches_status",

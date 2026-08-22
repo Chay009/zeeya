@@ -19,7 +19,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { MalanaEngine } from "@zeeya/parser/malana";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as schema from "./schema";
@@ -79,7 +79,9 @@ function openConflictsFor(smsId: string): string[] {
   return testDb
     .select({ contestedProviderId: schema.identityConflicts.contestedProviderId })
     .from(schema.identityConflicts)
-    .where(eq(schema.identityConflicts.smsId, smsId))
+    .where(
+      and(eq(schema.identityConflicts.smsId, smsId), isNull(schema.identityConflicts.resolvedAt)),
+    )
     .all()
     .map((r) => r.contestedProviderId);
 }
@@ -159,19 +161,19 @@ describe("ingestSmsBatch", () => {
     expect(afterSecond[0]!.providerId).toBe("provider-123");
   });
 
-  it("inserts a genuinely new message under its own fingerprint, recording the conflict, when it claims a provider id an existing row already owns", async () => {
+  it("inserts a genuinely new message under its own fingerprint instead of folding it into an unrelated existing provider-id owner", async () => {
     // A later message's fingerprint differing from an existing row's is
     // genuinely different content — the same case as two different
     // messages sharing a provider id within one batch
-    // (resolveBatchProviderIdOwnership), just discovered across two
-    // separate calls instead of one. Silently folding this into the
+    // (planOwnership's cross-fingerprint contest), just discovered across
+    // two separate calls instead of one. Silently folding this into the
     // existing provider-id owner (an earlier design) meant identical
     // input, partitioned differently across ingestSmsBatch() calls,
-    // produced different outcomes — data preserved when batched together,
-    // silently dropped when the same two messages arrived separately. The
-    // policy must not depend on call boundaries the caller doesn't
-    // control: this message is new content, parsed and inserted under its
-    // own fingerprint, with the conflict recorded rather than folded in.
+    // produced different outcomes. It's inserted as its own row here
+    // (never silently merged into the old row), and since it's also the
+    // newer of the two contenders, it wins the contested id outright —
+    // the old row loses it and the loss is recorded, exactly as it would
+    // have been had both messages arrived in one combined batch.
     const first = rawSms({ id: "", date: 1000, body: HDFC_DEBIT });
     await ingestSmsBatch([first]);
     await ingestSmsBatch([{ ...first, id: "provider-999" }]);
@@ -183,9 +185,12 @@ describe("ingestSmsBatch", () => {
     const rows = testDb.select().from(schema.smsLedger).all();
     expect(rows).toHaveLength(2);
     const newRow = rows.find((r) => r.body === SBI_UPI);
+    const oldRow = rows.find((r) => r.body === HDFC_DEBIT);
     expect(newRow).toBeDefined();
-    expect(newRow!.providerId).toBeNull();
-    expect(openConflictsFor(newRow!.id)).toEqual(["provider-999"]);
+    expect(oldRow).toBeDefined();
+    expect(newRow!.providerId).toBe("provider-999"); // newer content outranks the old owner
+    expect(oldRow!.providerId).toBeNull();
+    expect(openConflictsFor(oldRow!.id)).toEqual(["provider-999"]);
   });
 
   it("processes a batch of distinct real messages independently", async () => {
@@ -274,7 +279,7 @@ describe("ingestSmsBatch", () => {
       .from(schema.smsLedger)
       .where(
         eq(
-          schema.smsLedger.fingerprint,
+          schema.smsLedger.id,
           computeFingerprint(noProviderId.sender, noProviderId.date, noProviderId.body),
         ),
       )
@@ -312,12 +317,10 @@ describe("ingestSmsBatch", () => {
     expect(winner!.date).toBe(8181); // the newer message won the contested id
     expect(loser!.date).toBe(8080);
     expect(openConflictsFor(loser!.id)).toEqual(["provider-SHARED"]);
-    // Every stored row's fingerprint must actually describe its own
-    // stored sender/date/body — not an arbitrary component representative.
-    expect(winner!.fingerprint).toBe(
-      computeFingerprint(winner!.sender, winner!.date, winner!.body),
-    );
-    expect(loser!.fingerprint).toBe(computeFingerprint(loser!.sender, loser!.date, loser!.body));
+    // Every stored row's id must actually describe its own stored
+    // sender/date/body — not an arbitrary component representative.
+    expect(winner!.id).toBe(computeFingerprint(winner!.sender, winner!.date, winner!.body));
+    expect(loser!.id).toBe(computeFingerprint(loser!.sender, loser!.date, loser!.body));
   });
 
   it("resolves the same provider-id contention winner regardless of array order", async () => {
@@ -356,29 +359,30 @@ describe("ingestSmsBatch", () => {
   });
 
   it("does not throw or roll back the batch when an incoming fingerprint and provider id resolve to two different existing rows", async () => {
-    // Row B starts fingerprint-only, then is legitimately enriched later
-    // (so its `id` column stays its original fingerprint value while only
-    // its `providerId` *column* becomes the shared value) — the exact
-    // shape that made the old fixed-precedence lookupExisting() fall
-    // through byId, match a *different* row A via byFingerprint, and then
-    // attempt `UPDATE ... SET providerId = ... WHERE id = A.id`, which
-    // violges the provider_id unique constraint B already holds and rolls
-    // back the whole transaction.
+    // Row B starts fingerprint-only, then is legitimately enriched later.
+    // A later message shares A's own (older, so B deterministically
+    // outranks it) content but claims B's provider id — the exact shape
+    // that made the old fixed-precedence lookupExisting() match a
+    // *different* row via byFingerprint and then attempt
+    // `UPDATE ... SET providerId = ... WHERE id = A.id`, which violates
+    // the provider_id unique constraint B already holds and rolls back
+    // the whole transaction.
     const bSeed = rawSms({ id: "", date: 9090, sender: "VM-SBI", body: "seed for row B" });
     await ingestSmsBatch([bSeed]);
     await ingestSmsBatch([{ ...bSeed, id: "provider-CONTESTED" }]); // legitimately enrich B
 
-    const rowA = rawSms({ id: "", date: 9191, sender: "VM-AXIS", body: "row A content" });
+    const rowA = rawSms({ id: "", date: 8000, sender: "VM-AXIS", body: "row A content" });
     await ingestSmsBatch([rowA]);
 
     // Conflicting message: A's fingerprint (same sender/date/body as rowA),
-    // but claims B's provider id.
+    // but claims B's provider id. B's date (9090) is newer than A's
+    // (8000), so B deterministically keeps ownership.
     await expect(ingestSmsBatch([{ ...rowA, id: "provider-CONTESTED" }])).resolves.toBeUndefined();
 
     const rows = testDb.select().from(schema.smsLedger).all();
     const rowBAfter = rows.find((r) => r.providerId === "provider-CONTESTED");
     const rowAAfter = rows.find(
-      (r) => r.fingerprint === computeFingerprint(rowA.sender, rowA.date, rowA.body ?? ""),
+      (r) => r.id === computeFingerprint(rowA.sender, rowA.date, rowA.body ?? ""),
     );
     // B keeps the provider id it legitimately earned; A is recognized by
     // its fingerprint and is not corrupted into claiming B's provider id —
@@ -387,6 +391,36 @@ describe("ingestSmsBatch", () => {
     expect(rowAAfter).toBeDefined();
     expect(rowAAfter!.providerId).not.toBe("provider-CONTESTED");
     expect(openConflictsFor(rowAAfter!.id)).toEqual(["provider-CONTESTED"]);
+  });
+
+  it("transfers a contested provider id away from an already-persisted row when a later, deterministically-higher-ranked message claims it", async () => {
+    // The direct consequence of applying one deterministic ownership rule
+    // to both incoming and already-persisted contenders (required so
+    // final ownership doesn't depend on batch partitioning, see the
+    // combined-vs-sequential test below): an already-settled row is not
+    // permanently protected just because it happened to claim a value
+    // first. If a later message for genuinely different content ranks
+    // higher (here: a newer date), ownership transfers to it, and the
+    // former owner's loss is recorded — not silently overwritten, not
+    // thrown as a constraint violation.
+    const bSeed = rawSms({ id: "", date: 100, sender: "VM-SBI", body: "seed for row B" });
+    await ingestSmsBatch([bSeed]);
+    await ingestSmsBatch([{ ...bSeed, id: "provider-XFER" }]); // B claims it uncontested first
+
+    const rowA = rawSms({ id: "", date: 200, sender: "VM-AXIS", body: "row A content" }); // newer
+    await ingestSmsBatch([rowA]);
+    await ingestSmsBatch([{ ...rowA, id: "provider-XFER" }]); // A outranks B on date
+
+    const rows = testDb.select().from(schema.smsLedger).all();
+    const rowBAfter = rows.find(
+      (r) => r.id === computeFingerprint(bSeed.sender, bSeed.date, bSeed.body ?? ""),
+    );
+    const rowAAfter = rows.find(
+      (r) => r.id === computeFingerprint(rowA.sender, rowA.date, rowA.body ?? ""),
+    );
+    expect(rowAAfter!.providerId).toBe("provider-XFER");
+    expect(rowBAfter!.providerId).toBeNull();
+    expect(openConflictsFor(rowBAfter!.id)).toEqual(["provider-XFER"]);
   });
 
   it("records the conflict, without throwing, when a concurrent call claims the proposed provider id between preflight and the enrichment write", async () => {
@@ -417,7 +451,7 @@ describe("ingestSmsBatch", () => {
 
     const rows = testDb.select().from(schema.smsLedger).all();
     const rowR = rows.find(
-      (r) => r.fingerprint === computeFingerprint(rSeed.sender, rSeed.date, rSeed.body ?? ""),
+      (r) => r.id === computeFingerprint(rSeed.sender, rSeed.date, rSeed.body ?? ""),
     );
     const rowR2 = rows.find((r) => r.providerId === "provider-RACE");
     expect(rowR2).toBeDefined();
@@ -443,24 +477,71 @@ describe("ingestSmsBatch", () => {
     expect(openConflictsFor(rows[0]!.id)).toEqual(["provider-P2"]);
   });
 
-  it("never loses either message and always records the loser's conflict, whether combined in one batch or split across sequential calls in either order", async () => {
-    // The core batch-partitioning bug: two messages sharing a provider id
-    // must never end up with one silently missing — regardless of
-    // whether they arrive together or apart, and regardless of order.
-    //
-    // Which one keeps the contested provider id is legitimately allowed to
-    // differ between these scenarios, though: within one batch there's no
-    // real arrival order to go by (only the messages' own content), so
-    // in-batch contention resolves on a deterministic content tie-break
-    // (newest date). Across separate calls, the first one to actually
-    // claim the id has already been durably persisted by the time the
-    // second arrives — retroactively reassigning an already-committed
-    // row's identity to a "content-newer" latecomer would be its own new
-    // hazard, not a fix. First-successful-claim-wins is the correct rule
-    // there, the same way any uniqueness constraint works under real
-    // concurrent arrival. What must be invariant across all three
-    // scenarios is completeness: both rows exist, and the non-owner always
-    // has the conflict recorded against it.
+  it("records every losing provider-id candidate when one batch's own duplicates disagree, not just the smallest", async () => {
+    // Two raw duplicates of the exact same content (identical sender/
+    // date/body -> identical fingerprint) declaring different provider
+    // ids in the SAME call. Only one can ever be stored (one column), but
+    // discarding the other with no trace was the exact gap: the smallest
+    // candidate was kept and every other one vanished silently.
+    const base = rawSms({ id: "provider-DUP1", date: 4242, sender: "VM-HDFCBK" });
+    await ingestSmsBatch([
+      base,
+      { ...base, id: "provider-DUP2" },
+      { ...base, id: "provider-DUP3" },
+    ]);
+
+    const rows = testDb.select().from(schema.smsLedger).all();
+    expect(rows).toHaveLength(1);
+    // Deterministic (lexicographically smallest) among identical content.
+    expect(rows[0]!.providerId).toBe("provider-DUP1");
+    expect(openConflictsFor(rows[0]!.id).sort()).toEqual(["provider-DUP2", "provider-DUP3"]);
+  });
+
+  it("marks a conflict resolved once the fingerprint it was recorded against genuinely re-confirms holding that provider id", async () => {
+    // planOwnership's resolvedAt path: an already-settled fingerprint
+    // whose own proposal now matches its currently-stored provider id
+    // marks any previously-open conflict for that exact (row, provider
+    // id) pair resolved, rather than leaving it permanently open once the
+    // underlying disagreement no longer exists. Seeds the open conflict
+    // directly (rather than trying to contrive one of the narrower
+    // real-world sequences that produce it) to isolate the resolution
+    // mechanism itself from how a conflict first got recorded.
+    const message = rawSms({ id: "provider-SELF", date: 100, sender: "VM-HDFCBK" });
+    await ingestSmsBatch([message]);
+
+    const fingerprint = computeFingerprint(message.sender, message.date, message.body ?? "");
+    testDb
+      .insert(schema.identityConflicts)
+      .values({ smsId: fingerprint, contestedProviderId: "provider-SELF", detectedAt: Date.now() })
+      .run();
+    expect(openConflictsFor(fingerprint)).toEqual(["provider-SELF"]);
+
+    // Re-ingesting the exact same message re-runs planOwnership against
+    // this fingerprint, which already holds "provider-SELF" and proposes
+    // it again — a match, not a new conflict — resolving the seeded row.
+    await ingestSmsBatch([message]);
+
+    expect(openConflictsFor(fingerprint)).toEqual([]);
+    const allConflictRows = testDb
+      .select()
+      .from(schema.identityConflicts)
+      .where(eq(schema.identityConflicts.smsId, fingerprint))
+      .all();
+    expect(allConflictRows).toHaveLength(1);
+    expect(allConflictRows[0]!.resolvedAt).not.toBeNull();
+  });
+
+  it("resolves to the same owner and never loses either message, whether combined in one batch or split across sequential calls in either order", async () => {
+    // The core batch-partitioning bug, now closed at its root: two
+    // messages sharing a provider id must never end up with one silently
+    // missing, AND canonical ownership must be the same answer regardless
+    // of how the pair happened to be partitioned across ingestSmsBatch()
+    // calls. That's only possible because ownership is a live contest
+    // (planOwnership) rather than "whoever claims it first, forever" — an
+    // already-persisted row can lose a contested provider id to a later,
+    // higher-ranked (newer-dated) contender, which is exactly what makes
+    // all three arrival patterns below converge on b (the newer message)
+    // regardless of which one happened to reach the ledger first.
     const a = rawSms({ id: "provider-PART", date: 10, sender: "VM-HDFCBK" });
     const b = rawSms({
       id: "provider-PART",
@@ -469,44 +550,34 @@ describe("ingestSmsBatch", () => {
       body: "distinct content for message b",
     });
 
-    function outcomeFor(sender: string) {
-      const rows = testDb.select().from(schema.smsLedger).all();
-      const row = rows.find((r) => r.sender === sender)!;
-      return {
-        hasProviderId: row.providerId === "provider-PART",
-        conflicts: openConflictsFor(row.id),
-      };
-    }
-
-    function assertExactlyOneOwnerNoDataLoss() {
+    function assertBOwnsAndAIsRecorded() {
       const rows = testDb.select().from(schema.smsLedger).all();
       expect(rows).toHaveLength(2);
-      const aOutcome = outcomeFor(a.sender);
-      const bOutcome = outcomeFor(b.sender);
-      // Exactly one of the two owns the contested id...
-      expect(aOutcome.hasProviderId).toBe(!bOutcome.hasProviderId);
-      // ...and the other has the loss recorded, not silently dropped.
-      const loser = aOutcome.hasProviderId ? bOutcome : aOutcome;
-      expect(loser.conflicts).toEqual(["provider-PART"]);
-      return aOutcome.hasProviderId ? "a" : "b";
+      const rowA = rows.find((r) => r.sender === a.sender)!;
+      const rowB = rows.find((r) => r.sender === b.sender)!;
+      expect(rowB.providerId).toBe("provider-PART");
+      expect(rowA.providerId).toBeNull();
+      expect(openConflictsFor(rowA.id)).toEqual(["provider-PART"]);
     }
 
-    // Combined batch: deterministic newest-date tie-break picks b.
+    // Combined batch.
     testDb = freshDb();
     await ingestSmsBatch([a, b]);
-    expect(assertExactlyOneOwnerNoDataLoss()).toBe("b");
+    assertBOwnsAndAIsRecorded();
 
-    // Sequential, a then b: a claimed it uncontested first.
+    // Sequential, a then b: a claims it uncontested first, then loses it
+    // to b once b's genuinely newer content arrives.
     testDb = freshDb();
     await ingestSmsBatch([a]);
     await ingestSmsBatch([b]);
-    expect(assertExactlyOneOwnerNoDataLoss()).toBe("a");
+    assertBOwnsAndAIsRecorded();
 
-    // Sequential, b then a: b claimed it uncontested first.
+    // Sequential, b then a: b claims it uncontested first and keeps it —
+    // a's older content never outranks it.
     testDb = freshDb();
     await ingestSmsBatch([b]);
     await ingestSmsBatch([a]);
-    expect(assertExactlyOneOwnerNoDataLoss()).toBe("b");
+    assertBOwnsAndAIsRecorded();
   });
 
   it("converges the checkpoint provider id deterministically when two batches report the same newest date", async () => {
@@ -580,11 +651,11 @@ describe("ingestSmsBatch", () => {
     const rows = testDb.select().from(schema.smsLedger).all();
     expect(rows).toHaveLength(2);
 
-    const good = rows.find((r) => r.id === "good")!;
+    const good = rows.find((r) => r.providerId === "good")!;
     expect(good.ingestionStatus).toBe("parsed");
     expect(good.parsedResult).not.toBeNull();
 
-    const bad = rows.find((r) => r.id === "bad")!;
+    const bad = rows.find((r) => r.providerId === "bad")!;
     expect(bad.ingestionStatus).toBe("error");
     expect(bad.parsedResult).toBeNull();
     expect(bad.ingestionError).toContain("toLowerCase");
@@ -741,16 +812,18 @@ describe("loadDashboard", () => {
     ]);
 
     const dashboard = await loadDashboard();
-    expect(dashboard.recent.every((m) => m.id !== "bad")).toBe(true);
+    expect(dashboard.recent).toHaveLength(1);
+    expect(dashboard.recent[0]!.body).toBe(HDFC_DEBIT);
   });
 
   it("skips a ledger row with corrupted cached JSON instead of throwing", async () => {
     await ingestSmsBatch([rawSms({ id: "1", body: HDFC_DEBIT })]);
+    const [row] = testDb.select().from(schema.smsLedger).all();
 
     testDb
       .update(schema.smsLedger)
       .set({ parsedResult: "{not valid json" })
-      .where(eq(schema.smsLedger.id, "1"))
+      .where(eq(schema.smsLedger.id, row!.id))
       .run();
 
     const dashboard = await loadDashboard();
@@ -763,11 +836,12 @@ describe("loadDashboard", () => {
     // tries to read a property off it. This is the case a bare try/catch
     // around JSON.parse() can't catch, since parsing itself succeeds.
     await ingestSmsBatch([rawSms({ id: "1", body: HDFC_DEBIT })]);
+    const [row] = testDb.select().from(schema.smsLedger).all();
 
     testDb
       .update(schema.smsLedger)
       .set({ parsedResult: "null" })
-      .where(eq(schema.smsLedger.id, "1"))
+      .where(eq(schema.smsLedger.id, row!.id))
       .run();
 
     await expect(loadDashboard()).resolves.toBeDefined();
@@ -788,7 +862,7 @@ describe("loadDashboard", () => {
     testDb
       .update(schema.smsLedger)
       .set({ parsedResult: JSON.stringify(corrupted) })
-      .where(eq(schema.smsLedger.id, "1"))
+      .where(eq(schema.smsLedger.id, row!.id))
       .run();
 
     await expect(loadDashboard()).resolves.toBeDefined();
@@ -809,6 +883,6 @@ describe("loadTransactions", () => {
     ]);
 
     const filtered = await loadTransactions({ from: 2000 });
-    expect(filtered.map((m) => m.id)).toEqual(["2"]);
+    expect(filtered.map((m) => m.date)).toEqual([5000]);
   });
 });

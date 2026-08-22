@@ -46,6 +46,17 @@ CREATE TABLE `balance_readings` (
 --> statement-breakpoint
 CREATE INDEX `balance_readings_account_id_idx` ON `balance_readings` (`account_id`);--> statement-breakpoint
 CREATE INDEX `balance_readings_as_of_idx` ON `balance_readings` (`as_of`);--> statement-breakpoint
+CREATE TABLE `identity_conflicts` (
+	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+	`sms_id` text NOT NULL,
+	`contested_provider_id` text NOT NULL,
+	`detected_at` integer NOT NULL,
+	`resolved_at` integer,
+	FOREIGN KEY (`sms_id`) REFERENCES `sms_ledger`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE INDEX `identity_conflicts_sms_id_idx` ON `identity_conflicts` (`sms_id`);--> statement-breakpoint
+CREATE UNIQUE INDEX `identity_conflicts_open_unique` ON `identity_conflicts` (`sms_id`,`contested_provider_id`) WHERE "identity_conflicts"."resolved_at" IS NULL;--> statement-breakpoint
 CREATE TABLE `mandate_events` (
 	`id` text PRIMARY KEY NOT NULL,
 	`sms_id` text NOT NULL,
@@ -74,7 +85,6 @@ CREATE TABLE `mandates` (
 --> statement-breakpoint
 CREATE TABLE `sms_ledger` (
 	`id` text PRIMARY KEY NOT NULL,
-	`fingerprint` text NOT NULL,
 	`provider_id` text,
 	`sender` text NOT NULL,
 	`body` text NOT NULL,
@@ -88,7 +98,6 @@ CREATE TABLE `sms_ledger` (
 );
 --> statement-breakpoint
 CREATE INDEX `sms_ledger_date_idx` ON `sms_ledger` (`date`);--> statement-breakpoint
-CREATE UNIQUE INDEX `sms_ledger_fingerprint_idx` ON `sms_ledger` (`fingerprint`);--> statement-breakpoint
 CREATE UNIQUE INDEX `sms_ledger_provider_id_idx` ON `sms_ledger` (`provider_id`);--> statement-breakpoint
 CREATE TABLE `sync_checkpoint` (
 	`id` text PRIMARY KEY NOT NULL,

@@ -5,22 +5,8 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1787408937585,
-      "tag": "0000_handy_mauler",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1787420095412,
-      "tag": "0001_flawless_vengeance",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1787421253181,
-      "tag": "0002_lowly_wolfpack",
+      "when": 1787423687455,
+      "tag": "0000_massive_shadowcat",
       "breakpoints": true
     }
   ]

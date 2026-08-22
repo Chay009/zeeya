@@ -79,7 +79,6 @@ describe("local SQLite schema", () => {
       .insert(schema.smsLedger)
       .values({
         id: "sms-off",
-        fingerprint: "fp-off",
         sender: "VM-HDFCBK",
         body: "test",
         date: 1000,
@@ -142,7 +141,6 @@ describe("local SQLite schema", () => {
       .insert(schema.smsLedger)
       .values({
         id: "sms-1",
-        fingerprint: "fp-1",
         sender: "VM-HDFCBK",
         body: "test",
         date: 1000,
@@ -198,7 +196,6 @@ describe("local SQLite schema", () => {
     // already violate two clauses if it also had a bad parsedResult, which
     // wouldn't prove which clause the constraint is actually catching.
     const baseRow = {
-      fingerprint: "fp-check",
       sender: "VM-HDFCBK",
       body: "test",
       date: 1000,
@@ -301,7 +298,6 @@ describe("local SQLite schema", () => {
       .insert(schema.smsLedger)
       .values({
         id: "sms-2",
-        fingerprint: "fp-2",
         sender: "VM-HDFCBK",
         body: "test",
         date: 1000,
@@ -321,47 +317,11 @@ describe("local SQLite schema", () => {
     ).toThrow(/CHECK constraint failed/);
   });
 
-  it("enforces fingerprint uniqueness independently of id", () => {
-    ctx.db
-      .insert(schema.smsLedger)
-      .values({
-        id: "sms-3",
-        fingerprint: "shared-fp",
-        providerId: "provider-3",
-        sender: "VM-HDFCBK",
-        body: "test",
-        date: 1000,
-        parserVersion: "1.0.0",
-        parsedResult: "{}",
-        ingestionStatus: "parsed",
-        createdAt: 1000,
-      })
-      .run();
-
-    expect(() =>
-      ctx.db
-        .insert(schema.smsLedger)
-        .values({
-          id: "sms-4", // different id, same fingerprint — must still collide
-          fingerprint: "shared-fp",
-          sender: "VM-HDFCBK",
-          body: "test",
-          date: 2000,
-          parserVersion: "1.0.0",
-          parsedResult: "{}",
-          ingestionStatus: "parsed",
-          createdAt: 2000,
-        })
-        .run(),
-    ).toThrow(/UNIQUE constraint failed/);
-  });
-
-  it("enforces provider_id uniqueness independently of id and fingerprint", () => {
+  it("enforces provider_id uniqueness independently of id", () => {
     ctx.db
       .insert(schema.smsLedger)
       .values({
         id: "sms-5",
-        fingerprint: "fp-5",
         providerId: "shared-provider-id",
         sender: "VM-HDFCBK",
         body: "test",
@@ -377,8 +337,7 @@ describe("local SQLite schema", () => {
       ctx.db
         .insert(schema.smsLedger)
         .values({
-          id: "sms-6", // different id and fingerprint, same provider id
-          fingerprint: "fp-6",
+          id: "sms-6", // different id, same provider id
           providerId: "shared-provider-id",
           sender: "VM-HDFCBK",
           body: "test",

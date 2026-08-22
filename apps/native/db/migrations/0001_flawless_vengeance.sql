@@ -1,1 +1,0 @@
-ALTER TABLE `sms_ledger` ADD `contested_provider_id` text;

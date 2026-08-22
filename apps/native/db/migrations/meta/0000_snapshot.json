@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "9e1ac717-3ef4-4e82-aea5-4343674460bc",
+  "id": "a2069748-548d-489e-a022-33779e9e2cd9",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "accounts": {
@@ -305,6 +305,73 @@
         }
       }
     },
+    "identity_conflicts": {
+      "name": "identity_conflicts",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "sms_id": {
+          "name": "sms_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "contested_provider_id": {
+          "name": "contested_provider_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "detected_at": {
+          "name": "detected_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "resolved_at": {
+          "name": "resolved_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "identity_conflicts_sms_id_idx": {
+          "name": "identity_conflicts_sms_id_idx",
+          "columns": ["sms_id"],
+          "isUnique": false
+        },
+        "identity_conflicts_open_unique": {
+          "name": "identity_conflicts_open_unique",
+          "columns": ["sms_id", "contested_provider_id"],
+          "isUnique": true,
+          "where": "\"identity_conflicts\".\"resolved_at\" IS NULL"
+        }
+      },
+      "foreignKeys": {
+        "identity_conflicts_sms_id_sms_ledger_id_fk": {
+          "name": "identity_conflicts_sms_id_sms_ledger_id_fk",
+          "tableFrom": "identity_conflicts",
+          "tableTo": "sms_ledger",
+          "columnsFrom": ["sms_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
     "mandate_events": {
       "name": "mandate_events",
       "columns": {
@@ -473,13 +540,6 @@
           "notNull": true,
           "autoincrement": false
         },
-        "fingerprint": {
-          "name": "fingerprint",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
         "provider_id": {
           "name": "provider_id",
           "type": "text",
@@ -549,11 +609,6 @@
           "name": "sms_ledger_date_idx",
           "columns": ["date"],
           "isUnique": false
-        },
-        "sms_ledger_fingerprint_idx": {
-          "name": "sms_ledger_fingerprint_idx",
-          "columns": ["fingerprint"],
-          "isUnique": true
         },
         "sms_ledger_provider_id_idx": {
           "name": "sms_ledger_provider_id_idx",
