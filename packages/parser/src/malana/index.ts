@@ -3,6 +3,7 @@ import { MalanaEngine } from "./malana";
 import { parseSeedData } from "./asset-schemas";
 
 export { MalanaEngine } from "./malana";
+export { CurrencyRegistry } from "./currency-registry";
 export type {
   SeedData,
   MalanaResult,

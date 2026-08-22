@@ -1,12 +1,21 @@
-// Exhaustive minor-unit exponent map — exactly the currencies
-// @zeeya/parser's currency-registry.ts can produce, nothing else. An
-// unrecognized code is rejected, not defaulted to 2 decimals: the parser
-// extracts amounts from arbitrary SMS text, so a false match producing a
-// bogus 3-letter code is a real possibility, and silently guessing its
-// minor-unit scale would store a wrong value with no way to detect it later.
+// Minor-unit exponent for exactly the currencies the Malana engine's
+// CurrencyRegistry can produce — see this file's own currency.test.ts
+// parity test, which constructs a real CurrencyRegistry against the real
+// seed and asserts these keys match it exactly, so this cannot silently
+// drift again the way it already did once.
+//
+// This is deliberately scoped to Malana specifically (createMalanaEngine,
+// what apps/native/lib/sms.ts actually uses for on-device parsing), not
+// "@zeeya/parser" as a whole — the package's separate legacy per-bank
+// parsers (packages/parser/src/banks/, see e.g. src/tests/icici.test.ts)
+// are a different code path with no CurrencyRegistry involved at all, and
+// aren't reachable from native ingestion.
 const MINOR_UNIT_EXPONENT: Readonly<Record<string, number>> = {
+  AED: 2,
   AUD: 2,
   CAD: 2,
+  CNY: 2,
+  EGP: 2,
   EUR: 2,
   GBP: 2,
   GHS: 2,
@@ -15,6 +24,7 @@ const MINOR_UNIT_EXPONENT: Readonly<Record<string, number>> = {
   JPY: 0,
   KES: 2,
   KRW: 0,
+  LKR: 2,
   NGN: 2,
   NZD: 2,
   SEK: 2,
@@ -30,7 +40,25 @@ export function minorUnitExponent(currencyCode: string): number {
   return exponent;
 }
 
-const DECIMAL_AMOUNT_RE = /^-?\d+(\.\d+)?$/;
+// Exposed only so currency.test.ts's parity check can compare this table's
+// actual key set against a real CurrencyRegistry's real output — comparing
+// against a second, separately hand-typed list in the test file would just
+// be two hardcoded lists agreeing with each other, not a genuine mechanical
+// check against Malana itself.
+export function supportedCurrencyCodes(): readonly string[] {
+  return Object.keys(MINOR_UNIT_EXPONENT);
+}
+
+// Matches a plain (no separators) decimal, or a Western-grouped one (groups
+// of 3: "5,000.00", "1,234,567.89"), or an Indian-grouped one (a leading
+// 1-2 digit group, then groups of 2, then a final group of exactly 3:
+// "1,00,000.00", "12,34,567"). Real bank SMS in this app use both — INR
+// amounts are commonly lakh/crore-grouped, other currencies Western-grouped
+// — and anything matching neither (e.g. "1,,2.00", "1,23.00") is malformed,
+// not a grouping style to guess at.
+const PLAIN_DECIMAL_RE = /^-?\d+(\.\d+)?$/;
+const WESTERN_GROUPED_RE = /^-?\d{1,3}(,\d{3})*(\.\d+)?$/;
+const INDIAN_GROUPED_RE = /^-?\d{1,2}(,\d{2})*,\d{3}(\.\d+)?$/;
 
 // Converts a parser-produced decimal amount string (MalanaResult.trx/bal/
 // etc. are always strings, e.g. "5,000.00", "999") directly to an integer
@@ -38,13 +66,17 @@ const DECIMAL_AMOUNT_RE = /^-?\d+(\.\d+)?$/;
 // `1.005 * 100` is already imprecise in JS (evaluates to
 // 100.49999999999999) before any rounding runs, so going through
 // parseFloat at all would reintroduce the exact error this column exists to
-// avoid. Comma-stripping matches apps/native/lib/dashboard.ts's own
-// parseAmount, which established that the parser's raw amount strings can
-// carry thousands separators.
+// avoid.
 export function toMinorUnits(rawAmount: string, currencyCode: string): number {
   const exponent = minorUnitExponent(currencyCode);
-  const normalized = rawAmount.replace(/,/g, "").trim();
-  if (!DECIMAL_AMOUNT_RE.test(normalized)) {
+  const trimmed = rawAmount.trim();
+  const hasGrouping = trimmed.includes(",");
+  if (hasGrouping && !WESTERN_GROUPED_RE.test(trimmed) && !INDIAN_GROUPED_RE.test(trimmed)) {
+    throw new Error(`Malformed digit grouping: ${JSON.stringify(rawAmount)}`);
+  }
+
+  const normalized = trimmed.replace(/,/g, "");
+  if (!PLAIN_DECIMAL_RE.test(normalized)) {
     throw new Error(`Not a decimal amount: ${JSON.stringify(rawAmount)}`);
   }
 
@@ -77,5 +109,8 @@ export function toMinorUnits(rawAmount: string, currencyCode: string): number {
 }
 
 export function fromMinorUnits(amountMinorUnits: number, currencyCode: string): number {
+  if (!Number.isSafeInteger(amountMinorUnits)) {
+    throw new Error(`Not a valid minor-units integer: ${amountMinorUnits}`);
+  }
   return amountMinorUnits / 10 ** minorUnitExponent(currencyCode);
 }
