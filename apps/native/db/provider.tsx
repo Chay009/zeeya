@@ -1,17 +1,20 @@
 // Runs pending SQLite migrations before the app renders anything that reads
-// the local DB. Kept separate from client.ts so screens can import the
-// connection without pulling in React.
+// the local DB. Kept separate from client.native.ts so screens can import
+// the connection without pulling in React.
 import { useMigrations } from "drizzle-orm/expo-sqlite/migrator";
 import type { PropsWithChildren } from "react";
 import { ActivityIndicator, Platform, Text, View } from "react-native";
 
+// This import always resolves to client.native.ts at typecheck time (see
+// tsconfig.json's moduleSuffixes) and NativeDatabaseGate only ever renders
+// on native platforms (see DatabaseProvider below) — Metro correctly swaps
+// in client.web.ts's `db: null` for an actual web bundle, but that code path
+// never reaches this component.
 import { db } from "./client";
 import migrations from "./migrations/migrations";
 
 function NativeDatabaseGate({ children }: PropsWithChildren) {
-  // db is non-null here — this component only renders on native platforms
-  // (see DatabaseProvider below), where client.ts always opens a connection.
-  const { success, error } = useMigrations(db as NonNullable<typeof db>, migrations);
+  const { success, error } = useMigrations(db, migrations);
 
   if (error) {
     return (

@@ -4,7 +4,15 @@
     "strict": true,
     "paths": {
       "@/*": ["./*"]
-    }
+    },
+    // Without this, tsc can't resolve extensionless imports of *.native.ts
+    // files at all (Expo's own tsconfig.base doesn't set it) — Metro
+    // resolves the platform split at bundle time regardless, but tsc needs
+    // its own static answer. This makes typecheck verify the native variant
+    // (the app's primary target); *.web.ts counterparts stay untyped by
+    // tsc, which is an accepted tradeoff for a platform that isn't the
+    // primary target and, for db/client.web.ts specifically, is trivial.
+    "moduleSuffixes": [".native", ""]
   },
   "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"]
 }

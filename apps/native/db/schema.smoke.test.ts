@@ -1,10 +1,11 @@
 // Verifies real SQLite behavior that typechecking and drizzle-kit generate
 // cannot: that the generated migration actually applies, that foreign keys
-// are enforced once PRAGMA foreign_keys = ON (as db/client.ts sets), and
-// that the CHECK constraints reject the values they're meant to reject.
+// are enforced once initializeNativeDatabase runs (the exact function
+// db/client.native.ts calls in production — not a re-implementation of it),
+// and that the CHECK constraints reject the values they're meant to reject.
 // Runs against better-sqlite3 in Node — the schema/migration SQL is driver-
-// agnostic, only db/client.ts's connection is Expo-specific, so this needs
-// no device or Expo runtime.
+// agnostic, only db/client.native.ts's connection is Expo-specific, so this
+// needs no device or Expo runtime.
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
@@ -12,20 +13,11 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import * as schema from "./schema";
+import { initializeNativeDatabase } from "./native-init";
 
 const MIGRATIONS_DIR = path.join(__dirname, "migrations");
 
-// better-sqlite3 happens to compile SQLite with foreign_keys=1 by default
-// (confirmed directly — `new Database(':memory:').pragma('foreign_keys')`
-// returns 1 with no pragma call at all), unlike the classic SQLite default
-// of off. That makes `foreignKeys` an explicit parameter here rather than
-// relying on either driver's default: the point of these tests is to prove
-// the *mechanism* — that db/client.ts's own PRAGMA call is what determines
-// enforcement — not to coincidentally pass because of what this test
-// runner's SQLite build happens to ship with.
-function freshDb(options: { foreignKeys: boolean }) {
-  const sqlite = new Database(":memory:");
-  sqlite.pragma(`foreign_keys = ${options.foreignKeys ? "ON" : "OFF"}`);
+function applyMigrations(sqlite: Database.Database) {
   const migrationFiles = readdirSync(MIGRATIONS_DIR)
     .filter((f) => f.endsWith(".sql"))
     .sort();
@@ -38,19 +30,45 @@ function freshDb(options: { foreignKeys: boolean }) {
       if (trimmed) sqlite.exec(trimmed);
     }
   }
+}
+
+// initializeNativeDatabase only needs an execSync(source) method — see
+// native-init.ts's minimal ExecSyncCapable interface — so this adapts
+// better-sqlite3's .exec() without an unsafe cast to expo-sqlite's much
+// larger SQLiteDatabase type. Still calls the real, unmodified production
+// function, not a reimplementation of what it does.
+function freshInitializedDb() {
+  const sqlite = new Database(":memory:");
+  applyMigrations(sqlite);
+  initializeNativeDatabase({ execSync: (source: string) => sqlite.exec(source) });
+  return { sqlite, db: drizzle(sqlite, { schema }) };
+}
+
+// Isolates the "what if the pragma call is deleted" case without touching
+// initializeNativeDatabase — better-sqlite3 happens to compile SQLite with
+// foreign_keys=1 by default (confirmed directly:
+// `new Database(':memory:').pragma('foreign_keys')` returns 1 with no
+// pragma call at all), unlike the classic SQLite default of off. Explicitly
+// forcing it off here is what makes the "cascade doesn't happen" assertion
+// below prove the mechanism, not coincidentally pass due to the test
+// runner's own SQLite build.
+function freshUninitializedDb() {
+  const sqlite = new Database(":memory:");
+  sqlite.pragma("foreign_keys = OFF");
+  applyMigrations(sqlite);
   return { sqlite, db: drizzle(sqlite, { schema }) };
 }
 
 describe("local SQLite schema", () => {
-  let ctx: ReturnType<typeof freshDb>;
+  let ctx: ReturnType<typeof freshInitializedDb>;
 
   beforeEach(() => {
-    ctx = freshDb({ foreignKeys: true });
+    ctx = freshInitializedDb();
   });
 
-  it("does NOT cascade when foreign_keys is off — proves the ON case below is the pragma, not a driver default", () => {
-    const off = freshDb({ foreignKeys: false });
-    off.db
+  it("does NOT cascade when the database is never initialized — proves the case below is initializeNativeDatabase, not a driver default", () => {
+    const uninitialized = freshUninitializedDb();
+    uninitialized.db
       .insert(schema.smsLedger)
       .values({
         id: "sms-off",
@@ -64,26 +82,26 @@ describe("local SQLite schema", () => {
         createdAt: 1000,
       })
       .run();
-    off.db
+    uninitialized.db
       .insert(schema.transactions)
       .values({
         id: "trx-off",
         smsId: "sms-off",
-        amount: 100,
+        amountMinorUnits: 10000,
         currency: "INR",
         direction: "expense",
         date: 1000,
       })
       .run();
 
-    off.db
+    uninitialized.db
       .delete(schema.smsLedger)
       .where(sql`id = 'sms-off'`)
       .run();
 
     // Orphaned, not cascaded — this is what would happen in production if
-    // db/client.ts's PRAGMA call were ever removed.
-    expect(off.db.select().from(schema.transactions).all()).toHaveLength(1);
+    // client.native.ts stopped calling initializeNativeDatabase.
+    expect(uninitialized.db.select().from(schema.transactions).all()).toHaveLength(1);
   });
 
   it("applies the generated migration cleanly and creates every table", () => {
@@ -105,7 +123,7 @@ describe("local SQLite schema", () => {
     );
   });
 
-  it("enforces foreign keys with PRAGMA foreign_keys = ON (cascade delete)", () => {
+  it("enforces foreign keys via initializeNativeDatabase (cascade delete)", () => {
     ctx.db
       .insert(schema.smsLedger)
       .values({
@@ -125,7 +143,7 @@ describe("local SQLite schema", () => {
       .values({
         id: "trx-1",
         smsId: "sms-1",
-        amount: 100,
+        amountMinorUnits: 10000,
         currency: "INR",
         direction: "expense",
         date: 1000,
@@ -140,7 +158,7 @@ describe("local SQLite schema", () => {
       .run();
 
     // Cascade only fires when the connection actually enforces FKs — this
-    // is the exact behavior db/client.ts's PRAGMA call exists to guarantee.
+    // is the exact behavior initializeNativeDatabase exists to guarantee.
     expect(ctx.db.select().from(schema.transactions).all()).toHaveLength(0);
   });
 
@@ -151,7 +169,7 @@ describe("local SQLite schema", () => {
         .values({
           id: "trx-orphan",
           smsId: "does-not-exist",
-          amount: 50,
+          amountMinorUnits: 5000,
           currency: "INR",
           direction: "expense",
           date: 1000,
@@ -179,6 +197,26 @@ describe("local SQLite schema", () => {
     ).toThrow(/CHECK constraint failed/);
   });
 
+  it("rejects an ingestion row whose error message doesn't match its status", () => {
+    expect(() =>
+      ctx.db
+        .insert(schema.smsLedger)
+        .values({
+          id: "sms-bad-2",
+          fingerprint: "fp-bad-2",
+          sender: "VM-HDFCBK",
+          body: "test",
+          date: 1000,
+          parserVersion: "1.0.0",
+          parsedResult: null,
+          ingestionStatus: "parsed", // "parsed" must not carry an error message
+          ingestionError: "boom",
+          createdAt: 1000,
+        })
+        .run(),
+    ).toThrow(/CHECK constraint failed/);
+  });
+
   it("rejects a transaction direction outside the enum", () => {
     ctx.db
       .insert(schema.smsLedger)
@@ -198,13 +236,13 @@ describe("local SQLite schema", () => {
     expect(() =>
       ctx.sqlite
         .prepare(
-          "INSERT INTO transactions (id, sms_id, amount, currency, direction, date) VALUES (?, ?, ?, ?, ?, ?)",
+          "INSERT INTO transactions (id, sms_id, amount_minor_units, currency, direction, date) VALUES (?, ?, ?, ?, ?, ?)",
         )
-        .run("trx-bad", "sms-2", 100, "INR", "sideways", 1000),
+        .run("trx-bad", "sms-2", 10000, "INR", "sideways", 1000),
     ).toThrow(/CHECK constraint failed/);
   });
 
-  it("enforces fingerprint and provider_id uniqueness independently of id", () => {
+  it("enforces fingerprint uniqueness independently of id", () => {
     ctx.db
       .insert(schema.smsLedger)
       .values({
@@ -227,6 +265,42 @@ describe("local SQLite schema", () => {
         .values({
           id: "sms-4", // different id, same fingerprint — must still collide
           fingerprint: "shared-fp",
+          sender: "VM-HDFCBK",
+          body: "test",
+          date: 2000,
+          parserVersion: "1.0.0",
+          parsedResult: "{}",
+          ingestionStatus: "parsed",
+          createdAt: 2000,
+        })
+        .run(),
+    ).toThrow(/UNIQUE constraint failed/);
+  });
+
+  it("enforces provider_id uniqueness independently of id and fingerprint", () => {
+    ctx.db
+      .insert(schema.smsLedger)
+      .values({
+        id: "sms-5",
+        fingerprint: "fp-5",
+        providerId: "shared-provider-id",
+        sender: "VM-HDFCBK",
+        body: "test",
+        date: 1000,
+        parserVersion: "1.0.0",
+        parsedResult: "{}",
+        ingestionStatus: "parsed",
+        createdAt: 1000,
+      })
+      .run();
+
+    expect(() =>
+      ctx.db
+        .insert(schema.smsLedger)
+        .values({
+          id: "sms-6", // different id and fingerprint, same provider id
+          fingerprint: "fp-6",
+          providerId: "shared-provider-id",
           sender: "VM-HDFCBK",
           body: "test",
           date: 2000,

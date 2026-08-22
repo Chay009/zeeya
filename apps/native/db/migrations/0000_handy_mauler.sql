@@ -3,12 +3,12 @@ CREATE TABLE `accounts` (
 	`bank_name` text NOT NULL,
 	`last4` text NOT NULL,
 	`currency` text NOT NULL,
-	`balance` real NOT NULL,
+	`balance_minor_units` integer NOT NULL,
 	`balance_as_of` integer NOT NULL,
 	`balance_sender` text NOT NULL,
-	`estimated_balance` real NOT NULL,
+	`estimated_balance_minor_units` integer NOT NULL,
 	`estimated_as_of` integer NOT NULL,
-	`reconciliation_delta` real
+	`reconciliation_delta_minor_units` integer
 );
 --> statement-breakpoint
 CREATE TABLE `activity` (
@@ -26,7 +26,7 @@ CREATE TABLE `balance_readings` (
 	`id` text PRIMARY KEY NOT NULL,
 	`sms_id` text NOT NULL,
 	`account_id` text,
-	`balance` real NOT NULL,
+	`balance_minor_units` integer NOT NULL,
 	`currency` text NOT NULL,
 	`as_of` integer NOT NULL,
 	`detected_bank_name` text NOT NULL,
@@ -34,10 +34,10 @@ CREATE TABLE `balance_readings` (
 	`association_kind` text NOT NULL,
 	`sender` text NOT NULL,
 	`reconciliation_previous_as_of` integer,
-	`reconciliation_expected_balance` real,
-	`reconciliation_delta` real,
-	`captured_income` real,
-	`captured_expense` real,
+	`reconciliation_expected_balance_minor_units` integer,
+	`reconciliation_delta_minor_units` integer,
+	`captured_income_minor_units` integer,
+	`captured_expense_minor_units` integer,
 	`captured_transaction_count` integer,
 	FOREIGN KEY (`sms_id`) REFERENCES `sms_ledger`(`id`) ON UPDATE no action ON DELETE cascade,
 	FOREIGN KEY (`account_id`) REFERENCES `accounts`(`id`) ON UPDATE no action ON DELETE cascade,
@@ -63,7 +63,7 @@ CREATE INDEX `mandate_events_mandate_id_idx` ON `mandate_events` (`mandate_id`);
 CREATE TABLE `mandates` (
 	`mandate_id` text PRIMARY KEY NOT NULL,
 	`merchant` text NOT NULL,
-	`amount` real,
+	`amount_minor_units` integer,
 	`currency` text NOT NULL,
 	`status` text NOT NULL,
 	`created_at` integer NOT NULL,
@@ -84,7 +84,7 @@ CREATE TABLE `sms_ledger` (
 	`ingestion_status` text NOT NULL,
 	`ingestion_error` text,
 	`created_at` integer NOT NULL,
-	CONSTRAINT "sms_ledger_parsed_result_matches_status" CHECK(("sms_ledger"."ingestion_status" = 'parsed' AND "sms_ledger"."parsed_result" IS NOT NULL) OR ("sms_ledger"."ingestion_status" = 'error' AND "sms_ledger"."parsed_result" IS NULL))
+	CONSTRAINT "sms_ledger_parsed_result_matches_status" CHECK(("sms_ledger"."ingestion_status" = 'parsed' AND "sms_ledger"."parsed_result" IS NOT NULL AND "sms_ledger"."ingestion_error" IS NULL) OR ("sms_ledger"."ingestion_status" = 'error' AND "sms_ledger"."parsed_result" IS NULL AND "sms_ledger"."ingestion_error" IS NOT NULL))
 );
 --> statement-breakpoint
 CREATE INDEX `sms_ledger_date_idx` ON `sms_ledger` (`date`);--> statement-breakpoint
@@ -101,7 +101,7 @@ CREATE TABLE `transactions` (
 	`id` text PRIMARY KEY NOT NULL,
 	`sms_id` text NOT NULL,
 	`account_id` text,
-	`amount` real NOT NULL,
+	`amount_minor_units` integer NOT NULL,
 	`currency` text NOT NULL,
 	`direction` text NOT NULL,
 	`trx_type_rich` text,

@@ -5,17 +5,15 @@
 // layer maps rows between the two; it does not require either to change.
 //
 // Foreign keys are declared here but SQLite ignores them unless the
-// connection runs `PRAGMA foreign_keys = ON` — see db/client.ts.
+// connection runs `PRAGMA foreign_keys = ON` — see db/native-init.ts.
+//
+// Every money column is an integer in minor units (paise for INR, cents for
+// USD, ...), not SQLite REAL — see db/currency.ts. Binary floating point
+// can't represent decimal currency amounts exactly, and this schema hasn't
+// shipped yet, so there's no reason to let that assumption spread into
+// ingestion code.
 import { sql } from "drizzle-orm";
-import {
-  sqliteTable,
-  text,
-  real,
-  integer,
-  index,
-  uniqueIndex,
-  check,
-} from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, index, uniqueIndex, check } from "drizzle-orm/sqlite-core";
 
 // ── Ledger layer ────────────────────────────────────────────────────────────
 // One row per SMS ever ingested. This is the reprocessing source of truth:
@@ -60,7 +58,7 @@ export const smsLedger = sqliteTable(
     uniqueIndex("sms_ledger_provider_id_idx").on(table.providerId),
     check(
       "sms_ledger_parsed_result_matches_status",
-      sql`(${table.ingestionStatus} = 'parsed' AND ${table.parsedResult} IS NOT NULL) OR (${table.ingestionStatus} = 'error' AND ${table.parsedResult} IS NULL)`,
+      sql`(${table.ingestionStatus} = 'parsed' AND ${table.parsedResult} IS NOT NULL AND ${table.ingestionError} IS NULL) OR (${table.ingestionStatus} = 'error' AND ${table.parsedResult} IS NULL AND ${table.ingestionError} IS NOT NULL)`,
     ),
   ],
 );
@@ -88,12 +86,12 @@ export const accounts = sqliteTable("accounts", {
   bankName: text("bank_name").notNull(),
   last4: text("last4").notNull(),
   currency: text("currency").notNull(),
-  balance: real("balance").notNull(),
+  balanceMinorUnits: integer("balance_minor_units").notNull(),
   balanceAsOf: integer("balance_as_of").notNull(),
   balanceSender: text("balance_sender").notNull(),
-  estimatedBalance: real("estimated_balance").notNull(),
+  estimatedBalanceMinorUnits: integer("estimated_balance_minor_units").notNull(),
   estimatedAsOf: integer("estimated_as_of").notNull(),
-  reconciliationDelta: real("reconciliation_delta"),
+  reconciliationDeltaMinorUnits: integer("reconciliation_delta_minor_units"),
 });
 
 export const balanceReadings = sqliteTable(
@@ -107,7 +105,7 @@ export const balanceReadings = sqliteTable(
     // digits, and more than one confirmed account shares that bank+currency
     // — see dashboard.ts's resolveTransactionAccountKey ambiguity handling).
     accountId: text("account_id").references(() => accounts.id, { onDelete: "cascade" }),
-    balance: real("balance").notNull(),
+    balanceMinorUnits: integer("balance_minor_units").notNull(),
     currency: text("currency").notNull(),
     asOf: integer("as_of").notNull(),
     detectedBankName: text("detected_bank_name").notNull(),
@@ -118,10 +116,10 @@ export const balanceReadings = sqliteTable(
     sender: text("sender").notNull(),
     // Reconciliation against the previous reading for this account, if any.
     reconciliationPreviousAsOf: integer("reconciliation_previous_as_of"),
-    reconciliationExpectedBalance: real("reconciliation_expected_balance"),
-    reconciliationDelta: real("reconciliation_delta"),
-    capturedIncome: real("captured_income"),
-    capturedExpense: real("captured_expense"),
+    reconciliationExpectedBalanceMinorUnits: integer("reconciliation_expected_balance_minor_units"),
+    reconciliationDeltaMinorUnits: integer("reconciliation_delta_minor_units"),
+    capturedIncomeMinorUnits: integer("captured_income_minor_units"),
+    capturedExpenseMinorUnits: integer("captured_expense_minor_units"),
     capturedTransactionCount: integer("captured_transaction_count"),
   },
   (table) => [
@@ -146,7 +144,7 @@ export const transactions = sqliteTable(
       .notNull()
       .references(() => smsLedger.id, { onDelete: "cascade" }),
     accountId: text("account_id").references(() => accounts.id, { onDelete: "cascade" }),
-    amount: real("amount").notNull(),
+    amountMinorUnits: integer("amount_minor_units").notNull(),
     currency: text("currency").notNull(),
     direction: text("direction", { enum: ["income", "expense", "neutral"] }).notNull(),
     trxTypeRich: text("trx_type_rich"),
@@ -202,7 +200,7 @@ export const mandates = sqliteTable(
   {
     mandateId: text("mandate_id").primaryKey(),
     merchant: text("merchant").notNull(),
-    amount: real("amount"),
+    amountMinorUnits: integer("amount_minor_units"),
     currency: text("currency").notNull(),
     status: text("status", { enum: ["active", "cancelled"] }).notNull(),
     createdAt: integer("created_at").notNull(),

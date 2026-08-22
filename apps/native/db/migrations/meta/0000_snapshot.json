@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "499d19f5-ac98-4d79-a399-6db5315d29b0",
+  "id": "9e1ac717-3ef4-4e82-aea5-4343674460bc",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "accounts": {
@@ -35,9 +35,9 @@
           "notNull": true,
           "autoincrement": false
         },
-        "balance": {
-          "name": "balance",
-          "type": "real",
+        "balance_minor_units": {
+          "name": "balance_minor_units",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
@@ -56,9 +56,9 @@
           "notNull": true,
           "autoincrement": false
         },
-        "estimated_balance": {
-          "name": "estimated_balance",
-          "type": "real",
+        "estimated_balance_minor_units": {
+          "name": "estimated_balance_minor_units",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
@@ -70,9 +70,9 @@
           "notNull": true,
           "autoincrement": false
         },
-        "reconciliation_delta": {
-          "name": "reconciliation_delta",
-          "type": "real",
+        "reconciliation_delta_minor_units": {
+          "name": "reconciliation_delta_minor_units",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
@@ -172,9 +172,9 @@
           "notNull": false,
           "autoincrement": false
         },
-        "balance": {
-          "name": "balance",
-          "type": "real",
+        "balance_minor_units": {
+          "name": "balance_minor_units",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
@@ -228,30 +228,30 @@
           "notNull": false,
           "autoincrement": false
         },
-        "reconciliation_expected_balance": {
-          "name": "reconciliation_expected_balance",
-          "type": "real",
+        "reconciliation_expected_balance_minor_units": {
+          "name": "reconciliation_expected_balance_minor_units",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
         },
-        "reconciliation_delta": {
-          "name": "reconciliation_delta",
-          "type": "real",
+        "reconciliation_delta_minor_units": {
+          "name": "reconciliation_delta_minor_units",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
         },
-        "captured_income": {
-          "name": "captured_income",
-          "type": "real",
+        "captured_income_minor_units": {
+          "name": "captured_income_minor_units",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
         },
-        "captured_expense": {
-          "name": "captured_expense",
-          "type": "real",
+        "captured_expense_minor_units": {
+          "name": "captured_expense_minor_units",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
@@ -409,9 +409,9 @@
           "notNull": true,
           "autoincrement": false
         },
-        "amount": {
-          "name": "amount",
-          "type": "real",
+        "amount_minor_units": {
+          "name": "amount_minor_units",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
@@ -567,7 +567,7 @@
       "checkConstraints": {
         "sms_ledger_parsed_result_matches_status": {
           "name": "sms_ledger_parsed_result_matches_status",
-          "value": "(\"sms_ledger\".\"ingestion_status\" = 'parsed' AND \"sms_ledger\".\"parsed_result\" IS NOT NULL) OR (\"sms_ledger\".\"ingestion_status\" = 'error' AND \"sms_ledger\".\"parsed_result\" IS NULL)"
+          "value": "(\"sms_ledger\".\"ingestion_status\" = 'parsed' AND \"sms_ledger\".\"parsed_result\" IS NOT NULL AND \"sms_ledger\".\"ingestion_error\" IS NULL) OR (\"sms_ledger\".\"ingestion_status\" = 'error' AND \"sms_ledger\".\"parsed_result\" IS NULL AND \"sms_ledger\".\"ingestion_error\" IS NOT NULL)"
         }
       }
     },
@@ -633,9 +633,9 @@
           "notNull": false,
           "autoincrement": false
         },
-        "amount": {
-          "name": "amount",
-          "type": "real",
+        "amount_minor_units": {
+          "name": "amount_minor_units",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
