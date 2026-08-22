@@ -37,8 +37,15 @@ function applyMigrations(sqlite: Database.Database) {
 // better-sqlite3's .exec() without an unsafe cast to expo-sqlite's much
 // larger SQLiteDatabase type. Still calls the real, unmodified production
 // function, not a reimplementation of what it does.
+//
+// Forces foreign_keys OFF before calling it: better-sqlite3 compiles with
+// foreign_keys=1 by default (see freshUninitializedDb's comment below), so
+// without this reset, every test using this helper would keep passing even
+// if initializeNativeDatabase were emptied out — the driver's own default
+// would carry the enforcement, not the function under test.
 function freshInitializedDb() {
   const sqlite = new Database(":memory:");
+  sqlite.pragma("foreign_keys = OFF");
   applyMigrations(sqlite);
   initializeNativeDatabase({ execSync: (source: string) => sqlite.exec(source) });
   return { sqlite, db: drizzle(sqlite, { schema }) };
@@ -102,6 +109,12 @@ describe("local SQLite schema", () => {
     // Orphaned, not cascaded — this is what would happen in production if
     // client.native.ts stopped calling initializeNativeDatabase.
     expect(uninitialized.db.select().from(schema.transactions).all()).toHaveLength(1);
+  });
+
+  it("initializeNativeDatabase actually turns foreign_keys on, not just relying on a default", () => {
+    // freshInitializedDb forces the pragma off first (see its own comment),
+    // so this can only read 1 if initializeNativeDatabase itself set it.
+    expect(ctx.sqlite.pragma("foreign_keys", { simple: true })).toBe(1);
   });
 
   it("applies the generated migration cleanly and creates every table", () => {
@@ -178,43 +191,108 @@ describe("local SQLite schema", () => {
     ).toThrow(/FOREIGN KEY constraint failed/);
   });
 
-  it("rejects an ingestion row whose parsedResult doesn't match its status", () => {
-    expect(() =>
-      ctx.db
-        .insert(schema.smsLedger)
-        .values({
-          id: "sms-bad",
-          fingerprint: "fp-bad",
-          sender: "VM-HDFCBK",
-          body: "test",
-          date: 1000,
-          parserVersion: "1.0.0",
-          parsedResult: "{}", // status is "error" — parsedResult must be null
-          ingestionStatus: "error",
-          createdAt: 1000,
-        })
-        .run(),
-    ).toThrow(/CHECK constraint failed/);
-  });
+  describe("sms_ledger_parsed_result_matches_status", () => {
+    // Each case below violates exactly one clause of the CHECK — a "parsed"
+    // row with both parsedResult present and ingestionError absent would
+    // already violate two clauses if it also had a bad parsedResult, which
+    // wouldn't prove which clause the constraint is actually catching.
+    const baseRow = {
+      fingerprint: "fp-check",
+      sender: "VM-HDFCBK",
+      body: "test",
+      date: 1000,
+      parserVersion: "1.0.0",
+      createdAt: 1000,
+    };
 
-  it("rejects an ingestion row whose error message doesn't match its status", () => {
-    expect(() =>
-      ctx.db
-        .insert(schema.smsLedger)
-        .values({
-          id: "sms-bad-2",
-          fingerprint: "fp-bad-2",
-          sender: "VM-HDFCBK",
-          body: "test",
-          date: 1000,
-          parserVersion: "1.0.0",
-          parsedResult: null,
-          ingestionStatus: "parsed", // "parsed" must not carry an error message
-          ingestionError: "boom",
-          createdAt: 1000,
-        })
-        .run(),
-    ).toThrow(/CHECK constraint failed/);
+    it("accepts a valid parsed row (result present, error absent)", () => {
+      expect(() =>
+        ctx.db
+          .insert(schema.smsLedger)
+          .values({
+            ...baseRow,
+            id: "sms-valid-parsed",
+            parsedResult: "{}",
+            ingestionStatus: "parsed",
+          })
+          .run(),
+      ).not.toThrow();
+    });
+
+    it("accepts a valid error row (result absent, error present)", () => {
+      expect(() =>
+        ctx.db
+          .insert(schema.smsLedger)
+          .values({
+            ...baseRow,
+            id: "sms-valid-error",
+            parsedResult: null,
+            ingestionStatus: "error",
+            ingestionError: "boom",
+          })
+          .run(),
+      ).not.toThrow();
+    });
+
+    it("rejects status=parsed with parsedResult null (only that clause violated)", () => {
+      expect(() =>
+        ctx.db
+          .insert(schema.smsLedger)
+          .values({
+            ...baseRow,
+            id: "sms-bad-missing-result",
+            parsedResult: null,
+            ingestionStatus: "parsed",
+            ingestionError: null,
+          })
+          .run(),
+      ).toThrow(/CHECK constraint failed/);
+    });
+
+    it("rejects status=parsed with an ingestionError present (only that clause violated)", () => {
+      expect(() =>
+        ctx.db
+          .insert(schema.smsLedger)
+          .values({
+            ...baseRow,
+            id: "sms-bad-stray-error",
+            parsedResult: "{}",
+            ingestionStatus: "parsed",
+            ingestionError: "boom",
+          })
+          .run(),
+      ).toThrow(/CHECK constraint failed/);
+    });
+
+    it("rejects status=error with parsedResult present (only that clause violated)", () => {
+      expect(() =>
+        ctx.db
+          .insert(schema.smsLedger)
+          .values({
+            ...baseRow,
+            id: "sms-bad-stray-result",
+            parsedResult: "{}",
+            ingestionStatus: "error",
+            ingestionError: "boom",
+          })
+          .run(),
+      ).toThrow(/CHECK constraint failed/);
+    });
+
+    it("rejects status=error with ingestionError null (only that clause violated)", () => {
+      expect(() =>
+        ctx.db
+          .insert(schema.smsLedger)
+          .values({
+            ...baseRow,
+            id: "sms-bad-missing-error",
+            parsedResult: null,
+            ingestionStatus: "error",
+            ingestionError: null,
+          })
+          .run(),
+      ).toThrow(/CHECK constraint failed/);
+    });
   });
 
   it("rejects a transaction direction outside the enum", () => {
