@@ -127,6 +127,7 @@ describe("local SQLite schema", () => {
         "accounts",
         "activity",
         "balance_readings",
+        "identity_conflicts",
         "mandate_events",
         "mandates",
         "sms_ledger",

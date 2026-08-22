@@ -10,7 +10,7 @@ import { eq, inArray, or, sql } from "drizzle-orm";
 import { deriveDashboard, type Dashboard } from "../lib/dashboard";
 import type { ParsedSms, RawSms } from "../lib/sms";
 import { db } from "./client";
-import { smsLedger, syncCheckpoint } from "./schema";
+import { identityConflicts, smsLedger, syncCheckpoint } from "./schema";
 import type { Database } from "./client.native";
 
 const engine = createMalanaEngine();
@@ -314,76 +314,125 @@ function findExistingIdentities(
 }
 
 // What to do with one group, given the identities already on disk (either
-// the preflight snapshot or a transactional recheck of it).
+// the preflight snapshot or a transactional recheck of it). `conflicts`
+// collects every provider id this group's content could not (or, for
+// "insert", must not) claim — usually empty, occasionally one entry — to
+// be persisted as identityConflicts rows against whichever existing or
+// newly-inserted row ends up representing this content. This is the same
+// policy applied uniformly whether the conflict was detected against an
+// existing row (this call) or against another group in the same batch
+// (resolveBatchProviderIdOwnership) — a message's fate must not depend on
+// whether it happened to arrive in the same ingestSmsBatch() call as the
+// row it collides with.
 type GroupOutcome =
-  | { kind: "exists"; existingId: string }
-  | { kind: "exists-enrich"; existingId: string; providerId: string }
-  | { kind: "exists-conflict"; existingId: string; contestedProviderId: string }
-  | { kind: "insert" };
+  | { kind: "exists"; existingId: string; conflicts: readonly string[] }
+  | {
+      kind: "exists-enrich";
+      existingId: string;
+      providerId: string;
+      conflicts: readonly string[];
+    }
+  | { kind: "insert"; providerId: string | null; conflicts: readonly string[] };
 
 // A group's content can match an existing row two independent ways: by
 // fingerprint (the strongest signal — content-derived, not caller-
 // supplied) and by provider id (if the group claims a non-null one).
-// Those normally agree, but don't have to: if the fingerprint belongs to
-// row A while the provider id belongs to a *different* row B (B already
-// legitimately owns it — enriched by an earlier, unrelated batch), that's
-// a genuine identity conflict. Blindly enriching A with B's provider id
-// would throw on the unique index and roll back the whole transaction;
-// this instead recognizes A as the existing row for this content and
-// records the conflict rather than attempting the corrupting write.
+// Those normally agree, but don't have to, and every place they can
+// disagree is a genuine identity conflict, recorded rather than either
+// silently resolved one way or the other:
 //
-// If there's no existing row for this exact fingerprint yet, but the
-// provider id already belongs to one, that provider id's owner is treated
-// as this content's real row (a locked design decision from an earlier
-// review round: a provider id is a stronger, more durable identity than a
-// fingerprint that can shift when the OS hands back corrected metadata
-// for what is otherwise the same underlying message) — no new row, no
-// reparse.
+//  - The fingerprint already exists, not yet enriched, and the provider id
+//    it wants belongs to a *different* existing row: claiming it would
+//    throw on the unique index and roll back the whole transaction, so
+//    it's recorded as a conflict against the existing (fingerprint-
+//    matched) row instead of attempted.
+//  - The fingerprint already exists AND is already enriched with a
+//    *different* provider id than this message now claims: the
+//    established identity isn't overwritten, but the new claim is still
+//    recorded, not silently ignored.
+//  - There's no existing row for this exact fingerprint, but the provider
+//    id already belongs to a different row's content: this is content
+//    that doesn't yet exist and must still be inserted (under its own
+//    fingerprint, not the contested provider id) with the conflict
+//    recorded — previously this branch instead silently folded the new
+//    message into the existing provider-id owner (treating a provider id
+//    as strictly stronger evidence than content), which meant two
+//    genuinely different messages sharing a provider id were preserved
+//    when they arrived in one batch (resolveBatchProviderIdOwnership) but
+//    one silently vanished with no record when they arrived in separate
+//    calls — the same collision, two different outcomes depending on
+//    call boundaries the caller doesn't control.
+//  - The computed row id (provider id, or fingerprint when there's no
+//    usable provider id) is already taken by some *unrelated* existing
+//    row (neither its fingerprint nor its provider id matches this group)
+//    — an id-scheme collision. Vanishingly unlikely, but `onConflictDoNothing()`
+//    would otherwise silently no-op the insert with zero signal; recognizing
+//    the existing row here avoids that.
 function decideGroupOutcome(
-  group: Pick<ResolvedGroup, "fingerprint" | "providerId">,
+  group: Pick<ResolvedGroup, "fingerprint" | "providerId" | "rowId" | "contestedProviderId">,
   identities: ExistingIdentities,
 ): GroupOutcome {
+  const conflicts: string[] = group.contestedProviderId ? [group.contestedProviderId] : [];
+
   const existingByFingerprint = identities.byFingerprint.get(group.fingerprint);
   const existingByProviderId = group.providerId
     ? identities.byProviderId.get(group.providerId)
     : undefined;
 
   if (existingByFingerprint) {
-    if (group.providerId && !existingByFingerprint.providerId) {
-      if (existingByProviderId && existingByProviderId.id !== existingByFingerprint.id) {
+    if (group.providerId) {
+      if (!existingByFingerprint.providerId) {
+        if (existingByProviderId && existingByProviderId.id !== existingByFingerprint.id) {
+          conflicts.push(group.providerId);
+          return { kind: "exists", existingId: existingByFingerprint.id, conflicts };
+        }
         return {
-          kind: "exists-conflict",
+          kind: "exists-enrich",
           existingId: existingByFingerprint.id,
-          contestedProviderId: group.providerId,
+          providerId: group.providerId,
+          conflicts,
         };
       }
-      return {
-        kind: "exists-enrich",
-        existingId: existingByFingerprint.id,
-        providerId: group.providerId,
-      };
+      if (existingByFingerprint.providerId !== group.providerId) {
+        conflicts.push(group.providerId);
+      }
     }
-    return { kind: "exists", existingId: existingByFingerprint.id };
+    return { kind: "exists", existingId: existingByFingerprint.id, conflicts };
   }
 
   if (group.providerId && existingByProviderId) {
-    return { kind: "exists", existingId: existingByProviderId.id };
+    conflicts.push(group.providerId);
+    return { kind: "insert", providerId: null, conflicts };
   }
 
-  return { kind: "insert" };
+  // Checked after (not before) the provider-id conflict above: when
+  // group.providerId is set and unclaimed, rowId equals it, and byId/
+  // byProviderId key the same rows off the same query results — so if
+  // existingByProviderId found nothing, byId can't meaningfully add a
+  // provider-id match here. What it still catches: rowId falling back to
+  // the fingerprint (no usable provider id) happening to equal some
+  // unrelated existing row's real primary key — a cross-scheme string
+  // collision, vanishingly unlikely but not structurally impossible.
+  // `onConflictDoNothing()` would otherwise silently no-op that insert
+  // with zero signal; recognizing the existing row here avoids that.
+  const existingById = identities.byId.get(group.rowId);
+  if (existingById) {
+    return { kind: "exists", existingId: existingById.id, conflicts };
+  }
+
+  return { kind: "insert", providerId: group.providerId, conflicts };
 }
 
-// Parses one message and shapes it into the ledger row this batch will
-// insert — isolated per-message so one bad message (a parser throw) can't
-// abort the whole batch.
-function buildLedgerRow(group: ResolvedGroup) {
-  const message = group.representative;
+// Parses one message into the content fields a ledger row needs —
+// deliberately everything EXCEPT identity (id/fingerprint/providerId):
+// which provider id (if any) a group's row ends up storing can only be
+// finalized against the transaction's own recheck (see ingestSmsBatch), so
+// baking it in here, before that recheck runs, would risk inserting an
+// identity decision that's already stale by write time. Isolated per-
+// message so one bad message (a parser throw) can't abort the whole batch.
+function parseMessageContent(message: RawSms) {
   const storedBody = message.body ?? "";
   const base = {
-    id: group.rowId,
-    fingerprint: group.fingerprint,
-    providerId: group.providerId,
-    contestedProviderId: group.contestedProviderId,
     sender: message.sender,
     body: storedBody,
     date: message.date,
@@ -435,17 +484,23 @@ function yieldToEventLoop(): Promise<void> {
 // claims (resolveBatchProviderIdOwnership — deterministic, order-
 // independent; the loser is still inserted, just without that provider id
 // and with the conflict recorded); (2) a read-only preflight existence
-// check, no transaction; (3) parse only genuinely-new groups, yielding to
-// the event loop after every PARSE_YIELD_EVERY actual parse calls (not
-// merely every N loop iterations) so a large batch's parsing itself can't
-// freeze the JS thread for its whole duration; (4) a short transaction
-// that rechecks insertions, enrichments, AND proposed provider-id
-// ownership against current state — another call could have inserted,
-// enriched, or claimed a provider id in the window since the preflight
-// read — applies enrichments only where both the target row's providerId
-// is still null AND the proposed provider id isn't now owned by a
-// different row, inserts rows, records any conflicts, and conditionally
-// advances the checkpoint.
+// check, no transaction, deciding each group's outcome (decideGroupOutcome
+// — the same conflict policy whether the collision is against another
+// group in this batch or an already-persisted row from an earlier call);
+// (3) parse only genuinely-new groups' content, yielding to the event loop
+// after every PARSE_YIELD_EVERY actual parse calls (not merely every N
+// loop iterations) so a large batch's parsing itself can't freeze the JS
+// thread for its whole duration — identity fields (id/providerId) are
+// deliberately not finalized yet, since they can only be trusted against
+// the transaction's own recheck; (4) a short transaction that rechecks
+// insertions, enrichments, AND proposed provider-id ownership against
+// current state — another call could have inserted, enriched, or claimed
+// a provider id in the window since the preflight read — inserts rows
+// with identity fields finalized against that recheck, applies
+// enrichments only where both the target row's providerId is still null
+// AND the proposed provider id isn't now owned by a different row,
+// persists every detected conflict as its own identityConflicts row, and
+// conditionally advances the checkpoint.
 //
 // That final transaction body is a plain (non-async) function on purpose:
 // drizzle's expo-sqlite transaction does NOT await its callback before
@@ -462,20 +517,22 @@ export async function ingestSmsBatch(messages: RawSms[]): Promise<void> {
 
   const toInsertGroups: ResolvedGroup[] = [];
   const toEnrich = new Map<string, string>(); // existing row id -> provider id to set
-  const toRecordConflict = new Map<string, string>(); // existing row id -> contested provider id
+  const conflicts: { smsId: string; contestedProviderId: string }[] = [];
 
   for (const group of groups) {
     const outcome = decideGroupOutcome(group, preflight);
     if (outcome.kind === "exists-enrich") toEnrich.set(outcome.existingId, outcome.providerId);
-    else if (outcome.kind === "exists-conflict")
-      toRecordConflict.set(outcome.existingId, outcome.contestedProviderId);
-    else if (outcome.kind === "insert") toInsertGroups.push(group);
+    else if (outcome.kind === "exists") {
+      for (const contestedProviderId of outcome.conflicts) {
+        conflicts.push({ smsId: outcome.existingId, contestedProviderId });
+      }
+    } else if (outcome.kind === "insert") toInsertGroups.push(group);
   }
 
-  const rowsToInsert: ReturnType<typeof buildLedgerRow>[] = [];
+  const contentByFingerprint = new Map<string, ReturnType<typeof parseMessageContent>>();
   let parseCallsSinceYield = 0;
   for (const group of toInsertGroups) {
-    rowsToInsert.push(buildLedgerRow(group));
+    contentByFingerprint.set(group.fingerprint, parseMessageContent(group.representative));
     if (++parseCallsSinceYield >= PARSE_YIELD_EVERY) {
       await yieldToEventLoop();
       parseCallsSinceYield = 0;
@@ -500,19 +557,36 @@ export async function ingestSmsBatch(messages: RawSms[]): Promise<void> {
 
   database.transaction((tx) => {
     // Recheck insertions against current state rather than trusting the
-    // preflight snapshot: another ingestSmsBatch call could have inserted
-    // some of these rows in the window between the preflight read and this
-    // transaction opening.
+    // preflight snapshot: another ingestSmsBatch call could have inserted,
+    // enriched, or claimed a provider id for one of these rows in the
+    // window between the preflight read and this transaction opening —
+    // the same decideGroupOutcome call is used here as at preflight, so a
+    // group's identity fields are only ever finalized against this
+    // up-to-date read, never the possibly-stale preflight one.
     const recheck = findExistingIdentities(tx, toInsertGroups);
-    for (let i = 0; i < toInsertGroups.length; i++) {
-      const group = toInsertGroups[i]!;
-      const row = rowsToInsert[i]!;
+    for (const group of toInsertGroups) {
       const outcome = decideGroupOutcome(group, recheck);
       if (outcome.kind === "exists-enrich") toEnrich.set(outcome.existingId, outcome.providerId);
-      else if (outcome.kind === "exists-conflict")
-        toRecordConflict.set(outcome.existingId, outcome.contestedProviderId);
-      else if (outcome.kind === "insert")
-        tx.insert(smsLedger).values(row).onConflictDoNothing().run();
+      else if (outcome.kind === "exists") {
+        for (const contestedProviderId of outcome.conflicts) {
+          conflicts.push({ smsId: outcome.existingId, contestedProviderId });
+        }
+      } else if (outcome.kind === "insert") {
+        const id = outcome.providerId ?? group.fingerprint;
+        const content = contentByFingerprint.get(group.fingerprint)!;
+        tx.insert(smsLedger)
+          .values({
+            id,
+            fingerprint: group.fingerprint,
+            providerId: outcome.providerId,
+            ...content,
+          })
+          .onConflictDoNothing()
+          .run();
+        for (const contestedProviderId of outcome.conflicts) {
+          conflicts.push({ smsId: id, contestedProviderId });
+        }
+      }
     }
 
     // Enrichment candidates from the preflight are revalidated here too,
@@ -552,27 +626,37 @@ export async function ingestSmsBatch(messages: RawSms[]): Promise<void> {
         if (currentProviderIdByRowId.get(existingId) !== null) continue;
         const currentOwner = ownerRowIdByProviderId.get(providerId);
         if (currentOwner && currentOwner !== existingId) {
-          toRecordConflict.set(existingId, providerId);
+          conflicts.push({ smsId: existingId, contestedProviderId: providerId });
           continue;
         }
         tx.update(smsLedger).set({ providerId }).where(eq(smsLedger.id, existingId)).run();
       }
     }
 
-    // Persist every detected identity conflict onto the row it was
-    // detected against, rather than letting it disappear once the batch
-    // otherwise succeeds — a collision is signal (corrected/duplicated
-    // provider metadata, or a genuine data anomaly worth surfacing), not
-    // something ingestion should quietly absorb.
-    for (const [existingId, contestedProviderId] of toRecordConflict) {
-      tx.update(smsLedger).set({ contestedProviderId }).where(eq(smsLedger.id, existingId)).run();
+    // One row per detected conflict, not an update onto smsLedger itself —
+    // see identityConflicts's own comment for why a single nullable column
+    // there couldn't represent this. onConflictDoNothing() against the
+    // partial unique index (open contests only) makes re-recording the
+    // same still-open contest a no-op rather than a duplicate row.
+    if (conflicts.length > 0) {
+      const detectedAt = Date.now();
+      for (const batch of chunk(conflicts, EXISTENCE_CHECK_CHUNK_SIZE)) {
+        tx.insert(identityConflicts)
+          .values(batch.map((c) => ({ ...c, detectedAt })))
+          .onConflictDoNothing()
+          .run();
+      }
     }
 
     // A single conditional upsert, not read-then-write: two overlapping
     // batches (e.g. a foreground refresh and a background catch-up) can no
     // longer race, because the "only if newer" check and the write happen
     // in one SQL statement rather than a separate SELECT the caller then
-    // acts on.
+    // acts on. On a tied date (two batches reporting the same newest
+    // timestamp), the provider id also converges deterministically —
+    // preferring a non-null id over null, and the lexicographically
+    // smaller of two non-null ids — rather than keeping whichever batch
+    // happened to write the checkpoint first.
     tx.insert(syncCheckpoint)
       .values({
         id: "inbox",
@@ -587,7 +671,21 @@ export async function ingestSmsBatch(messages: RawSms[]): Promise<void> {
           lastIngestedProviderId: batchNewestProviderId,
           updatedAt: Date.now(),
         },
-        where: sql`${syncCheckpoint.lastIngestedDate} IS NULL OR ${syncCheckpoint.lastIngestedDate} < ${batchNewestDate}`,
+        where: sql`
+          ${syncCheckpoint.lastIngestedDate} IS NULL
+          OR ${syncCheckpoint.lastIngestedDate} < ${batchNewestDate}
+          OR (
+            ${syncCheckpoint.lastIngestedDate} = ${batchNewestDate}
+            AND (
+              (${syncCheckpoint.lastIngestedProviderId} IS NULL AND ${batchNewestProviderId} IS NOT NULL)
+              OR (
+                ${syncCheckpoint.lastIngestedProviderId} IS NOT NULL
+                AND ${batchNewestProviderId} IS NOT NULL
+                AND ${batchNewestProviderId} < ${syncCheckpoint.lastIngestedProviderId}
+              )
+            )
+          )
+        `,
       })
       .run();
   });

@@ -37,13 +37,6 @@ export const smsLedger = sqliteTable(
     // instead of silently creating a second row for the same SMS.
     fingerprint: text("fingerprint").notNull(),
     providerId: text("provider_id"),
-    // Set only when ingestion saw a provider id for this row's content but
-    // could not claim it — another row already legitimately owns it (the
-    // provider_id unique index allows exactly one owner). Recorded rather
-    // than silently dropped, so a genuine identity collision (two distinct
-    // messages sharing one provider id) leaves a trace instead of vanishing
-    // with no signal that anything was contested.
-    contestedProviderId: text("contested_provider_id"),
     sender: text("sender").notNull(),
     body: text("body").notNull(),
     date: integer("date").notNull(), // epoch ms, matches RawSms.date
@@ -67,6 +60,41 @@ export const smsLedger = sqliteTable(
       "sms_ledger_parsed_result_matches_status",
       sql`(${table.ingestionStatus} = 'parsed' AND ${table.parsedResult} IS NOT NULL AND ${table.ingestionError} IS NULL) OR (${table.ingestionStatus} = 'error' AND ${table.parsedResult} IS NULL AND ${table.ingestionError} IS NOT NULL)`,
     ),
+  ],
+);
+
+// Every time ingestion sees a provider id for some content that a
+// *different* row already legitimately owns (the provider_id unique index
+// on smsLedger allows exactly one owner), that's recorded here rather than
+// silently resolved — a single nullable column on smsLedger can't
+// represent more than one contest against the same row, can't carry when
+// it was detected, and has no way to distinguish "never contested" from
+// "was contested, then resolved." One row per detected contest instead.
+//
+// `resolvedAt` is write-only for now (nothing in ingestSmsBatch sets it —
+// there's no reconciliation pass yet that decides a contest is over) but
+// exists so a future pass has somewhere to record that, the same way
+// smsLedger.parserVersion existed before anything read it back.
+export const identityConflicts = sqliteTable(
+  "identity_conflicts",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    smsId: text("sms_id")
+      .notNull()
+      .references(() => smsLedger.id, { onDelete: "cascade" }),
+    contestedProviderId: text("contested_provider_id").notNull(),
+    detectedAt: integer("detected_at").notNull(),
+    resolvedAt: integer("resolved_at"),
+  },
+  (table) => [
+    index("identity_conflicts_sms_id_idx").on(table.smsId),
+    // Re-ingesting the same batch (or an overlapping one) must not create
+    // a second open record of the exact same contest — this is what makes
+    // recording a conflict as idempotent (onConflictDoNothing-safe) as the
+    // rest of ingestSmsBatch's writes.
+    uniqueIndex("identity_conflicts_open_unique")
+      .on(table.smsId, table.contestedProviderId)
+      .where(sql`${table.resolvedAt} IS NULL`),
   ],
 );
 
