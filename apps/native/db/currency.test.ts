@@ -1,4 +1,4 @@
-import { seedData, CurrencyRegistry } from "@zeeya/parser/malana";
+import { seedData, supportedMalanaCurrencyCodes } from "@zeeya/parser/malana";
 import { describe, expect, it } from "vitest";
 import {
   toMinorUnits,
@@ -8,24 +8,19 @@ import {
 } from "./currency";
 
 describe("Malana currency parity", () => {
-  it("has an exponent for exactly the currencies Malana's CurrencyRegistry can actually produce", () => {
-    // Mechanical, not hand-maintained: constructs a real CurrencyRegistry
-    // against the real seed and reads back every ISO code it can produce,
-    // then compares against currency.ts's own real key set (not a second
-    // hand-typed list here, which would just be two hardcoded lists
-    // agreeing with each other). This is what actually caught the missing
-    // AED/LKR/CNY/EGP — a grep over currency-registry.ts's literal string
-    // constants missed them because isoForSeedNormalization() accepts any
-    // 3-letter alphabetic code straight from the seed's live CRNCY
-    // dictionary; it isn't enumerable from source text, only from running
-    // the real registry.
-    const registry = new CurrencyRegistry(seedData);
-    const producedCodes = new Set<string>();
-    for (const alias of registry.aliases) {
-      const iso = registry.isoForAlias(alias);
-      if (iso) producedCodes.add(iso);
-    }
-
+  it("has an exponent for exactly the currencies Malana can actually produce", () => {
+    // Mechanical, not hand-maintained: asks the real Malana package (via
+    // its narrow supportedMalanaCurrencyCodes export, not the internal
+    // CurrencyRegistry class) what it can actually produce against the
+    // real seed, then compares against currency.ts's own real key set —
+    // not a second hand-typed list here, which would just be two hardcoded
+    // lists agreeing with each other. This is what actually caught the
+    // missing AED/LKR/CNY/EGP — a grep over currency-registry.ts's literal
+    // string constants missed them because isoForSeedNormalization()
+    // accepts any 3-letter alphabetic code straight from the seed's live
+    // CRNCY dictionary; it isn't enumerable from source text, only from
+    // running the real registry.
+    const producedCodes = supportedMalanaCurrencyCodes(seedData);
     expect([...producedCodes].sort()).toEqual([...supportedCurrencyCodes()].sort());
   });
 });

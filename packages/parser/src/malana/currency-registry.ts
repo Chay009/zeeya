@@ -80,3 +80,18 @@ export class CurrencyRegistry {
     return null;
   }
 }
+
+// Every distinct ISO code the registry can produce for a given seed. The
+// class itself stays internal to the package — a consumer that only needs
+// "which currencies exist" (e.g. apps/native/db/currency.ts's parity test)
+// shouldn't need isoForAlias/matchAmountPrefix/aliases as part of its
+// public surface.
+export function supportedMalanaCurrencyCodes(seed: SeedData): readonly string[] {
+  const registry = new CurrencyRegistry(seed);
+  const codes = new Set<string>();
+  for (const alias of registry.aliases) {
+    const iso = registry.isoForAlias(alias);
+    if (iso) codes.add(iso);
+  }
+  return [...codes].sort();
+}
