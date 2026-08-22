@@ -3,13 +3,15 @@
 // connection without pulling in React.
 import { useMigrations } from "drizzle-orm/expo-sqlite/migrator";
 import type { PropsWithChildren } from "react";
-import { ActivityIndicator, Text, View } from "react-native";
+import { ActivityIndicator, Platform, Text, View } from "react-native";
 
 import { db } from "./client";
 import migrations from "./migrations/migrations";
 
-export function DatabaseProvider({ children }: PropsWithChildren) {
-  const { success, error } = useMigrations(db, migrations);
+function NativeDatabaseGate({ children }: PropsWithChildren) {
+  // db is non-null here — this component only renders on native platforms
+  // (see DatabaseProvider below), where client.ts always opens a connection.
+  const { success, error } = useMigrations(db as NonNullable<typeof db>, migrations);
 
   if (error) {
     return (
@@ -30,4 +32,12 @@ export function DatabaseProvider({ children }: PropsWithChildren) {
   }
 
   return children;
+}
+
+export function DatabaseProvider({ children }: PropsWithChildren) {
+  // No local DB on web (see db/client.ts) — nothing in the product currently
+  // reads or writes it there, so render straight through rather than
+  // attempting migrations against a connection that doesn't exist.
+  if (Platform.OS === "web") return children;
+  return <NativeDatabaseGate>{children}</NativeDatabaseGate>;
 }

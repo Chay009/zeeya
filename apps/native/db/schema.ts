@@ -3,7 +3,19 @@
 // Postgres-specific, FK'd to an authenticated server user, and stores raw
 // SMS server-side — none of that shape belongs on-device. A future sync
 // layer maps rows between the two; it does not require either to change.
-import { sqliteTable, text, real, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
+//
+// Foreign keys are declared here but SQLite ignores them unless the
+// connection runs `PRAGMA foreign_keys = ON` — see db/client.ts.
+import { sql } from "drizzle-orm";
+import {
+  sqliteTable,
+  text,
+  real,
+  integer,
+  index,
+  uniqueIndex,
+  check,
+} from "drizzle-orm/sqlite-core";
 
 // ── Ledger layer ────────────────────────────────────────────────────────────
 // One row per SMS ever ingested. This is the reprocessing source of truth:
@@ -15,30 +27,41 @@ import { sqliteTable, text, real, integer, index, uniqueIndex } from "drizzle-or
 export const smsLedger = sqliteTable(
   "sms_ledger",
   {
-    // Deterministic id: the Android content-provider `_id` when the caller
-    // has one (RawSms.id from lib/sms.ts), otherwise a `sender|date|body`
-    // fingerprint. Either way, re-ingesting the same message is a no-op
-    // upsert, not a duplicate row — this is what makes ingestSmsBatch safe
-    // to call from refresh, backfill, and background catch-up alike.
+    // Primary identity: the Android content-provider `_id` when the caller
+    // has one (RawSms.id from lib/sms.ts), otherwise the fingerprint below.
     id: text("id").primaryKey(),
+    // ALWAYS computed (sender|date|body digest), regardless of whether a
+    // provider id exists. A provider id alone isn't a sufficient dedup key
+    // on its own: the same message can reach ingestSmsBatch once keyed by
+    // fingerprint (provider id unavailable at that time) and later keyed by
+    // a real provider id once one becomes available. Unique-indexing this
+    // separately from `id` lets ingestion detect that cross-scheme collision
+    // instead of silently creating a second row for the same SMS.
+    fingerprint: text("fingerprint").notNull(),
     providerId: text("provider_id"),
     sender: text("sender").notNull(),
     body: text("body").notNull(),
     date: integer("date").notNull(), // epoch ms, matches RawSms.date
     parserVersion: text("parser_version").notNull(),
-    // JSON.stringify(MalanaResult). Kept as opaque JSON rather than a wide
-    // flat table — MalanaResult has 50+ category-specific optional fields
-    // (travel/delivery/bill/OTP/...) and nothing outside the ledger needs to
-    // query most of them directly; the normalized tables below cover what
-    // the dashboard actually reads.
-    parsedResult: text("parsed_result").notNull(),
+    // JSON.stringify(MalanaResult) — null when ingestionStatus is "error"
+    // (parsing threw, so there is no result to serialize). Kept as opaque
+    // JSON rather than a wide flat table — MalanaResult has 50+ category-
+    // specific optional fields (travel/delivery/bill/OTP/...) and nothing
+    // outside the ledger needs to query most of them directly; the
+    // normalized tables below cover what the dashboard actually reads.
+    parsedResult: text("parsed_result"),
     ingestionStatus: text("ingestion_status", { enum: ["parsed", "error"] }).notNull(),
     ingestionError: text("ingestion_error"),
     createdAt: integer("created_at").notNull(),
   },
   (table) => [
     index("sms_ledger_date_idx").on(table.date),
-    index("sms_ledger_provider_id_idx").on(table.providerId),
+    uniqueIndex("sms_ledger_fingerprint_idx").on(table.fingerprint),
+    uniqueIndex("sms_ledger_provider_id_idx").on(table.providerId),
+    check(
+      "sms_ledger_parsed_result_matches_status",
+      sql`(${table.ingestionStatus} = 'parsed' AND ${table.parsedResult} IS NOT NULL) OR (${table.ingestionStatus} = 'error' AND ${table.parsedResult} IS NULL)`,
+    ),
   ],
 );
 
@@ -104,6 +127,10 @@ export const balanceReadings = sqliteTable(
   (table) => [
     index("balance_readings_account_id_idx").on(table.accountId),
     index("balance_readings_as_of_idx").on(table.asOf),
+    check(
+      "balance_readings_association_kind_check",
+      sql`${table.associationKind} IN ('confirmed', 'suggested', 'unassigned')`,
+    ),
   ],
 );
 
@@ -135,27 +162,68 @@ export const transactions = sqliteTable(
     index("transactions_account_id_idx").on(table.accountId),
     index("transactions_date_idx").on(table.date),
     uniqueIndex("transactions_sms_id_idx").on(table.smsId),
+    check(
+      "transactions_direction_check",
+      sql`${table.direction} IN ('income', 'expense', 'neutral')`,
+    ),
+  ],
+);
+
+// Every recognized category match for a message (MalanaResult.matchedCategories
+// — a message can match more than one, e.g. GRM_BANK + GRM_NOTIF), including
+// GRM_BANK for messages that also produced a `transactions` row. This is a
+// thin index, not a content table: category-specific detail (PNR, tracking
+// id, order status, ...) stays in smsLedger.parsedResult JSON, joined back
+// on read. Exists so "all activity in category X, newest first" is an
+// indexed query instead of deserializing every ledger row — mirrors
+// apps/native/lib/activity-filters.ts's ACTIVITY_CATEGORY_FILTERS.
+export const activity = sqliteTable(
+  "activity",
+  {
+    id: text("id").primaryKey(), // `${smsId}|${category}`
+    smsId: text("sms_id")
+      .notNull()
+      .references(() => smsLedger.id, { onDelete: "cascade" }),
+    category: text("category").notNull(),
+    date: integer("date").notNull(),
+  },
+  (table) => [
+    uniqueIndex("activity_sms_category_idx").on(table.smsId, table.category),
+    index("activity_category_idx").on(table.category),
+    index("activity_date_idx").on(table.date),
   ],
 );
 
 // Autopay/mandate lifecycle — event-sourced from SMS the same way
 // transactions are, not inferred, so it's persisted rather than
 // recomputed (contrast with subscriptions below).
-export const mandates = sqliteTable("mandates", {
-  mandateId: text("mandate_id").primaryKey(),
-  merchant: text("merchant").notNull(),
-  amount: real("amount"),
-  currency: text("currency").notNull(),
-  status: text("status", { enum: ["active", "cancelled"] }).notNull(),
-  createdAt: integer("created_at").notNull(),
-  lastUpdated: integer("last_updated").notNull(),
-  sender: text("sender").notNull(),
-});
+export const mandates = sqliteTable(
+  "mandates",
+  {
+    mandateId: text("mandate_id").primaryKey(),
+    merchant: text("merchant").notNull(),
+    amount: real("amount"),
+    currency: text("currency").notNull(),
+    status: text("status", { enum: ["active", "cancelled"] }).notNull(),
+    createdAt: integer("created_at").notNull(),
+    lastUpdated: integer("last_updated").notNull(),
+    sender: text("sender").notNull(),
+  },
+  (table) => [check("mandates_status_check", sql`${table.status} IN ('active', 'cancelled')`)],
+);
 
 export const mandateEvents = sqliteTable(
   "mandate_events",
   {
-    id: text("id").primaryKey(), // `${mandateId}|${date}|${sender}`
+    // One mandate-context SMS produces at most one event, so the originating
+    // smsId doubles as this row's id — that's also what makes reprocessing
+    // safe: replacing a mandate event after a parser-version change means
+    // deleting the row for that smsId and re-inserting, not guessing which
+    // of several rows for a mandate came from which message.
+    id: text("id").primaryKey(),
+    smsId: text("sms_id")
+      .notNull()
+      .references(() => smsLedger.id, { onDelete: "cascade" }),
     mandateId: text("mandate_id")
       .notNull()
       .references(() => mandates.mandateId, { onDelete: "cascade" }),
@@ -163,7 +231,11 @@ export const mandateEvents = sqliteTable(
     date: integer("date").notNull(),
     sender: text("sender").notNull(),
   },
-  (table) => [index("mandate_events_mandate_id_idx").on(table.mandateId)],
+  (table) => [
+    uniqueIndex("mandate_events_sms_id_idx").on(table.smsId),
+    index("mandate_events_mandate_id_idx").on(table.mandateId),
+    check("mandate_events_status_check", sql`${table.status} IN ('active', 'cancelled')`),
+  ],
 );
 
 // Subscriptions are deliberately NOT a table here. They're a heuristic
@@ -171,4 +243,6 @@ export const mandateEvents = sqliteTable(
 // transactions arrive — persisting an inference alongside its own source
 // data means keeping the two in sync on every write. Recomputing over the
 // `transactions` table (already small and normalized, unlike raw SMS) is
-// cheap; if that stops being true at scale, revisit then, not now.
+// cheap; if that stops being true at scale, revisit then, not now. (Issue
+// #17 originally listed subscriptions as persisted — this deviation is the
+// correction, tracked back on that issue.)
