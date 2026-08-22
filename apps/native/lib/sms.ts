@@ -39,18 +39,24 @@ export async function requestSmsReadPermission(): Promise<boolean> {
 // source: it's an inclusive per-row `date >=` check applied before
 // maxCount truncation) — omitting it here reads the whole inbox, same as
 // before this parameter existed.
+//
+// `order` controls which end of a maxCount-truncated result survives: it
+// matters whenever a caller bounds this by `since` and the matching
+// message count could exceed `maxCount` (see db/sync.ts's own comment on
+// why an oldest-vs-newest choice here is a correctness question, not a
+// cosmetic one, once a checkpoint is involved).
 export function readSmsInbox(
-  options: { maxCount?: number; since?: number } = {},
+  options: { maxCount?: number; since?: number; order?: "newest-first" | "oldest-first" } = {},
 ): Promise<RawSms[]> {
   return new Promise((resolve, reject) => {
     const filter = JSON.stringify({
       box: "inbox",
       maxCount: options.maxCount ?? 5000,
       minDate: options.since,
-      // Without this, the native module passes a null sort order straight
-      // to ContentResolver.query() and which messages survive the maxCount
-      // truncation is OS/OEM-defined — explicitly keep the newest ones.
-      sortOrder: "date DESC",
+      // Without an explicit sort order, the native module passes null
+      // straight to ContentResolver.query() and which messages survive a
+      // maxCount truncation is OS/OEM-defined.
+      sortOrder: (options.order ?? "newest-first") === "newest-first" ? "date DESC" : "date ASC",
     });
     SmsAndroid.list(
       filter,

@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  AppState,
   FlatList,
   PermissionsAndroid,
   Pressable,
@@ -15,7 +16,7 @@ import {
 
 import { TransactionAvatar } from "@/components/transaction-avatar";
 import { dashboardTheme as t } from "@/constants/dashboard-theme";
-import { getSyncStatus, ingestSmsBatch, loadDashboard } from "@/db/ingestion";
+import { syncInbox } from "@/db/sync";
 import {
   deriveDashboard,
   isRecurringTransaction,
@@ -41,11 +42,6 @@ import {
 } from "@/lib/activity-filters";
 
 type Status = "checking" | "needs-permission" | "loading" | "ready" | "unsupported" | "error";
-
-// See load()'s own comment: a small backward overlap on the sync
-// checkpoint, not a strict `date > checkpoint` boundary, so a message
-// sharing the checkpoint's exact timestamp is never missed.
-const SYNC_OVERLAP_MS = 60_000;
 
 // maximumFractionDigits: 2 (not a forced 0) so a ₹199.99 charge doesn't
 // silently round to ₹200 — toLocaleString only prints decimals when the
@@ -104,6 +100,11 @@ export default function Home() {
   // previous one finished.
   const loadIdRef = useRef(0);
 
+  // The checkpoint/read/ingest/reload sequence itself lives in
+  // db/sync.ts's syncInbox() — unit-tested there directly (this file, a
+  // React Native screen, can't be imported under Vitest at all — see
+  // lib/sms.ts's own comment on why). readSmsInbox is passed in as the
+  // real inbox reader.
   const load = useCallback(async () => {
     if (!isSmsReadSupported()) {
       setStatus("unsupported");
@@ -111,34 +112,7 @@ export default function Home() {
     }
     const id = ++loadIdRef.current;
     try {
-      // Ingest is idempotent and re-parse-free (see db/ingestion.ts) — an
-      // already-ingested message is recognized by content fingerprint and
-      // never re-parsed, so calling this on every load/refresh only ever
-      // does real work for genuinely new SMS. loadDashboard() then
-      // reconstructs the dashboard from the ledger's cached parsed
-      // results, not by re-parsing raw inbox messages again.
-      //
-      // Reading from the checkpoint (rather than the whole inbox every
-      // time) is what makes this cheap on every foreground/refresh, not
-      // just correct — without it, a user with years of SMS history would
-      // re-read their entire inbox from the OS on every single load.
-      // SYNC_OVERLAP_MS pulls the window back slightly rather than reading
-      // strictly newer than the checkpoint: multiple messages can share
-      // the exact same millisecond timestamp, and a strict `date >
-      // checkpoint` boundary can miss one that arrived alongside the
-      // message the checkpoint actually recorded. The overlap can re-fetch
-      // a few already-ingested messages, which is fine — ingestSmsBatch
-      // recognizes them by fingerprint and does no extra parsing work.
-      const checkpoint = await getSyncStatus();
-      const since =
-        checkpoint.lastIngestedDate !== null
-          ? checkpoint.lastIngestedDate - SYNC_OVERLAP_MS
-          : undefined;
-      const raw = await readSmsInbox({ since });
-      if (id !== loadIdRef.current) return;
-      await ingestSmsBatch(raw);
-      if (id !== loadIdRef.current) return;
-      const nextDashboard = await loadDashboard();
+      const nextDashboard = await syncInbox(readSmsInbox);
       if (id !== loadIdRef.current) return;
       setDashboard(nextDashboard);
       setStatus("ready");
@@ -149,11 +123,13 @@ export default function Home() {
     }
   }, []);
 
-  useEffect(() => {
-    if (!isSmsReadSupported()) {
-      setStatus("unsupported");
-      return;
-    }
+  // Shared by mount and app-foreground-resume below so both go through the
+  // same permission check before ever calling load() — load() itself
+  // assumes permission is already granted, so skipping this check on
+  // foreground resume (calling load() unconditionally) would turn a
+  // legitimate "needs-permission" state into a spurious "error" the first
+  // time the app resumes without SMS access granted.
+  const checkPermissionThenLoad = useCallback(() => {
     PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_SMS)
       .then((granted) => {
         if (granted) void load();
@@ -164,6 +140,27 @@ export default function Home() {
         setError(e instanceof Error ? e.message : String(e));
       });
   }, [load]);
+
+  useEffect(() => {
+    if (!isSmsReadSupported()) {
+      setStatus("unsupported");
+      return;
+    }
+    checkPermissionThenLoad();
+  }, [checkPermissionThenLoad]);
+
+  // Resyncs whenever the app returns to the foreground (e.g. backgrounded
+  // during a bank OTP/SMS arrival, then reopened) — not just on initial
+  // mount and explicit pull-to-refresh, so newly-arrived SMS actually get
+  // picked up on the ordinary "switch back to the app" path, not only when
+  // the app was freshly launched or the user manually refreshed.
+  useEffect(() => {
+    if (!isSmsReadSupported()) return;
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") checkPermissionThenLoad();
+    });
+    return () => subscription.remove();
+  }, [checkPermissionThenLoad]);
 
   const connect = useCallback(async () => {
     setStatus("loading");
