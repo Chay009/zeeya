@@ -490,19 +490,18 @@ export async function ingestSmsBatch(messages: RawSms[]): Promise<void> {
     const recheck = findExistingRows(tx, fingerprints, allClaimedProviderIds);
     const plan = planOwnership(groups, recheck);
 
-    // Releases (a losing row's providerId set to null) run before any
-    // claim (a new insert, or a different row's enrichment) — an ordinary
-    // ordering constraint that has nothing to do with SQL execution order
-    // otherwise, but matters here specifically because a claim and the
-    // release that frees it up can target the exact same provider_id
-    // value within this one transaction: claiming it first would still
-    // violate the unique index while the loser hasn't given it up yet,
-    // and onConflictDoNothing() would then silently no-op that insert
-    // rather than throw — releasing first avoids the collision outright.
-    for (const [fingerprint, providerId] of plan.updateProviderId) {
-      if (providerId === null) {
-        tx.update(smsLedger).set({ providerId: null }).where(eq(smsLedger.id, fingerprint)).run();
-      }
+    // Every existing row whose providerId is changing has that value
+    // cleared FIRST — unconditionally, whether its final value is null
+    // (a straight release) or a different non-null id (a reassignment,
+    // e.g. X: Z -> A) — before any insert or claim runs. A reassignment
+    // still means the old value (Z) must be free for some OTHER row (Y)
+    // to insert with, and Y's insert can run before X's own UPDATE to A
+    // below; releasing only on providerId === null left Z still held by
+    // X at the moment Y's insert ran, so Y's insert violated the unique
+    // index and was silently dropped (no onConflictDoNothing() masking
+    // it now — see the insert below).
+    for (const [fingerprint] of plan.updateProviderId) {
+      tx.update(smsLedger).set({ providerId: null }).where(eq(smsLedger.id, fingerprint)).run();
     }
 
     for (const [fingerprint, providerId] of plan.insert) {
@@ -519,9 +518,14 @@ export async function ingestSmsBatch(messages: RawSms[]): Promise<void> {
             `${fingerprint}, which planOwnership scheduled for insert`,
         );
       }
+      // No onConflictDoNothing(): every release this insert could
+      // possibly depend on already ran above, and the whole transaction
+      // callback is synchronous (no other writer can interleave), so a
+      // unique-index violation here means planOwnership's own invariants
+      // broke — better to roll back the transaction loudly than silently
+      // drop the SMS this row represents.
       tx.insert(smsLedger)
         .values({ id: fingerprint, providerId, ...content })
-        .onConflictDoNothing()
         .run();
     }
 

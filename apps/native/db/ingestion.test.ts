@@ -509,6 +509,42 @@ describe("ingestSmsBatch", () => {
     expect(openConflictsFor(fingerprint)).toEqual(["provider-P2"]); // only the actual loser
   });
 
+  it("does not drop a new row claiming a value an existing row is simultaneously reassigned away from (X: Z->A, Y->Z)", async () => {
+    // The exact silent-data-loss shape: row X currently owns "Z". This
+    // batch pools a smaller candidate "A" in for X's own fingerprint (see
+    // the test above), so X's canonical value changes Z -> A — a
+    // non-null -> non-null reassignment, not a release to null. In the
+    // very same batch, a genuinely different message Y claims "Z" and,
+    // since X no longer wants it, wins it uncontested. Y's insert can run
+    // before X's own UPDATE to "A" — if the release phase only clears
+    // rows whose FINAL value is null (the bug), X still holds "Z" at the
+    // moment Y's insert runs, violating the provider_id unique index and
+    // (with onConflictDoNothing()) silently discarding Y while the
+    // checkpoint still advances past it.
+    const x = rawSms({ id: "provider-Z", date: 6060, sender: "VM-HDFCBK", body: "row X content" });
+    await ingestSmsBatch([x]);
+
+    const y = rawSms({
+      id: "provider-Z",
+      date: 6161,
+      sender: "VM-ICICI",
+      body: "row Y content, entirely distinct from X",
+    });
+    await ingestSmsBatch([{ ...x, id: "provider-A" }, y]);
+
+    const xFingerprint = computeFingerprint(x.sender, x.date, x.body ?? "");
+    const yFingerprint = computeFingerprint(y.sender, y.date, y.body ?? "");
+    const rows = testDb.select().from(schema.smsLedger).all();
+    expect(rows).toHaveLength(2); // Y must not have been silently dropped
+
+    const rowX = rows.find((r) => r.id === xFingerprint);
+    const rowY = rows.find((r) => r.id === yFingerprint);
+    expect(rowX).toBeDefined();
+    expect(rowY).toBeDefined();
+    expect(rowX!.providerId).toBe("provider-A");
+    expect(rowY!.providerId).toBe("provider-Z");
+  });
+
   it("records every losing provider-id candidate when one batch's own duplicates disagree, not just the smallest", async () => {
     // Two raw duplicates of the exact same content (identical sender/
     // date/body -> identical fingerprint) declaring different provider
