@@ -58,7 +58,7 @@ vi.mock("./client", () => ({
   },
 }));
 
-const { ingestSmsBatch, getSyncStatus, loadDashboard, loadTransactions } =
+const { ingestSmsBatch, getSyncStatus, loadDashboard, loadTransactions, computeFingerprint } =
   await import("./ingestion");
 
 const HDFC_DEBIT =
@@ -150,6 +150,27 @@ describe("ingestSmsBatch", () => {
     expect(afterSecond[0]!.providerId).toBe("provider-123");
   });
 
+  it("finds an already-enriched row by provider id even when a later message's fingerprint differs", async () => {
+    // Enrichment only ever sets the providerId column — it never renames
+    // the row's `id`, which stays whatever it was first assigned (the
+    // fingerprint, here). Without a providerId lookup, a later message
+    // carrying the same provider id but different content (a different
+    // fingerprint — e.g. corrected metadata from the OS) would match
+    // neither `id` nor `fingerprint` on the existing row, get treated as
+    // new, and be needlessly reparsed before its insert silently no-ops
+    // against the provider_id unique constraint. This is the exact gap the
+    // providerId lookup in findExistingIdentities exists to close.
+    const first = rawSms({ id: "", date: 1000, body: HDFC_DEBIT });
+    await ingestSmsBatch([first]);
+    await ingestSmsBatch([{ ...first, id: "provider-999" }]);
+    expect(parseSpy).toHaveBeenCalledTimes(1);
+
+    await ingestSmsBatch([{ ...first, id: "provider-999", body: SBI_UPI, date: 2000 }]);
+
+    expect(parseSpy).toHaveBeenCalledTimes(1);
+    expect(testDb.select().from(schema.smsLedger).all()).toHaveLength(1);
+  });
+
   it("processes a batch of distinct real messages independently", async () => {
     await ingestSmsBatch([
       rawSms({ id: "1", body: HDFC_DEBIT, sender: "VM-HDFCBK" }),
@@ -220,20 +241,33 @@ describe("ingestSmsBatch", () => {
     expect(bad.ingestionError).toContain("toLowerCase");
   });
 
-  it("rolls back the entire batch (ledger writes and checkpoint alike) if anything in the transaction throws", async () => {
-    // Forces a synchronous throw partway through the transaction, after the
-    // first message's row has already been built and inserted — proving a
-    // partial failure leaves no partial state, not just that individual
-    // parse failures are handled gracefully (a different, already-covered
-    // case).
-    const dateSpy = vi.spyOn(Date, "now").mockImplementationOnce(() => {
-      throw new Error("boom");
+  it("rolls back writes that already succeeded inside the transaction if a later step in it throws", async () => {
+    // Parsing (and its Date.now() calls in buildLedgerRow) now happens
+    // outside the transaction, so a mock that throws on an early call would
+    // never even reach the transaction — it would prove nothing about
+    // rollback. Instead this lets both messages' Date.now() calls during
+    // parsing succeed normally, then throws on the very next call, which
+    // happens while building the checkpoint upsert's `values`/`set`
+    // objects — by which point both messages' INSERT statements have
+    // already run inside the transaction. This is what proves a partial
+    // success inside the transaction gets rolled back, not just that a
+    // failure before any writes leaves no writes (which would be true even
+    // without a real transaction).
+    const realDateNow = Date.now.bind(Date);
+    let calls = 0;
+    const dateSpy = vi.spyOn(Date, "now").mockImplementation(() => {
+      calls++;
+      if (calls > 2) throw new Error("boom");
+      return realDateNow();
     });
 
     await expect(
       ingestSmsBatch([rawSms({ id: "1" }), rawSms({ id: "2", date: 1700000001000 })]),
     ).rejects.toThrow("boom");
 
+    // Both messages were genuinely parsed and inserted inside the
+    // transaction before the checkpoint step threw — if rollback weren't
+    // real, these rows would still be present.
     expect(testDb.select().from(schema.smsLedger).all()).toHaveLength(0);
     const [checkpoint] = testDb.select().from(schema.syncCheckpoint).all();
     expect(checkpoint).toBeUndefined();
@@ -253,6 +287,13 @@ describe("ingestSmsBatch", () => {
     expect(status.lastIngestedProviderId).toBe("2");
   });
 
+  it("stores null, not an empty string, when the newest message has no provider id", async () => {
+    await ingestSmsBatch([rawSms({ id: "", date: 1000 })]);
+
+    const status = await getSyncStatus();
+    expect(status.lastIngestedProviderId).toBeNull();
+  });
+
   it("never moves the checkpoint backwards (a backfill of older history is safe)", async () => {
     await ingestSmsBatch([rawSms({ id: "1", date: 5000 })]);
     await ingestSmsBatch([rawSms({ id: "2", date: 1000 })]);
@@ -261,17 +302,27 @@ describe("ingestSmsBatch", () => {
     expect(status.lastIngestedDate).toBe(5000);
   });
 
-  it("resolves to the same maximum checkpoint regardless of which of two overlapping batches runs first", async () => {
-    // ingestSmsBatch's transaction body is fully synchronous (see its own
-    // comment on why), so two calls can never actually interleave
-    // mid-transaction — each runs to completion before the other's
-    // transaction begins, regardless of the order their outer async
-    // wrappers happen to be scheduled in. This is what makes the race
-    // Codex flagged structurally impossible rather than just unlikely.
-    const older = ingestSmsBatch([rawSms({ id: "older", date: 1000 })]);
-    const newer = ingestSmsBatch([rawSms({ id: "newer", date: 9000 })]);
-    await Promise.all([older, newer]);
+  it("resolves to the same maximum checkpoint regardless of which of two overlapping batches finishes first", async () => {
+    // ingestSmsBatch now yields to the event loop periodically while
+    // parsing a large batch (see PARSE_YIELD_EVERY) — a genuine, if small,
+    // window where two concurrent calls' parse phases really can
+    // interleave before either reaches its write transaction. The atomic
+    // conditional upsert (WHERE excluded.date > current.date) is what
+    // guarantees correctness through that window, not any claim that
+    // interleaving can't happen — tested both call orders so neither
+    // direction depends on which one the scheduler happens to run first.
+    await Promise.all([
+      ingestSmsBatch([rawSms({ id: "older", date: 1000 })]),
+      ingestSmsBatch([rawSms({ id: "newer", date: 9000 })]),
+    ]);
+    expect((await getSyncStatus()).lastIngestedDate).toBe(9000);
+  });
 
+  it("resolves to the same maximum checkpoint with the reverse call order too", async () => {
+    await Promise.all([
+      ingestSmsBatch([rawSms({ id: "newer", date: 9000 })]),
+      ingestSmsBatch([rawSms({ id: "older", date: 1000 })]),
+    ]);
     expect((await getSyncStatus()).lastIngestedDate).toBe(9000);
   });
 
@@ -279,6 +330,36 @@ describe("ingestSmsBatch", () => {
     const status = await getSyncStatus();
     expect(status.lastIngestedDate).toBeNull();
     expect(status.lastIngestedProviderId).toBeNull();
+  });
+});
+
+describe("computeFingerprint", () => {
+  it("is deterministic for identical inputs", () => {
+    expect(computeFingerprint("VM-HDFCBK", 1700000000000, HDFC_DEBIT)).toBe(
+      computeFingerprint("VM-HDFCBK", 1700000000000, HDFC_DEBIT),
+    );
+  });
+
+  it("produces a fixed-length lowercase hex digest regardless of input length", () => {
+    const short = computeFingerprint("A", 1, "B");
+    const long = computeFingerprint("VM-HDFCBK", 1700000000000, HDFC_DEBIT);
+    expect(short).toMatch(/^[0-9a-f]{16}$/);
+    expect(long).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  it("never contains the raw SMS content it was derived from", () => {
+    const secret = "SUPER_SECRET_OTP_654321";
+    const fp = computeFingerprint("VM-HDFCBK", 1700000000000, secret);
+    expect(fp).not.toContain(secret);
+    expect(fp).not.toContain("SECRET");
+    expect(fp).not.toContain("VM-HDFCBK");
+  });
+
+  it("distinguishes field splits that would collide under naive delimiter concatenation", () => {
+    // A raw "${sender}|${date}|${body}" scheme would make these two equal:
+    // sender="X|Y", body="Z" vs sender="X", body="Y|Z" both stringify to
+    // "X|Y|5|Z" style ambiguity. Length-prefixing must keep them distinct.
+    expect(computeFingerprint("X|Y", 5, "Z")).not.toBe(computeFingerprint("X", 5, "Y|Z"));
   });
 });
 
@@ -314,6 +395,24 @@ describe("loadDashboard", () => {
       .where(eq(schema.smsLedger.id, "1"))
       .run();
 
+    const dashboard = await loadDashboard();
+    expect(dashboard.recent).toHaveLength(0);
+  });
+
+  it("skips a ledger row whose cached JSON is syntactically valid but not a MalanaResult shape", async () => {
+    // JSON.parse('"null"') doesn't throw — it returns the JS value null,
+    // which is exactly what would crash deriveDashboard() the moment it
+    // tries to read a property off it. This is the case a bare try/catch
+    // around JSON.parse() can't catch, since parsing itself succeeds.
+    await ingestSmsBatch([rawSms({ id: "1", body: HDFC_DEBIT })]);
+
+    testDb
+      .update(schema.smsLedger)
+      .set({ parsedResult: "null" })
+      .where(eq(schema.smsLedger.id, "1"))
+      .run();
+
+    await expect(loadDashboard()).resolves.toBeDefined();
     const dashboard = await loadDashboard();
     expect(dashboard.recent).toHaveLength(0);
   });
