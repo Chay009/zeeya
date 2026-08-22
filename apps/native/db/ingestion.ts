@@ -88,33 +88,78 @@ function prepareMessage(message: RawSms): PreparedMessage {
   return { message, fingerprint, providerId: message.id || null };
 }
 
-// Collapses every message in the batch sharing a fingerprint into one
-// group with one deterministically-merged provider id — regardless of
-// which order the caller happened to list them in. Two entries with the
-// same fingerprint are the same underlying SMS content by construction, so
-// there is exactly one identity to resolve per fingerprint, not one
-// decision per array position: picking "whichever one appears first in the
-// input array" (the previous, buggy approach) meant a batch of
-// [no-provider-id copy, provider-id copy] silently discarded the provider
-// id, while the reverse order kept it — the same two messages producing
-// two different outcomes depending on array order is not a real identity
-// rule. Sorting candidate provider ids and taking the lexicographically
-// smallest is: if more than one message in the batch legitimately carries
-// a different non-null provider id for the same content (a real duplicate
-// SMS row on-device), some deterministic tiebreak is required, and any
-// fixed one works equally well since which of two real provider ids "owns"
-// the row is not otherwise distinguishable — the important property is that
-// it doesn't depend on input order.
+// Collapses every message in the batch sharing an identity — same
+// fingerprint, OR same non-null provider id — into one group with one
+// deterministically-merged fingerprint/provider id, regardless of which
+// order the caller happened to list them in. This has to merge on *either*
+// key, not fingerprint alone: two messages in the same batch can carry the
+// same provider id while differing in fingerprint (e.g. the OS handed back
+// slightly different metadata for what the SMS provider considers a single
+// message). Grouping by fingerprint alone put those in separate groups
+// that both computed the same rowId (providerId ?? fingerprint) and then
+// raced to insert under that id — onConflictDoNothing() silently kept
+// whichever inserted first and discarded the other's entire row. Merging
+// transitively (union-find over "shares a fingerprint" and "shares a
+// provider id" edges) guarantees at most one group, and therefore at most
+// one insert attempt, per identity actually present in the batch.
+//
+// Two entries with the same fingerprint (or same provider id) are the same
+// underlying SMS content by construction, so there is exactly one identity
+// to resolve per connected component, not one decision per array position:
+// picking "whichever one appears first in the input array" meant a batch
+// of [no-provider-id copy, provider-id copy] silently discarded the
+// provider id, while the reverse order kept it — the same two messages
+// producing two different outcomes depending on array order is not a real
+// identity rule. Sorting candidate fingerprints/provider ids and taking
+// the lexicographically smallest of each is: if more than one message in
+// the batch legitimately carries different non-null values for the same
+// merged identity (a real duplicate SMS row on-device with slightly
+// different metadata), some deterministic tiebreak is required, and any
+// fixed one works equally well since which candidate "owns" the row is not
+// otherwise distinguishable — the important property is that it doesn't
+// depend on input order.
 function groupByFingerprint(prepared: readonly PreparedMessage[]): MergedGroup[] {
-  const byFingerprint = new Map<string, PreparedMessage[]>();
-  for (const item of prepared) {
-    const list = byFingerprint.get(item.fingerprint);
-    if (list) list.push(item);
-    else byFingerprint.set(item.fingerprint, [item]);
+  // Union-find over prepared[] indices, unioning on shared fingerprint or
+  // shared non-null provider id.
+  const parent = prepared.map((_, i) => i);
+  function find(i: number): number {
+    while (parent[i] !== i) {
+      parent[i] = parent[parent[i]!]!;
+      i = parent[i]!;
+    }
+    return i;
+  }
+  function union(a: number, b: number): void {
+    const rootA = find(a);
+    const rootB = find(b);
+    if (rootA !== rootB) parent[rootA] = rootB;
   }
 
+  const firstByFingerprint = new Map<string, number>();
+  const firstByProviderId = new Map<string, number>();
+  prepared.forEach((item, i) => {
+    const fpFirst = firstByFingerprint.get(item.fingerprint);
+    if (fpFirst === undefined) firstByFingerprint.set(item.fingerprint, i);
+    else union(i, fpFirst);
+
+    if (item.providerId !== null) {
+      const pidFirst = firstByProviderId.get(item.providerId);
+      if (pidFirst === undefined) firstByProviderId.set(item.providerId, i);
+      else union(i, pidFirst);
+    }
+  });
+
+  const components = new Map<number, PreparedMessage[]>();
+  prepared.forEach((item, i) => {
+    const root = find(i);
+    const list = components.get(root);
+    if (list) list.push(item);
+    else components.set(root, [item]);
+  });
+
   const groups: MergedGroup[] = [];
-  for (const [fingerprint, items] of byFingerprint) {
+  for (const items of components.values()) {
+    const fingerprint = items.map((i) => i.fingerprint).sort()[0]!;
     const providerIds = items
       .map((i) => i.providerId)
       .filter((id): id is string => id !== null)
@@ -222,15 +267,43 @@ function findExistingIdentities(
   return { byId, byFingerprint, byProviderId };
 }
 
+// A group can match an existing row via up to three independent keys (its
+// own id, its fingerprint, its provider id). Those three lookups normally
+// agree — they're different keys into the same row — but they don't have
+// to: if this group's fingerprint belongs to existing row A while its
+// provider id belongs to a *different* existing row B (e.g. B was
+// enriched with a provider id that a corrupted/duplicated incoming message
+// now also claims for A's content), a fixed precedence order (id, then
+// fingerprint, then provider id) would arbitrarily pick one of A or B
+// depending on incidental data shape — and if it picks A, the caller then
+// tries to enrich A with a provider id that already belongs to B, which
+// throws on the provider_id unique constraint and rolls back the entire
+// batch transaction, not just this one group.
+//
+// This is a genuine identity conflict, not something a lookup order can
+// correctly resolve — so it's detected and reported as such (`conflict:
+// true`) rather than silently resolved. The caller treats a conflict as
+// "this content already exists" (via the fingerprint match) without
+// attempting the enrichment that would corrupt row B's provider id.
 function lookupExisting(
   group: Pick<MergedGroup, "rowId" | "fingerprint" | "providerId">,
   identities: ExistingIdentities,
-): ExistingIdentity | undefined {
-  return (
-    identities.byId.get(group.rowId) ??
-    identities.byFingerprint.get(group.fingerprint) ??
-    (group.providerId ? identities.byProviderId.get(group.providerId) : undefined)
+): { existing: ExistingIdentity | undefined; conflict: boolean } {
+  const byId = identities.byId.get(group.rowId);
+  const byFingerprint = identities.byFingerprint.get(group.fingerprint);
+  const byProviderId = group.providerId ? identities.byProviderId.get(group.providerId) : undefined;
+
+  const candidates = [byId, byFingerprint, byProviderId].filter(
+    (c): c is ExistingIdentity => c !== undefined,
   );
+  const distinctIds = new Set(candidates.map((c) => c.id));
+  if (distinctIds.size > 1) {
+    // Prefer the fingerprint match as "the" existing row for this
+    // content — it's the strongest identity signal (content-derived, not
+    // caller-supplied), and matches what the message actually *is*.
+    return { existing: byFingerprint ?? candidates[0], conflict: true };
+  }
+  return { existing: candidates[0], conflict: false };
 }
 
 // Parses one message and shapes it into the ledger row this batch will
@@ -319,9 +392,9 @@ export async function ingestSmsBatch(messages: RawSms[]): Promise<void> {
   const toEnrich = new Map<string, string>(); // existing row id -> provider id to set
 
   for (const group of groups) {
-    const existing = lookupExisting(group, preflight);
+    const { existing, conflict } = lookupExisting(group, preflight);
     if (existing) {
-      if (group.providerId && !existing.providerId) {
+      if (!conflict && group.providerId && !existing.providerId) {
         toEnrich.set(existing.id, group.providerId);
       }
       continue;
@@ -339,9 +412,21 @@ export async function ingestSmsBatch(messages: RawSms[]): Promise<void> {
     }
   }
 
-  const batchNewestDate = Math.max(...messages.map((m) => m.date));
-  const batchNewest = messages.find((m) => m.date === batchNewestDate)!;
-  const batchNewestProviderId = batchNewest.id || null;
+  // Derived from the same merged groups the ledger actually writes, not
+  // the raw incoming messages — using the raw array here let this
+  // disagree with the ledger's own identity resolution whenever more than
+  // one raw message shared both a fingerprint and the batch's max date
+  // (Array.find's "first in input order" pick is not the same value as
+  // groupByFingerprint's deterministic lexicographic-smallest merge), making
+  // this purely-informational checkpoint field silently input-order-
+  // dependent even though nothing else about the batch was.
+  const batchNewestDate = Math.max(...groups.map((g) => g.representative.date));
+  const batchNewestGroups = groups
+    .filter((g) => g.representative.date === batchNewestDate)
+    .map((g) => g.providerId)
+    .filter((id): id is string => id !== null)
+    .sort();
+  const batchNewestProviderId = batchNewestGroups[0] ?? null;
 
   database.transaction((tx) => {
     // Recheck insertions against current state rather than trusting the
@@ -352,9 +437,9 @@ export async function ingestSmsBatch(messages: RawSms[]): Promise<void> {
     for (let i = 0; i < toInsertGroups.length; i++) {
       const group = toInsertGroups[i]!;
       const row = rowsToInsert[i]!;
-      const existingNow = lookupExisting(group, recheck);
+      const { existing: existingNow, conflict } = lookupExisting(group, recheck);
       if (existingNow) {
-        if (group.providerId && !existingNow.providerId) {
+        if (!conflict && group.providerId && !existingNow.providerId) {
           toEnrich.set(existingNow.id, group.providerId);
         }
         continue;

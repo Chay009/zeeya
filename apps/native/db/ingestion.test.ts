@@ -265,6 +265,69 @@ describe("ingestSmsBatch", () => {
     expect(rowAfter!.providerId).toBe("provider-B");
   });
 
+  it("merges two genuinely different messages sharing one provider id instead of silently dropping either", async () => {
+    // Two distinct SMS (different sender/date/body -> different
+    // fingerprints) sharing a literal provider id: fingerprint-only
+    // grouping put these in two separate MergedGroups that both computed
+    // the same rowId (providerId), so both were parsed and both attempted
+    // an insert under that id — onConflictDoNothing() kept whichever
+    // inserted first and silently discarded the other message's entire
+    // row, with no error. Grouping must merge them into exactly one group
+    // (and therefore exactly one row) up front instead.
+    const first = rawSms({ id: "provider-SHARED", date: 8080, sender: "VM-HDFCBK" });
+    const second = rawSms({
+      id: "provider-SHARED",
+      date: 8181,
+      sender: "VM-ICICI",
+      body: "INR 200.00 debited from account XX2222 on 10-08-2026. Avail Bal: INR 300.00",
+    });
+
+    await ingestSmsBatch([first, second]);
+
+    // The count/id alone can't distinguish "merged into one group up
+    // front" from "two separate groups raced to insert and one silently
+    // lost" — both land on one row with this id either way. The parse
+    // count is the tell: fingerprint-only grouping put these in two
+    // separate groups, and both got parsed before either insert was
+    // attempted.
+    expect(parseSpy).toHaveBeenCalledTimes(1);
+    const rows = testDb.select().from(schema.smsLedger).all();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.id).toBe("provider-SHARED");
+  });
+
+  it("does not throw or roll back the batch when an incoming fingerprint and provider id resolve to two different existing rows", async () => {
+    // Row B starts fingerprint-only, then is legitimately enriched later
+    // (so its `id` column stays its original fingerprint value while only
+    // its `providerId` *column* becomes the shared value) — the exact
+    // shape that made the old fixed-precedence lookupExisting() fall
+    // through byId, match a *different* row A via byFingerprint, and then
+    // attempt `UPDATE ... SET providerId = ... WHERE id = A.id`, which
+    // violges the provider_id unique constraint B already holds and rolls
+    // back the whole transaction.
+    const bSeed = rawSms({ id: "", date: 9090, sender: "VM-SBI", body: "seed for row B" });
+    await ingestSmsBatch([bSeed]);
+    await ingestSmsBatch([{ ...bSeed, id: "provider-CONTESTED" }]); // legitimately enrich B
+
+    const rowA = rawSms({ id: "", date: 9191, sender: "VM-AXIS", body: "row A content" });
+    await ingestSmsBatch([rowA]);
+
+    // Conflicting message: A's fingerprint (same sender/date/body as rowA),
+    // but claims B's provider id.
+    await expect(ingestSmsBatch([{ ...rowA, id: "provider-CONTESTED" }])).resolves.toBeUndefined();
+
+    const rows = testDb.select().from(schema.smsLedger).all();
+    const rowBAfter = rows.find((r) => r.providerId === "provider-CONTESTED");
+    const rowAAfter = rows.find(
+      (r) => r.fingerprint === computeFingerprint(rowA.sender, rowA.date, rowA.body ?? ""),
+    );
+    // B keeps the provider id it legitimately earned; A is recognized by
+    // its fingerprint and is not corrupted into claiming B's provider id.
+    expect(rowBAfter).toBeDefined();
+    expect(rowAAfter).toBeDefined();
+    expect(rowAAfter!.providerId).not.toBe("provider-CONTESTED");
+  });
+
   it("actually yields while parsing, not merely while classifying messages", async () => {
     // A batch of exactly PARSE_YIELD_EVERY (50) new messages should trigger
     // at least one yield during the parse loop itself — the bug this

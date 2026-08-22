@@ -146,6 +146,29 @@ export const MalanaResultSchema = z.object({
   spamScore: z.number(),
 }) satisfies z.ZodType<MalanaResult>;
 
+// `satisfies z.ZodType<MalanaResult>` above only checks one direction —
+// that the schema's inferred type is *assignable to* MalanaResult. A
+// newly-added *optional* field on MalanaResult would still satisfy that
+// check even though this schema doesn't declare it, and since Zod object
+// schemas strip unrecognized keys by default (no `.passthrough()`), such a
+// field would then be silently dropped at parse time with no compile- or
+// run-time signal that this file has drifted from the real type.
+//
+// This asserts the two types are exactly equal (both directions), not
+// just assignable one way, using the standard "distributive conditional
+// over a generic" trick: two types are structurally identical iff this
+// pair of conditional types are identical, which TypeScript can only
+// prove when neither side has an extra/missing member relative to the
+// other. If MalanaResult gains, loses, or changes a field without a
+// matching change here, this line fails to compile.
+type AssertExactMatch<T, Expected> =
+  (<G>() => G extends T ? 1 : 2) extends <G>() => G extends Expected ? 1 : 2 ? true : false;
+const _resultSchemaMatchesMalanaResult: AssertExactMatch<
+  MalanaResult,
+  z.infer<typeof MalanaResultSchema>
+> = true;
+void _resultSchemaMatchesMalanaResult;
+
 // Validates a decoded (JSON.parse'd) value against the exact MalanaResult
 // contract — for a consumer reading back a persisted result, not for the
 // engine's own hot parse path. Returns null on failure rather than
