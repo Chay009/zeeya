@@ -15,9 +15,11 @@ import {
 
 import { TransactionAvatar } from "@/components/transaction-avatar";
 import { dashboardTheme as t } from "@/constants/dashboard-theme";
+import { ingestSmsBatch, loadDashboard } from "@/db/ingestion";
 import {
   deriveDashboard,
   isRecurringTransaction,
+  type Dashboard,
   type AccountBalance,
   type BankGroup,
   type BalanceReading,
@@ -27,7 +29,6 @@ import {
 import {
   isSmsReadSupported,
   type ParsedSms,
-  parseInboxMessages,
   readSmsInbox,
   requestSmsReadPermission,
 } from "@/lib/sms";
@@ -87,7 +88,10 @@ function formatDateTimeFull(ms: number): string {
 export default function Home() {
   const [status, setStatus] = useState<Status>("checking");
   const [error, setError] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ParsedSms[]>([]);
+  // Empty-but-valid Dashboard (deriveDashboard([])) so every render before
+  // the first successful load can read dashboard.* unconditionally, same
+  // as before this screen read from the ledger.
+  const [dashboard, setDashboard] = useState<Dashboard>(() => deriveDashboard([]));
   const [refreshing, setRefreshing] = useState(false);
   const [activityFilter, setActivityFilter] = useState<ActivityCategoryFilter>("all");
   // Bumped on every load() call so a slow, stale in-flight read can't
@@ -102,9 +106,19 @@ export default function Home() {
     }
     const id = ++loadIdRef.current;
     try {
+      // Ingest is idempotent and re-parse-free (see db/ingestion.ts) — an
+      // already-ingested message is recognized by content fingerprint and
+      // never re-parsed, so calling this on every load/refresh only ever
+      // does real work for genuinely new SMS. loadDashboard() then
+      // reconstructs the dashboard from the ledger's cached parsed
+      // results, not by re-parsing raw inbox messages again.
       const raw = await readSmsInbox();
       if (id !== loadIdRef.current) return;
-      setMessages(parseInboxMessages(raw));
+      await ingestSmsBatch(raw);
+      if (id !== loadIdRef.current) return;
+      const nextDashboard = await loadDashboard();
+      if (id !== loadIdRef.current) return;
+      setDashboard(nextDashboard);
       setStatus("ready");
     } catch (e) {
       if (id !== loadIdRef.current) return;
@@ -150,7 +164,6 @@ export default function Home() {
     setRefreshing(false);
   }, [load]);
 
-  const dashboard = useMemo(() => deriveDashboard(messages), [messages]);
   const activityByCategory = useMemo(
     () => indexActivityByCategory(dashboard.activity),
     [dashboard.activity],
