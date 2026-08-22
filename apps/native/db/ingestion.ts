@@ -68,6 +68,28 @@ interface PreparedMessage {
   rowId: string;
 }
 
+// Android's on-device SQLite (unlike the desktop build this suite tests
+// against — verified directly: better-sqlite3's bundled SQLite handled a
+// 3,000-item IN clause fine) has historically defaulted
+// SQLITE_MAX_VARIABLE_NUMBER to 999, and there's no way to confirm the real
+// figure on-device without a physical test. The existence check below binds
+// two IN clauses per chunk (row ids + fingerprints), so chunking at 400
+// keeps every single query under 800 bound parameters regardless of which
+// default a given device actually ships — comfortably under 999 even in the
+// worst case, without needing to know the real number. This matters for any
+// batch, not just a future backfill import: a phone that's been offline for
+// a while can realistically accumulate several hundred new messages before
+// the next refresh.
+const EXISTENCE_CHECK_CHUNK_SIZE = 400;
+
+function chunk<T>(items: readonly T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
+}
+
 function prepareMessage(message: RawSms): PreparedMessage {
   const body = message.body ?? "";
   const fingerprint = computeFingerprint(message.sender, message.date, body);
@@ -145,23 +167,24 @@ export async function ingestSmsBatch(messages: RawSms[]): Promise<void> {
   const prepared = messages.map(prepareMessage);
 
   database.transaction((tx) => {
-    const rowIds = prepared.map((p) => p.rowId);
-    const fingerprints = prepared.map((p) => p.fingerprint);
-    const existingRows = tx
-      .select({
-        id: smsLedger.id,
-        fingerprint: smsLedger.fingerprint,
-        providerId: smsLedger.providerId,
-      })
-      .from(smsLedger)
-      .where(or(inArray(smsLedger.id, rowIds), inArray(smsLedger.fingerprint, fingerprints)))
-      .all();
-
     const byId = new Map<string, ExistingIdentity>();
     const byFingerprint = new Map<string, ExistingIdentity>();
-    for (const row of existingRows) {
-      byId.set(row.id, row);
-      byFingerprint.set(row.fingerprint, row);
+    for (const batch of chunk(prepared, EXISTENCE_CHECK_CHUNK_SIZE)) {
+      const rowIds = batch.map((p) => p.rowId);
+      const fingerprints = batch.map((p) => p.fingerprint);
+      const existingRows = tx
+        .select({
+          id: smsLedger.id,
+          fingerprint: smsLedger.fingerprint,
+          providerId: smsLedger.providerId,
+        })
+        .from(smsLedger)
+        .where(or(inArray(smsLedger.id, rowIds), inArray(smsLedger.fingerprint, fingerprints)))
+        .all();
+      for (const row of existingRows) {
+        byId.set(row.id, row);
+        byFingerprint.set(row.fingerprint, row);
+      }
     }
 
     for (const item of prepared) {
@@ -172,9 +195,28 @@ export async function ingestSmsBatch(messages: RawSms[]): Promise<void> {
             .set({ providerId: item.providerId })
             .where(eq(smsLedger.id, existing.id))
             .run();
+          // Reflect the enrichment in the in-memory maps too — otherwise a
+          // second item later in this same batch with the same fingerprint
+          // but yet another provider id would see the pre-enrichment
+          // `providerId: null` snapshot and attempt a second (harmless but
+          // pointless) update.
+          existing.providerId = item.providerId;
         }
         continue;
       }
+
+      // Not present in the DB, but could still be a duplicate of an item
+      // earlier in this very batch (e.g. the source handed back the same
+      // message twice) — record it before parsing so a later duplicate in
+      // the same loop is recognized here rather than parsed again only to
+      // have its insert silently no-op against the first one's row.
+      const placeholder: ExistingIdentity = {
+        id: item.rowId,
+        fingerprint: item.fingerprint,
+        providerId: item.providerId,
+      };
+      byId.set(item.rowId, placeholder);
+      byFingerprint.set(item.fingerprint, placeholder);
 
       const row = buildLedgerRow(item);
       tx.insert(smsLedger).values(row).onConflictDoNothing().run();

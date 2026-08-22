@@ -162,6 +162,40 @@ describe("ingestSmsBatch", () => {
     expect(parseSpy).toHaveBeenCalledTimes(2);
   });
 
+  it("parses an in-batch duplicate only once, not once per copy", async () => {
+    // Two entries with identical sender/date/body (same fingerprint) inside
+    // one call, neither yet in the DB — the second must be recognized as a
+    // duplicate of the first via the in-loop map, not parsed again only to
+    // have its insert silently no-op against the first one's row.
+    const message = rawSms({ id: "1" });
+    await ingestSmsBatch([message, { ...message, id: "2" }]);
+
+    expect(parseSpy).toHaveBeenCalledTimes(1);
+    expect(testDb.select().from(schema.smsLedger).all()).toHaveLength(1);
+  });
+
+  it("handles a batch large enough to span multiple existence-check chunks, including on re-ingestion", async () => {
+    // Real-world trigger: a phone that's been offline for a while can
+    // realistically accumulate several hundred new messages before the
+    // next refresh. 1,500 exceeds EXISTENCE_CHECK_CHUNK_SIZE (400) several
+    // times over, so this exercises the actual chunk boundary, not just a
+    // single query.
+    const large = Array.from({ length: 1500 }, (_, i) =>
+      rawSms({ id: `bulk-${i}`, date: 1700000000000 + i }),
+    );
+
+    await ingestSmsBatch(large);
+    expect(testDb.select().from(schema.smsLedger).all()).toHaveLength(1500);
+    expect(parseSpy).toHaveBeenCalledTimes(1500);
+
+    // Re-ingesting the same 1,500 must find every one of them across
+    // however many existence-check chunks they fall into — not just the
+    // ones that happen to share a chunk with themselves.
+    await ingestSmsBatch(large);
+    expect(testDb.select().from(schema.smsLedger).all()).toHaveLength(1500);
+    expect(parseSpy).toHaveBeenCalledTimes(1500);
+  });
+
   it("isolates a parse failure to that one message instead of aborting the whole batch", async () => {
     // engine.parse(null, ...) genuinely throws (verified directly) — a
     // realistic defensive case, not a contrived one: lib/sms.ts's own
