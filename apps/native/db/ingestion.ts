@@ -1,7 +1,11 @@
 // The local-first ingestion/read interface (issue #17). Ledger + checkpoint
 // only in this pass — see the header comment on loadDashboard for what's
 // deliberately deferred to the next slice, and why.
-import { createMalanaEngine, PARSER_VERSION } from "@zeeya/parser/malana";
+import {
+  createMalanaEngine,
+  parsePersistedMalanaResult,
+  PARSER_VERSION,
+} from "@zeeya/parser/malana";
 import { eq, inArray, or, sql } from "drizzle-orm";
 import { deriveDashboard, type Dashboard } from "../lib/dashboard";
 import type { ParsedSms, RawSms } from "../lib/sms";
@@ -54,7 +58,7 @@ export function computeFingerprint(sender: string, date: number, body: string): 
   return `${high}${low}`;
 }
 
-// ── Batch identity — parse only what's genuinely new ────────────────────────
+// ── Batch identity — group, merge, then decide what's genuinely new ─────────
 
 interface ExistingIdentity {
   id: string;
@@ -66,7 +70,64 @@ interface PreparedMessage {
   message: RawSms;
   fingerprint: string;
   providerId: string | null;
+}
+
+// One fingerprint's worth of the incoming batch, after merging every
+// message that shares it (see groupByFingerprint) — the unit ingestSmsBatch
+// actually operates on downstream of this point.
+interface MergedGroup {
+  fingerprint: string;
+  providerId: string | null;
   rowId: string;
+  representative: RawSms;
+}
+
+function prepareMessage(message: RawSms): PreparedMessage {
+  const body = message.body ?? "";
+  const fingerprint = computeFingerprint(message.sender, message.date, body);
+  return { message, fingerprint, providerId: message.id || null };
+}
+
+// Collapses every message in the batch sharing a fingerprint into one
+// group with one deterministically-merged provider id — regardless of
+// which order the caller happened to list them in. Two entries with the
+// same fingerprint are the same underlying SMS content by construction, so
+// there is exactly one identity to resolve per fingerprint, not one
+// decision per array position: picking "whichever one appears first in the
+// input array" (the previous, buggy approach) meant a batch of
+// [no-provider-id copy, provider-id copy] silently discarded the provider
+// id, while the reverse order kept it — the same two messages producing
+// two different outcomes depending on array order is not a real identity
+// rule. Sorting candidate provider ids and taking the lexicographically
+// smallest is: if more than one message in the batch legitimately carries
+// a different non-null provider id for the same content (a real duplicate
+// SMS row on-device), some deterministic tiebreak is required, and any
+// fixed one works equally well since which of two real provider ids "owns"
+// the row is not otherwise distinguishable — the important property is that
+// it doesn't depend on input order.
+function groupByFingerprint(prepared: readonly PreparedMessage[]): MergedGroup[] {
+  const byFingerprint = new Map<string, PreparedMessage[]>();
+  for (const item of prepared) {
+    const list = byFingerprint.get(item.fingerprint);
+    if (list) list.push(item);
+    else byFingerprint.set(item.fingerprint, [item]);
+  }
+
+  const groups: MergedGroup[] = [];
+  for (const [fingerprint, items] of byFingerprint) {
+    const providerIds = items
+      .map((i) => i.providerId)
+      .filter((id): id is string => id !== null)
+      .sort();
+    const providerId = providerIds[0] ?? null;
+    groups.push({
+      fingerprint,
+      providerId,
+      rowId: providerId ?? fingerprint,
+      representative: items[0]!.message,
+    });
+  }
+  return groups;
 }
 
 // Android's on-device SQLite (unlike the desktop build this suite tests
@@ -82,9 +143,12 @@ interface PreparedMessage {
 // accumulate several hundred new messages before the next refresh.
 const EXISTENCE_CHECK_CHUNK_SIZE = 250;
 
-// Large enough batches yield control back to the JS event loop periodically
-// while parsing (see ingestSmsBatch) so a big catch-up doesn't freeze the UI
-// thread for its entire duration in one uninterrupted synchronous stretch.
+// engine.parse() on a real message is not free; yielding only between
+// cheap bookkeeping steps (as an earlier version of this function did)
+// doesn't prevent a large batch's actual parsing from running as one
+// uninterrupted synchronous block. This yields after every N real parse
+// calls specifically, so a big catch-up genuinely can't freeze the JS
+// thread for its entire duration.
 const PARSE_YIELD_EVERY = 50;
 
 function chunk<T>(items: readonly T[], size: number): T[][] {
@@ -95,35 +159,30 @@ function chunk<T>(items: readonly T[], size: number): T[][] {
   return chunks;
 }
 
-function prepareMessage(message: RawSms): PreparedMessage {
-  const body = message.body ?? "";
-  const fingerprint = computeFingerprint(message.sender, message.date, body);
-  const providerId = message.id || null;
-  return { message, fingerprint, providerId, rowId: providerId ?? fingerprint };
-}
-
 // Queryable is either the top-level `database` (preflight, before any
 // transaction is open) or a `tx` inside one (recheck) — both expose the
 // same sync .select()...where()...all() shape, so this one function serves
 // both call sites rather than duplicating the chunked-query logic.
 type Queryable = Pick<Database, "select">;
 
-function findExistingIdentities(
-  queryable: Queryable,
-  items: readonly PreparedMessage[],
-): {
+interface ExistingIdentities {
   byId: Map<string, ExistingIdentity>;
   byFingerprint: Map<string, ExistingIdentity>;
   byProviderId: Map<string, ExistingIdentity>;
-} {
+}
+
+function findExistingIdentities(
+  queryable: Queryable,
+  groups: readonly Pick<MergedGroup, "rowId" | "fingerprint" | "providerId">[],
+): ExistingIdentities {
   const byId = new Map<string, ExistingIdentity>();
   const byFingerprint = new Map<string, ExistingIdentity>();
   const byProviderId = new Map<string, ExistingIdentity>();
 
-  for (const batch of chunk(items, EXISTENCE_CHECK_CHUNK_SIZE)) {
-    const rowIds = batch.map((p) => p.rowId);
-    const fingerprints = batch.map((p) => p.fingerprint);
-    const providerIds = batch.map((p) => p.providerId).filter((id): id is string => id !== null);
+  for (const batch of chunk(groups, EXISTENCE_CHECK_CHUNK_SIZE)) {
+    const rowIds = batch.map((g) => g.rowId);
+    const fingerprints = batch.map((g) => g.fingerprint);
+    const providerIds = batch.map((g) => g.providerId).filter((id): id is string => id !== null);
 
     const conditions = [
       inArray(smsLedger.id, rowIds),
@@ -164,26 +223,26 @@ function findExistingIdentities(
 }
 
 function lookupExisting(
-  item: PreparedMessage,
-  identities: ReturnType<typeof findExistingIdentities>,
+  group: Pick<MergedGroup, "rowId" | "fingerprint" | "providerId">,
+  identities: ExistingIdentities,
 ): ExistingIdentity | undefined {
   return (
-    identities.byId.get(item.rowId) ??
-    identities.byFingerprint.get(item.fingerprint) ??
-    (item.providerId ? identities.byProviderId.get(item.providerId) : undefined)
+    identities.byId.get(group.rowId) ??
+    identities.byFingerprint.get(group.fingerprint) ??
+    (group.providerId ? identities.byProviderId.get(group.providerId) : undefined)
   );
 }
 
 // Parses one message and shapes it into the ledger row this batch will
 // insert — isolated per-message so one bad message (a parser throw) can't
 // abort the whole batch.
-function buildLedgerRow(prepared: PreparedMessage) {
-  const { message, fingerprint, providerId, rowId } = prepared;
+function buildLedgerRow(group: MergedGroup) {
+  const message = group.representative;
   const storedBody = message.body ?? "";
   const base = {
-    id: rowId,
-    fingerprint,
-    providerId,
+    id: group.rowId,
+    fingerprint: group.fingerprint,
+    providerId: group.providerId,
     sender: message.sender,
     body: storedBody,
     date: message.date,
@@ -230,17 +289,18 @@ function yieldToEventLoop(): Promise<void> {
 // provider id for that same fingerprint (or provider id), the existing row
 // is enriched with that provider id — not re-parsed.
 //
-// Parsing happens entirely OUTSIDE any SQLite transaction — engine.parse()
-// on hundreds of messages takes real time, and holding a synchronous
-// transaction open for that whole duration would block both the JS thread
-// and the database itself. The flow is: (1) a read-only preflight existence
-// check, no transaction; (2) parse only genuinely-new messages, yielding to
-// the event loop periodically for a large batch; (3) a short transaction
-// that rechecks existence against current state (another call could have
-// inserted some of these rows in the meantime — onConflictDoNothing already
-// makes a stale insert harmless, but the recheck lets a message that only
-// became enrichable during that window skip an unnecessary insert attempt
-// too) and performs all writes plus the checkpoint update together.
+// Flow: (1) group the incoming batch by fingerprint and merge each group's
+// provider identity deterministically (see groupByFingerprint — this is
+// also what makes same-batch duplicates order-independent); (2) a read-only
+// preflight existence check, no transaction; (3) parse only genuinely-new
+// groups, yielding to the event loop after every PARSE_YIELD_EVERY actual
+// parse calls (not merely every N loop iterations) so a large batch's
+// parsing itself can't freeze the JS thread for its whole duration; (4) a
+// short transaction that rechecks both insertions and enrichments against
+// current state — another call could have inserted or enriched some of
+// these rows in the window since the preflight read — applies enrichments
+// only where providerId is still actually null, inserts rows, and
+// conditionally advances the checkpoint.
 //
 // That final transaction body is a plain (non-async) function on purpose:
 // drizzle's expo-sqlite transaction does NOT await its callback before
@@ -252,67 +312,76 @@ export async function ingestSmsBatch(messages: RawSms[]): Promise<void> {
   const database = requireDb();
   if (messages.length === 0) return;
 
-  const prepared = messages.map(prepareMessage);
-  const preflight = findExistingIdentities(database, prepared);
+  const groups = groupByFingerprint(messages.map(prepareMessage));
+  const preflight = findExistingIdentities(database, groups);
 
-  const toInsert: PreparedMessage[] = [];
+  const toInsertGroups: MergedGroup[] = [];
   const toEnrich = new Map<string, string>(); // existing row id -> provider id to set
-  const seenFingerprints = new Set<string>();
-  const seenRowIds = new Set<string>();
 
-  let sinceYield = 0;
-  for (const item of prepared) {
-    const existing = lookupExisting(item, preflight);
+  for (const group of groups) {
+    const existing = lookupExisting(group, preflight);
     if (existing) {
-      if (item.providerId && !existing.providerId) {
-        toEnrich.set(existing.id, item.providerId);
+      if (group.providerId && !existing.providerId) {
+        toEnrich.set(existing.id, group.providerId);
       }
       continue;
     }
-    if (seenFingerprints.has(item.fingerprint) || seenRowIds.has(item.rowId)) {
-      continue; // duplicate within this batch, already queued for insert
-    }
-    seenFingerprints.add(item.fingerprint);
-    seenRowIds.add(item.rowId);
-    toInsert.push(item);
-
-    if (++sinceYield >= PARSE_YIELD_EVERY) {
-      await yieldToEventLoop();
-      sinceYield = 0;
-    }
+    toInsertGroups.push(group);
   }
 
-  const rowsToInsert = toInsert.map(buildLedgerRow);
+  const rowsToInsert: ReturnType<typeof buildLedgerRow>[] = [];
+  let parseCallsSinceYield = 0;
+  for (const group of toInsertGroups) {
+    rowsToInsert.push(buildLedgerRow(group));
+    if (++parseCallsSinceYield >= PARSE_YIELD_EVERY) {
+      await yieldToEventLoop();
+      parseCallsSinceYield = 0;
+    }
+  }
 
   const batchNewestDate = Math.max(...messages.map((m) => m.date));
   const batchNewest = messages.find((m) => m.date === batchNewestDate)!;
   const batchNewestProviderId = batchNewest.id || null;
 
   database.transaction((tx) => {
-    // Recheck against current state rather than trusting the preflight
-    // snapshot: another ingestSmsBatch call could have inserted or
-    // enriched some of these rows in the window between the preflight read
-    // and this transaction opening.
-    const recheck = findExistingIdentities(tx, toInsert);
-    // toInsert and rowsToInsert are the same length, built in the same
-    // order (rowsToInsert = toInsert.map(buildLedgerRow)) — zip by index
-    // rather than searching rowsToInsert for each item, which would be
-    // O(n^2) for a large batch.
-    for (let i = 0; i < toInsert.length; i++) {
-      const item = toInsert[i]!;
+    // Recheck insertions against current state rather than trusting the
+    // preflight snapshot: another ingestSmsBatch call could have inserted
+    // some of these rows in the window between the preflight read and this
+    // transaction opening.
+    const recheck = findExistingIdentities(tx, toInsertGroups);
+    for (let i = 0; i < toInsertGroups.length; i++) {
+      const group = toInsertGroups[i]!;
       const row = rowsToInsert[i]!;
-      const existingNow = lookupExisting(item, recheck);
+      const existingNow = lookupExisting(group, recheck);
       if (existingNow) {
-        if (item.providerId && !existingNow.providerId) {
-          toEnrich.set(existingNow.id, item.providerId);
+        if (group.providerId && !existingNow.providerId) {
+          toEnrich.set(existingNow.id, group.providerId);
         }
         continue;
       }
       tx.insert(smsLedger).values(row).onConflictDoNothing().run();
     }
 
-    for (const [existingId, providerId] of toEnrich) {
-      tx.update(smsLedger).set({ providerId }).where(eq(smsLedger.id, existingId)).run();
+    // Enrichment candidates from the preflight are revalidated here too,
+    // not just applied blindly: another call could have enriched (or even
+    // conflictingly enriched) the same row in that same window. Only apply
+    // when the row's providerId is still actually null at write time.
+    if (toEnrich.size > 0) {
+      const enrichIds = [...toEnrich.keys()];
+      const currentProviderIds = new Map<string, string | null>();
+      for (const batch of chunk(enrichIds, EXISTENCE_CHECK_CHUNK_SIZE)) {
+        for (const row of tx
+          .select({ id: smsLedger.id, providerId: smsLedger.providerId })
+          .from(smsLedger)
+          .where(inArray(smsLedger.id, batch))
+          .all()) {
+          currentProviderIds.set(row.id, row.providerId);
+        }
+      }
+      for (const [existingId, providerId] of toEnrich) {
+        if (currentProviderIds.get(existingId) !== null) continue;
+        tx.update(smsLedger).set({ providerId }).where(eq(smsLedger.id, existingId)).run();
+      }
     }
 
     // A single conditional upsert, not read-then-write: two overlapping
@@ -358,17 +427,6 @@ export async function getSyncStatus(): Promise<SyncStatus> {
   };
 }
 
-// A minimal structural sanity check on cached, previously-trusted JSON —
-// not a full MalanaResult schema. JSON.parse() only rejects invalid syntax:
-// a stored value like "null" or "42" is syntactically valid JSON that
-// parses to a non-object, which would then crash deriveDashboard() the
-// moment it tries to read a property off it. This catches that class of
-// corruption without the weight of validating all 50+ MalanaResult fields
-// for a value that (barring corruption) was written by this same code.
-function isPlausibleMalanaResult(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && "category" in value;
-}
-
 // Reconstructs ParsedSms[] from the ledger's cached parsedResult JSON and
 // runs the existing, already-tested deriveDashboard() over it — the exact
 // same function apps/native/app/(drawer)/index.tsx already calls today, so
@@ -376,8 +434,11 @@ function isPlausibleMalanaResult(value: unknown): value is Record<string, unknow
 // its reconciliation math (interval-based, sorted-history-dependent — real
 // risk to reproduce incrementally without its own dedicated review pass).
 // A row whose cached JSON fails to parse, or decodes to something that
-// isn't plausibly a MalanaResult, is skipped rather than crashing —
-// the same error-isolation principle ingestSmsBatch itself uses.
+// doesn't validate against the parser package's own MalanaResult schema
+// (parsePersistedMalanaResult — the single source of truth for that
+// contract, not a shape check reproduced here that could drift from it),
+// is skipped rather than crashing — the same error-isolation principle
+// ingestSmsBatch itself uses.
 //
 // What this does NOT yet do, deliberately deferred rather than rushed in
 // the same pass as ingestion: read from the normalized accounts/
@@ -403,13 +464,14 @@ export async function loadDashboard(now: Date = new Date()): Promise<Dashboard> 
     } catch {
       continue;
     }
-    if (!isPlausibleMalanaResult(decoded)) continue;
+    const result = parsePersistedMalanaResult(decoded);
+    if (!result) continue;
     messages.push({
       id: row.id,
       sender: row.sender,
       body: row.body,
       date: row.date,
-      result: decoded as unknown as ParsedSms["result"],
+      result,
     });
   }
   return deriveDashboard(messages, now);

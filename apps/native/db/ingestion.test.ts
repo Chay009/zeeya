@@ -195,6 +195,93 @@ describe("ingestSmsBatch", () => {
     expect(testDb.select().from(schema.smsLedger).all()).toHaveLength(1);
   });
 
+  it("merges a same-batch missing-id/provider-id pair the same way regardless of array order (missing-id first)", async () => {
+    // The exact order-dependence bug: a naive "first one in wins, later
+    // duplicates are discarded" dedup would keep whichever copy appeared
+    // first and silently drop the other's provider id if it came second.
+    // groupByFingerprint merges by fingerprint before any insert decision
+    // is made, so the outcome must be identical regardless of which copy
+    // the caller happened to list first.
+    const withId = rawSms({ id: "provider-1", date: 4242 });
+    const withoutId = { ...withId, id: "" };
+
+    await ingestSmsBatch([withoutId, withId]);
+
+    expect(parseSpy).toHaveBeenCalledTimes(1);
+    const rows = testDb.select().from(schema.smsLedger).all();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.providerId).toBe("provider-1");
+  });
+
+  it("merges a same-batch missing-id/provider-id pair the same way regardless of array order (provider-id first)", async () => {
+    const withId = rawSms({ id: "provider-2", date: 4343 });
+    const withoutId = { ...withId, id: "" };
+
+    await ingestSmsBatch([withId, withoutId]);
+
+    expect(parseSpy).toHaveBeenCalledTimes(1);
+    const rows = testDb.select().from(schema.smsLedger).all();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.providerId).toBe("provider-2");
+  });
+
+  it("does not let a stale enrichment overwrite a row a competing call already enriched with a different provider id", async () => {
+    // Genuinely exploits the real yield point, rather than simulating the
+    // race by mutating the DB before any read happens (which would only
+    // prove the preflight itself is correct — already true before this fix
+    // — and never actually exercise the transactional recheck at all).
+    //
+    // Call A's batch pairs an enrichment candidate for row R with 60 filler
+    // messages so its parse loop genuinely yields (see PARSE_YIELD_EVERY).
+    // Call A's preflight runs first and records R as enrichable with
+    // provider-A. A then yields at message 50. Because JS is single-
+    // threaded, call B — invoked on the very next line, only reachable
+    // once A's synchronous portion returns control at that yield — runs
+    // to completion (its own transaction included) entirely within that
+    // window, enriching R with provider-B, before A resumes. By the time
+    // A's own transaction opens, its recorded "enrich with provider-A"
+    // decision is stale: R already has provider-B.
+    const noProviderId = rawSms({ id: "", date: 6161 });
+    await ingestSmsBatch([noProviderId]);
+
+    const enrichWithA = { ...noProviderId, id: "provider-A" };
+    const filler = Array.from({ length: 60 }, (_, i) =>
+      rawSms({ id: `race-filler-${i}`, date: 700000 + i }),
+    );
+    const callA = ingestSmsBatch([enrichWithA, ...filler]);
+    const callB = ingestSmsBatch([{ ...noProviderId, id: "provider-B" }]);
+    await Promise.all([callA, callB]);
+
+    const [rowAfter] = testDb
+      .select()
+      .from(schema.smsLedger)
+      .where(
+        eq(
+          schema.smsLedger.fingerprint,
+          computeFingerprint(noProviderId.sender, noProviderId.date, noProviderId.body),
+        ),
+      )
+      .all();
+    expect(rowAfter!.providerId).toBe("provider-B");
+  });
+
+  it("actually yields while parsing, not merely while classifying messages", async () => {
+    // A batch of exactly PARSE_YIELD_EVERY (50) new messages should trigger
+    // at least one yield during the parse loop itself — the bug this
+    // replaces yielded only in an earlier classification loop, so parsing
+    // 50+ messages still ran as one uninterrupted synchronous block
+    // regardless of that classification-loop yield.
+    const setTimeoutSpy = vi.spyOn(global, "setTimeout");
+    const batch = Array.from({ length: 50 }, (_, i) =>
+      rawSms({ id: `yield-${i}`, date: 1700000000000 + i }),
+    );
+
+    await ingestSmsBatch(batch);
+
+    expect(setTimeoutSpy).toHaveBeenCalled();
+    setTimeoutSpy.mockRestore();
+  });
+
   it("handles a batch large enough to span multiple existence-check chunks, including on re-ingestion", async () => {
     // Real-world trigger: a phone that's been offline for a while can
     // realistically accumulate several hundred new messages before the
@@ -302,28 +389,37 @@ describe("ingestSmsBatch", () => {
     expect(status.lastIngestedDate).toBe(5000);
   });
 
-  it("resolves to the same maximum checkpoint regardless of which of two overlapping batches finishes first", async () => {
-    // ingestSmsBatch now yields to the event loop periodically while
-    // parsing a large batch (see PARSE_YIELD_EVERY) — a genuine, if small,
-    // window where two concurrent calls' parse phases really can
-    // interleave before either reaches its write transaction. The atomic
-    // conditional upsert (WHERE excluded.date > current.date) is what
-    // guarantees correctness through that window, not any claim that
-    // interleaving can't happen — tested both call orders so neither
-    // direction depends on which one the scheduler happens to run first.
-    await Promise.all([
-      ingestSmsBatch([rawSms({ id: "older", date: 1000 })]),
-      ingestSmsBatch([rawSms({ id: "newer", date: 9000 })]),
-    ]);
-    expect((await getSyncStatus()).lastIngestedDate).toBe(9000);
+  it("resolves to the same maximum checkpoint when two large, genuinely-interleaving batches overlap", async () => {
+    // Single-message batches never cross PARSE_YIELD_EVERY (50), so they
+    // never actually yield mid-parse — calling ingestSmsBatch twice with
+    // those never gives the two calls a real chance to interleave, only an
+    // appearance of testing concurrency. 60 messages each does cross the
+    // threshold, so both calls genuinely yield control back to the event
+    // loop mid-parse, and can actually interleave before either reaches its
+    // write transaction. The atomic conditional upsert (WHERE
+    // excluded.date > current.date) is what guarantees correctness through
+    // that real interleaving, not an absence of it.
+    const olderBatch = Array.from({ length: 60 }, (_, i) =>
+      rawSms({ id: `older-${i}`, date: 1000 + i }),
+    );
+    const newerBatch = Array.from({ length: 60 }, (_, i) =>
+      rawSms({ id: `newer-${i}`, date: 900000 + i }),
+    );
+
+    await Promise.all([ingestSmsBatch(olderBatch), ingestSmsBatch(newerBatch)]);
+    expect((await getSyncStatus()).lastIngestedDate).toBe(900000 + 59);
   });
 
   it("resolves to the same maximum checkpoint with the reverse call order too", async () => {
-    await Promise.all([
-      ingestSmsBatch([rawSms({ id: "newer", date: 9000 })]),
-      ingestSmsBatch([rawSms({ id: "older", date: 1000 })]),
-    ]);
-    expect((await getSyncStatus()).lastIngestedDate).toBe(9000);
+    const olderBatch = Array.from({ length: 60 }, (_, i) =>
+      rawSms({ id: `older2-${i}`, date: 1000 + i }),
+    );
+    const newerBatch = Array.from({ length: 60 }, (_, i) =>
+      rawSms({ id: `newer2-${i}`, date: 900000 + i }),
+    );
+
+    await Promise.all([ingestSmsBatch(newerBatch), ingestSmsBatch(olderBatch)]);
+    expect((await getSyncStatus()).lastIngestedDate).toBe(900000 + 59);
   });
 
   it("getSyncStatus returns nulls before anything has been ingested", async () => {
@@ -409,6 +505,27 @@ describe("loadDashboard", () => {
     testDb
       .update(schema.smsLedger)
       .set({ parsedResult: "null" })
+      .where(eq(schema.smsLedger.id, "1"))
+      .run();
+
+    await expect(loadDashboard()).resolves.toBeDefined();
+    const dashboard = await loadDashboard();
+    expect(dashboard.recent).toHaveLength(0);
+  });
+
+  it("skips a ledger row whose cached JSON is valid but has the wrong field types, not just wrong shape", async () => {
+    // { category: "GRM_BANK", ref: 3 } passes a shallow "is an object with
+    // a category key" check but would crash the moment downstream code
+    // calls a string method on `ref` (dashboard.ts's referencedTransactionKey
+    // does exactly this). parsePersistedMalanaResult validates every
+    // field's type, not just the object's top-level shape.
+    await ingestSmsBatch([rawSms({ id: "1", body: HDFC_DEBIT })]);
+
+    const [row] = testDb.select().from(schema.smsLedger).all();
+    const corrupted = { ...JSON.parse(row!.parsedResult!), ref: 3 };
+    testDb
+      .update(schema.smsLedger)
+      .set({ parsedResult: JSON.stringify(corrupted) })
       .where(eq(schema.smsLedger.id, "1"))
       .run();
 
