@@ -15,7 +15,7 @@ import {
 
 import { TransactionAvatar } from "@/components/transaction-avatar";
 import { dashboardTheme as t } from "@/constants/dashboard-theme";
-import { ingestSmsBatch, loadDashboard } from "@/db/ingestion";
+import { getSyncStatus, ingestSmsBatch, loadDashboard } from "@/db/ingestion";
 import {
   deriveDashboard,
   isRecurringTransaction,
@@ -41,6 +41,11 @@ import {
 } from "@/lib/activity-filters";
 
 type Status = "checking" | "needs-permission" | "loading" | "ready" | "unsupported" | "error";
+
+// See load()'s own comment: a small backward overlap on the sync
+// checkpoint, not a strict `date > checkpoint` boundary, so a message
+// sharing the checkpoint's exact timestamp is never missed.
+const SYNC_OVERLAP_MS = 60_000;
 
 // maximumFractionDigits: 2 (not a forced 0) so a ₹199.99 charge doesn't
 // silently round to ₹200 — toLocaleString only prints decimals when the
@@ -112,7 +117,24 @@ export default function Home() {
       // does real work for genuinely new SMS. loadDashboard() then
       // reconstructs the dashboard from the ledger's cached parsed
       // results, not by re-parsing raw inbox messages again.
-      const raw = await readSmsInbox();
+      //
+      // Reading from the checkpoint (rather than the whole inbox every
+      // time) is what makes this cheap on every foreground/refresh, not
+      // just correct — without it, a user with years of SMS history would
+      // re-read their entire inbox from the OS on every single load.
+      // SYNC_OVERLAP_MS pulls the window back slightly rather than reading
+      // strictly newer than the checkpoint: multiple messages can share
+      // the exact same millisecond timestamp, and a strict `date >
+      // checkpoint` boundary can miss one that arrived alongside the
+      // message the checkpoint actually recorded. The overlap can re-fetch
+      // a few already-ingested messages, which is fine — ingestSmsBatch
+      // recognizes them by fingerprint and does no extra parsing work.
+      const checkpoint = await getSyncStatus();
+      const since =
+        checkpoint.lastIngestedDate !== null
+          ? checkpoint.lastIngestedDate - SYNC_OVERLAP_MS
+          : undefined;
+      const raw = await readSmsInbox({ since });
       if (id !== loadIdRef.current) return;
       await ingestSmsBatch(raw);
       if (id !== loadIdRef.current) return;

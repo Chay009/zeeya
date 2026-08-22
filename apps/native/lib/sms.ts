@@ -34,12 +34,19 @@ export async function requestSmsReadPermission(): Promise<boolean> {
 
 // Reads the device's existing SMS inbox via the native content provider
 // (react-native-get-sms-android). Defaults to 5,000 messages, matching this
-// app's expected per-user scale.
-export function readSmsInbox(options: { maxCount?: number } = {}): Promise<RawSms[]> {
+// app's expected per-user scale. `since`, when given, is passed through as
+// the native module's own `minDate` filter (confirmed against its Java
+// source: it's an inclusive per-row `date >=` check applied before
+// maxCount truncation) — omitting it here reads the whole inbox, same as
+// before this parameter existed.
+export function readSmsInbox(
+  options: { maxCount?: number; since?: number } = {},
+): Promise<RawSms[]> {
   return new Promise((resolve, reject) => {
     const filter = JSON.stringify({
       box: "inbox",
       maxCount: options.maxCount ?? 5000,
+      minDate: options.since,
       // Without this, the native module passes a null sort order straight
       // to ContentResolver.query() and which messages survive the maxCount
       // truncation is OS/OEM-defined — explicitly keep the newest ones.
