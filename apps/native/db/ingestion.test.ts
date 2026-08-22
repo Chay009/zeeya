@@ -1,13 +1,27 @@
 // Runs against a real SQLite database (better-sqlite3, same approach as
 // schema.smoke.test.ts) rather than mocking drizzle — the whole point of
-// this suite is proving ingestSmsBatch's idempotency and error isolation
-// hold against real INSERT/constraint behavior, not against a mock that
-// might not reproduce it.
+// this suite is proving ingestSmsBatch's idempotency, no-reparse, and
+// atomicity guarantees hold against real transaction/constraint behavior,
+// not against a mock that might not reproduce it.
+//
+// Static imports throughout, deliberately: ingestion.ts imports MalanaEngine
+// itself, so spying on MalanaEngine.prototype.parse only works if the test
+// file's own MalanaEngine reference resolves to the exact same class object
+// ingestion.ts uses. A dynamic per-test `await import("./ingestion")`
+// combined with `vi.resetModules()` breaks that — each fresh import gets
+// its own separate module registry snapshot, so the spy silently attaches
+// to a different (unused) MalanaEngine class than the one ingestion.ts
+// actually calls, and every parse-count assertion reads 0 regardless of
+// what really happened. Nothing here needs cross-test module isolation
+// anyway (engine.parse() is stateless per call), so plain static imports
+// are both the fix and the simpler design.
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { eq } from "drizzle-orm";
+import { MalanaEngine } from "@zeeya/parser/malana";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as schema from "./schema";
 import { initializeNativeDatabase } from "./native-init";
 import type { RawSms } from "../lib/sms";
@@ -44,6 +58,9 @@ vi.mock("./client", () => ({
   },
 }));
 
+const { ingestSmsBatch, getSyncStatus, loadDashboard, loadTransactions } =
+  await import("./ingestion");
+
 const HDFC_DEBIT =
   "INR 5,000.00 debited from account XX1234 on 09-08-2026. Avail Bal: INR 12,500.00";
 const SBI_UPI =
@@ -59,13 +76,18 @@ function rawSms(overrides: Partial<RawSms> & { id: string }): RawSms {
 }
 
 describe("ingestSmsBatch", () => {
+  let parseSpy: ReturnType<typeof vi.spyOn>;
+
   beforeEach(() => {
     testDb = freshDb();
-    vi.resetModules();
+    parseSpy = vi.spyOn(MalanaEngine.prototype, "parse");
+  });
+
+  afterEach(() => {
+    parseSpy.mockRestore();
   });
 
   it("persists a real message into the ledger with a parsed result", async () => {
-    const { ingestSmsBatch } = await import("./ingestion");
     await ingestSmsBatch([rawSms({ id: "1" })]);
 
     const rows = testDb.select().from(schema.smsLedger).all();
@@ -75,32 +97,60 @@ describe("ingestSmsBatch", () => {
     expect(JSON.parse(rows[0]!.parsedResult!).trx).toBe("5000.00");
   });
 
-  it("is idempotent — re-ingesting the same message does not duplicate or re-parse it", async () => {
-    const { ingestSmsBatch } = await import("./ingestion");
+  it("is idempotent AND does not re-parse already-ingested messages", async () => {
     const message = rawSms({ id: "1" });
 
     await ingestSmsBatch([message]);
+    expect(parseSpy).toHaveBeenCalledTimes(1);
+
+    // The false claim this test replaces: engine.parse() was previously
+    // called for every message before any DB check ran, so re-ingesting
+    // 5,000 already-known messages meant 5,000 unnecessary parses. Existence
+    // is now checked in bulk before parsing anything.
     await ingestSmsBatch([message]);
     await ingestSmsBatch([message]);
 
+    expect(parseSpy).toHaveBeenCalledTimes(1);
     expect(testDb.select().from(schema.smsLedger).all()).toHaveLength(1);
   });
 
-  it("does not duplicate under a fingerprint collision even with a different provider id", async () => {
-    const { ingestSmsBatch } = await import("./ingestion");
+  it("does not duplicate or re-parse under a fingerprint collision with a different provider id", async () => {
     const message = rawSms({ id: "1" });
     await ingestSmsBatch([message]);
+    expect(parseSpy).toHaveBeenCalledTimes(1);
 
     // Same sender/date/body (same fingerprint) but a different provider id —
-    // the exact cross-scheme collision schema.ts's fingerprint column exists
-    // to catch. onConflictDoNothing() with no target catches this too.
+    // the exact cross-scheme collision schema.ts's fingerprint column
+    // exists to catch.
     await ingestSmsBatch([{ ...message, id: "different-provider-id" }]);
 
+    expect(parseSpy).toHaveBeenCalledTimes(1);
     expect(testDb.select().from(schema.smsLedger).all()).toHaveLength(1);
+  });
+
+  it("enriches a fingerprint-only row with a provider id that becomes available later, without re-parsing", async () => {
+    // Empty id — RawSms.id is typed as required, but "no provider id
+    // available yet" is exactly the scenario issue #17 names. The row is
+    // keyed by fingerprint alone.
+    const withoutProviderId = rawSms({ id: "" });
+    await ingestSmsBatch([withoutProviderId]);
+
+    const afterFirst = testDb.select().from(schema.smsLedger).all();
+    expect(afterFirst).toHaveLength(1);
+    expect(afterFirst[0]!.providerId).toBeNull();
+    const fingerprintRowId = afterFirst[0]!.id;
+
+    // Same content, now with a real provider id.
+    await ingestSmsBatch([{ ...withoutProviderId, id: "provider-123" }]);
+
+    expect(parseSpy).toHaveBeenCalledTimes(1);
+    const afterSecond = testDb.select().from(schema.smsLedger).all();
+    expect(afterSecond).toHaveLength(1);
+    expect(afterSecond[0]!.id).toBe(fingerprintRowId);
+    expect(afterSecond[0]!.providerId).toBe("provider-123");
   });
 
   it("processes a batch of distinct real messages independently", async () => {
-    const { ingestSmsBatch } = await import("./ingestion");
     await ingestSmsBatch([
       rawSms({ id: "1", body: HDFC_DEBIT, sender: "VM-HDFCBK" }),
       rawSms({ id: "2", body: SBI_UPI, sender: "VM-SBIINB", date: 1700000001000 }),
@@ -109,10 +159,10 @@ describe("ingestSmsBatch", () => {
     const rows = testDb.select().from(schema.smsLedger).all();
     expect(rows).toHaveLength(2);
     expect(rows.every((r) => r.ingestionStatus === "parsed")).toBe(true);
+    expect(parseSpy).toHaveBeenCalledTimes(2);
   });
 
   it("isolates a parse failure to that one message instead of aborting the whole batch", async () => {
-    const { ingestSmsBatch } = await import("./ingestion");
     // engine.parse(null, ...) genuinely throws (verified directly) — a
     // realistic defensive case, not a contrived one: lib/sms.ts's own
     // comment notes OS/OEM-defined quirks in what the SMS content provider
@@ -136,8 +186,28 @@ describe("ingestSmsBatch", () => {
     expect(bad.ingestionError).toContain("toLowerCase");
   });
 
+  it("rolls back the entire batch (ledger writes and checkpoint alike) if anything in the transaction throws", async () => {
+    // Forces a synchronous throw partway through the transaction, after the
+    // first message's row has already been built and inserted — proving a
+    // partial failure leaves no partial state, not just that individual
+    // parse failures are handled gracefully (a different, already-covered
+    // case).
+    const dateSpy = vi.spyOn(Date, "now").mockImplementationOnce(() => {
+      throw new Error("boom");
+    });
+
+    await expect(
+      ingestSmsBatch([rawSms({ id: "1" }), rawSms({ id: "2", date: 1700000001000 })]),
+    ).rejects.toThrow("boom");
+
+    expect(testDb.select().from(schema.smsLedger).all()).toHaveLength(0);
+    const [checkpoint] = testDb.select().from(schema.syncCheckpoint).all();
+    expect(checkpoint).toBeUndefined();
+
+    dateSpy.mockRestore();
+  });
+
   it("advances the checkpoint to the newest message's date", async () => {
-    const { ingestSmsBatch, getSyncStatus } = await import("./ingestion");
     await ingestSmsBatch([
       rawSms({ id: "1", date: 1000 }),
       rawSms({ id: "2", date: 3000 }),
@@ -150,7 +220,6 @@ describe("ingestSmsBatch", () => {
   });
 
   it("never moves the checkpoint backwards (a backfill of older history is safe)", async () => {
-    const { ingestSmsBatch, getSyncStatus } = await import("./ingestion");
     await ingestSmsBatch([rawSms({ id: "1", date: 5000 })]);
     await ingestSmsBatch([rawSms({ id: "2", date: 1000 })]);
 
@@ -158,8 +227,21 @@ describe("ingestSmsBatch", () => {
     expect(status.lastIngestedDate).toBe(5000);
   });
 
+  it("resolves to the same maximum checkpoint regardless of which of two overlapping batches runs first", async () => {
+    // ingestSmsBatch's transaction body is fully synchronous (see its own
+    // comment on why), so two calls can never actually interleave
+    // mid-transaction — each runs to completion before the other's
+    // transaction begins, regardless of the order their outer async
+    // wrappers happen to be scheduled in. This is what makes the race
+    // Codex flagged structurally impossible rather than just unlikely.
+    const older = ingestSmsBatch([rawSms({ id: "older", date: 1000 })]);
+    const newer = ingestSmsBatch([rawSms({ id: "newer", date: 9000 })]);
+    await Promise.all([older, newer]);
+
+    expect((await getSyncStatus()).lastIngestedDate).toBe(9000);
+  });
+
   it("getSyncStatus returns nulls before anything has been ingested", async () => {
-    const { getSyncStatus } = await import("./ingestion");
     const status = await getSyncStatus();
     expect(status.lastIngestedDate).toBeNull();
     expect(status.lastIngestedProviderId).toBeNull();
@@ -169,11 +251,9 @@ describe("ingestSmsBatch", () => {
 describe("loadDashboard", () => {
   beforeEach(() => {
     testDb = freshDb();
-    vi.resetModules();
   });
 
   it("derives a dashboard from ledger rows without re-parsing them", async () => {
-    const { ingestSmsBatch, loadDashboard } = await import("./ingestion");
     await ingestSmsBatch([rawSms({ id: "1", body: HDFC_DEBIT, sender: "VM-HDFCBK" })]);
 
     const dashboard = await loadDashboard();
@@ -182,7 +262,6 @@ describe("loadDashboard", () => {
   });
 
   it("excludes ledger rows that failed to parse", async () => {
-    const { ingestSmsBatch, loadDashboard } = await import("./ingestion");
     await ingestSmsBatch([
       rawSms({ id: "good", body: HDFC_DEBIT }),
       rawSms({ id: "bad", body: null as unknown as string }),
@@ -191,16 +270,27 @@ describe("loadDashboard", () => {
     const dashboard = await loadDashboard();
     expect(dashboard.recent.every((m) => m.id !== "bad")).toBe(true);
   });
+
+  it("skips a ledger row with corrupted cached JSON instead of throwing", async () => {
+    await ingestSmsBatch([rawSms({ id: "1", body: HDFC_DEBIT })]);
+
+    testDb
+      .update(schema.smsLedger)
+      .set({ parsedResult: "{not valid json" })
+      .where(eq(schema.smsLedger.id, "1"))
+      .run();
+
+    const dashboard = await loadDashboard();
+    expect(dashboard.recent).toHaveLength(0);
+  });
 });
 
 describe("loadTransactions", () => {
   beforeEach(() => {
     testDb = freshDb();
-    vi.resetModules();
   });
 
   it("filters by date range", async () => {
-    const { ingestSmsBatch, loadTransactions } = await import("./ingestion");
     await ingestSmsBatch([
       rawSms({ id: "1", body: HDFC_DEBIT, date: 1000 }),
       rawSms({ id: "2", body: HDFC_DEBIT, date: 5000 }),
