@@ -6,7 +6,7 @@ import {
   parsePersistedMalanaResult,
   PARSER_VERSION,
 } from "@zeeya/parser/malana";
-import { eq, inArray, or, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { deriveDashboard, type Dashboard } from "../lib/dashboard";
 import type { ParsedSms, RawSms } from "../lib/sms";
 import { db } from "./client";
@@ -175,32 +175,44 @@ function findExistingRows(
   const byId = new Map<string, ExistingRow>();
   const byProviderId = new Map<string, ExistingRow>();
 
-  const conditions: ReturnType<typeof inArray>[] = [];
-  for (const batch of chunk(fingerprints, EXISTENCE_CHECK_CHUNK_SIZE)) {
-    conditions.push(inArray(smsLedger.id, batch));
+  function ingest(rows: readonly ExistingRow[]) {
+    for (const row of rows) {
+      byId.set(row.id, row);
+      if (row.providerId) byProviderId.set(row.providerId, row);
+    }
   }
-  for (const batch of chunk(providerIds, EXISTENCE_CHECK_CHUNK_SIZE)) {
-    conditions.push(inArray(smsLedger.providerId, batch));
-  }
-  if (conditions.length === 0) return { byId, byProviderId };
 
   // Android's on-device SQLite (unlike the desktop build this suite tests
   // against — verified directly: better-sqlite3's bundled SQLite handled a
   // 3,000-item IN clause fine) has historically defaulted
-  // SQLITE_MAX_VARIABLE_NUMBER to 999 — chunking each IN clause at 250 (see
-  // EXISTENCE_CHECK_CHUNK_SIZE) keeps every bound-parameter count
-  // comfortably under that regardless of which default a given device
-  // actually ships.
-  const existingRows = queryable
-    .select({ id: smsLedger.id, providerId: smsLedger.providerId, date: smsLedger.date })
-    .from(smsLedger)
-    .where(or(...conditions))
-    .all();
-
-  for (const row of existingRows) {
-    byId.set(row.id, row);
-    if (row.providerId) byProviderId.set(row.providerId, row);
+  // SQLITE_MAX_VARIABLE_NUMBER to 999 to the whole statement, not per
+  // clause — an earlier version of this function OR'd every chunked IN
+  // clause together into one query, so a batch large enough to need
+  // several chunks could still bind well past 999 params in that single
+  // combined statement. Running each chunk as its own separate query (at
+  // most EXISTENCE_CHECK_CHUNK_SIZE bound params apiece) is what actually
+  // keeps every individual statement under the limit.
+  for (const batch of chunk(fingerprints, EXISTENCE_CHECK_CHUNK_SIZE)) {
+    if (batch.length === 0) continue;
+    ingest(
+      queryable
+        .select({ id: smsLedger.id, providerId: smsLedger.providerId, date: smsLedger.date })
+        .from(smsLedger)
+        .where(inArray(smsLedger.id, batch))
+        .all(),
+    );
   }
+  for (const batch of chunk(providerIds, EXISTENCE_CHECK_CHUNK_SIZE)) {
+    if (batch.length === 0) continue;
+    ingest(
+      queryable
+        .select({ id: smsLedger.id, providerId: smsLedger.providerId, date: smsLedger.date })
+        .from(smsLedger)
+        .where(inArray(smsLedger.providerId, batch))
+        .all(),
+    );
+  }
+
   return { byId, byProviderId };
 }
 
@@ -223,37 +235,39 @@ interface OwnershipPlan {
 // transaction (the actual source of truth for what gets written). Pure:
 // no I/O, so recomputing it twice is cheap and safe.
 //
-// Two distinct kinds of "conflict" are handled, deliberately differently:
+// Two layers of contest, run in sequence, and both required to be
+// order-independent so final ownership never depends on how the same
+// underlying messages happened to be partitioned across ingestSmsBatch()
+// calls:
 //
-//  1. Two duplicates of the exact same content (same fingerprint)
-//     disagreeing on provider id: there's no real ownership question here
-//     — it's the same row either way — so the smallest candidate is
-//     always the one actually stored, and every OTHER candidate the
-//     group carried is unconditionally recorded as a conflict against
-//     that one row. An already-settled fingerprint (its persisted
-//     providerId is already non-null) never budges for a new candidate
-//     either — the claim is recorded, the established identity untouched.
+//  1. Intra-fingerprint: every provider id anyone has ever associated
+//     with this exact content — this batch's own duplicate claims AND
+//     whatever provider id the row already persists, if any — is pooled
+//     together, and the lexicographically smallest one is this
+//     fingerprint's canonical candidate. Same fingerprint means same
+//     date (it's a hash of sender|date|body), so date can't rank these;
+//     the pool + smallest-wins rule is what makes the outcome the same
+//     whether the candidates all arrive in one batch, or one was already
+//     persisted long before the others show up — including reassigning
+//     the row away from its own already-persisted value if a smaller
+//     candidate is pooled in later. Every pooled value except the
+//     canonical one is recorded as a conflict against this fingerprint.
 //
-//  2. Two *different* fingerprints (different content) both wanting the
-//     same provider id: a genuine ownership question, decided by one
-//     deterministic rule — newest representative date wins, ties broken
-//     by the lexicographically smaller fingerprint — applied uniformly
-//     across every contender for that value, whether it's a brand-new
-//     proposal in this batch or a row some earlier, unrelated call
-//     already persisted with that provider id. A persisted incumbent can
-//     therefore lose ownership to a later-arriving, higher-ranked
-//     contender (its providerId is cleared and the loss recorded) — this
-//     is what makes final ownership converge to the same answer whether
-//     two colliding messages arrive in one batch or split across several,
-//     in either order: the rule only ever depends on the messages' own
-//     content (date, fingerprint), never on arrival order.
+//  2. Cross-fingerprint: two *different* fingerprints (different content)
+//     both wanting the same provider id is a genuine ownership question,
+//     decided by one deterministic rule — newest representative date
+//     wins, ties broken by the lexicographically smaller fingerprint —
+//     applied uniformly across every contender for that value, whether
+//     it's this batch's own candidate (from layer 1) or a different row
+//     some earlier, unrelated call already persisted with that provider
+//     id. A persisted incumbent can therefore lose ownership to a
+//     later-arriving, higher-ranked contender (its providerId is cleared
+//     and the loss recorded).
 //
-// Case 1 rows never enter case 2's contest: a fingerprint whose persisted
-// providerId is already settled to some value X is not a free contender
-// for a *different* value Y just because a duplicate-content message
-// happens to also mention Y — X stays, Y is recorded as a conflict, full
-// stop. Only content with no settled provider id yet (new, or persisted
-// but still null) competes in the cross-fingerprint contest.
+// Whichever fingerprint ends up winning a given provider id in layer 2
+// has any previously-open conflict against it for that same id resolved
+// — whether that's because it just won it, or because it already held it
+// and this run simply reconfirms that.
 function planOwnership(
   groups: readonly ContentGroup[],
   existing: { byId: Map<string, ExistingRow>; byProviderId: Map<string, ExistingRow> },
@@ -263,55 +277,53 @@ function planOwnership(
   const conflicts: { smsId: string; contestedProviderId: string }[] = [];
   const resolved: { smsId: string; contestedProviderId: string }[] = [];
 
-  interface Proposal {
+  interface GroupPlan {
     fingerprint: string;
     date: number;
-    proposedProviderId: string | null;
     existingRow: ExistingRow | undefined;
+    candidateProviderId: string | null;
   }
-  const proposals: Proposal[] = [];
+  const groupPlans: GroupPlan[] = [];
 
+  // Layer 1 — intra-fingerprint pool.
   for (const g of groups) {
     const existingRow = existing.byId.get(g.fingerprint);
-    const proposedProviderId = g.claimedProviderIds[0] ?? null; // smallest of this group's own candidates
-    for (const extra of g.claimedProviderIds.slice(1)) {
-      conflicts.push({ smsId: g.fingerprint, contestedProviderId: extra });
+    const pool = new Set(g.claimedProviderIds);
+    if (existingRow?.providerId) pool.add(existingRow.providerId);
+    const sortedPool = [...pool].sort();
+    const candidateProviderId = sortedPool[0] ?? null;
+    for (const losing of sortedPool.slice(1)) {
+      conflicts.push({ smsId: g.fingerprint, contestedProviderId: losing });
     }
-
-    if (existingRow && existingRow.providerId !== null) {
-      if (proposedProviderId !== null && proposedProviderId !== existingRow.providerId) {
-        conflicts.push({ smsId: g.fingerprint, contestedProviderId: proposedProviderId });
-      } else if (proposedProviderId !== null) {
-        resolved.push({ smsId: g.fingerprint, contestedProviderId: proposedProviderId });
-      }
-      continue; // settled — not a contender in the contest below.
-    }
-
-    proposals.push({
+    groupPlans.push({
       fingerprint: g.fingerprint,
       date: g.representative.date,
-      proposedProviderId,
       existingRow,
+      candidateProviderId,
     });
   }
 
+  // Layer 2 — cross-fingerprint contest among each group's layer-1
+  // candidate, plus any already-persisted row (outside this batch
+  // entirely) currently holding that same provider id.
   interface Contender {
     fingerprint: string;
     date: number;
-    persisted: boolean;
+    external: boolean; // a persisted row whose fingerprint isn't in this batch at all
   }
   const contendersByProviderId = new Map<string, Contender[]>();
-  for (const p of proposals) {
-    if (p.proposedProviderId === null) continue;
-    const list = contendersByProviderId.get(p.proposedProviderId);
-    const entry: Contender = { fingerprint: p.fingerprint, date: p.date, persisted: false };
+  for (const gp of groupPlans) {
+    if (gp.candidateProviderId === null) continue;
+    const list = contendersByProviderId.get(gp.candidateProviderId);
+    const entry: Contender = { fingerprint: gp.fingerprint, date: gp.date, external: false };
     if (list) list.push(entry);
-    else contendersByProviderId.set(p.proposedProviderId, [entry]);
+    else contendersByProviderId.set(gp.candidateProviderId, [entry]);
   }
+  const batchFingerprints = new Set(groups.map((g) => g.fingerprint));
   for (const [providerId, list] of contendersByProviderId) {
     const currentOwner = existing.byProviderId.get(providerId);
-    if (currentOwner && !list.some((c) => c.fingerprint === currentOwner.id)) {
-      list.push({ fingerprint: currentOwner.id, date: currentOwner.date, persisted: true });
+    if (currentOwner && !batchFingerprints.has(currentOwner.id)) {
+      list.push({ fingerprint: currentOwner.id, date: currentOwner.date, external: true });
     }
   }
 
@@ -325,25 +337,26 @@ function planOwnership(
     }
     winnerByProviderId.set(providerId, winner.fingerprint);
     for (const c of contenders) {
-      if (c.fingerprint === winner.fingerprint) continue;
-      conflicts.push({ smsId: c.fingerprint, contestedProviderId: providerId });
-      if (c.persisted) updateProviderId.set(c.fingerprint, null); // ownership transferred away
+      if (c.fingerprint === winner.fingerprint) {
+        resolved.push({ smsId: c.fingerprint, contestedProviderId: providerId });
+      } else {
+        conflicts.push({ smsId: c.fingerprint, contestedProviderId: providerId });
+        if (c.external) updateProviderId.set(c.fingerprint, null); // ownership transferred away
+      }
     }
-    if (winner.persisted)
-      resolved.push({ smsId: winner.fingerprint, contestedProviderId: providerId });
   }
 
-  for (const p of proposals) {
+  for (const gp of groupPlans) {
     const finalProviderId =
-      p.proposedProviderId !== null &&
-      winnerByProviderId.get(p.proposedProviderId) === p.fingerprint
-        ? p.proposedProviderId
+      gp.candidateProviderId !== null &&
+      winnerByProviderId.get(gp.candidateProviderId) === gp.fingerprint
+        ? gp.candidateProviderId
         : null;
-    if (p.existingRow) {
-      if (p.existingRow.providerId !== finalProviderId)
-        updateProviderId.set(p.fingerprint, finalProviderId);
+    if (gp.existingRow) {
+      if (gp.existingRow.providerId !== finalProviderId)
+        updateProviderId.set(gp.fingerprint, finalProviderId);
     } else {
-      insert.set(p.fingerprint, finalProviderId);
+      insert.set(gp.fingerprint, finalProviderId);
     }
   }
 
@@ -496,10 +509,16 @@ export async function ingestSmsBatch(messages: RawSms[]): Promise<void> {
       const content = contentByFingerprint.get(fingerprint);
       // Absent only if this fingerprint wasn't new at preflight time but
       // is new now — impossible, since existence is monotonic (rows are
-      // never deleted mid-ingestion); kept as a guard rather than a
-      // silent `!` to fail loudly instead of inserting undefined content
-      // if that invariant is ever violated.
-      if (!content) continue;
+      // never deleted mid-ingestion). Thrown, not silently skipped: a
+      // silent `continue` here would advance the checkpoint past a
+      // message that was never actually written, permanently losing it
+      // from every future refresh's "already ingested" range.
+      if (!content) {
+        throw new Error(
+          `ingestSmsBatch invariant violated: no parsed content cached for fingerprint ` +
+            `${fingerprint}, which planOwnership scheduled for insert`,
+        );
+      }
       tx.insert(smsLedger)
         .values({ id: fingerprint, providerId, ...content })
         .onConflictDoNothing()
