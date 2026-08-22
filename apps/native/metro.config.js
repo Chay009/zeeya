@@ -13,6 +13,11 @@ config.resolver.blockList = [
   /[/\\]packages[/\\]infra[/\\]\.alchemy(?:[/\\]|$)/,
 ];
 
+// drizzle-kit generates .sql migration files; Metro needs to know they're
+// bundleable source (babel.config.js's inline-import plugin then turns each
+// into a plain string import).
+config.resolver.sourceExts.push("sql");
+
 const uniwindConfig = withUniwindConfig(wrapWithReanimatedMetroConfig(config), {
   cssEntryFile: "./global.css",
   dtsFile: "./uniwind-types.d.ts",

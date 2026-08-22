@@ -27,6 +27,7 @@
     "@zeeya/parser": "workspace:*",
     "better-auth": "catalog:",
     "dotenv": "catalog:",
+    "drizzle-orm": "^0.45.2",
     "expo": "~57.0.1",
     "expo-constants": "~57.0.2",
     "expo-dev-client": "~57.0.0",
@@ -36,6 +37,7 @@
     "expo-network": "~57.0.0",
     "expo-router": "~57.0.2",
     "expo-secure-store": "~57.0.0",
+    "expo-sqlite": "~57.0.1",
     "expo-status-bar": "~57.0.0",
     "expo-web-browser": "~57.0.0",
     "heroui-native": "^1.0.5",
@@ -61,6 +63,9 @@
     "@types/node": "^26.0.1",
     "@types/react": "~19.2.17",
     "@zeeya/config": "workspace:*",
+    "babel-plugin-inline-import": "^3.0.0",
+    "drizzle-kit": "^0.31.10",
+    "expo-drizzle-studio-plugin": "^0.2.1",
     "typescript": "~6.0.3",
     "vitest": "^4.1.10"
   }
