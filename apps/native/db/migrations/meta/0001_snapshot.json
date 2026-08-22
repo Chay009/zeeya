@@ -1,0 +1,778 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "24f77587-a97a-458f-af1a-bdcf1ef24ce4",
+  "prevId": "9e1ac717-3ef4-4e82-aea5-4343674460bc",
+  "tables": {
+    "accounts": {
+      "name": "accounts",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "bank_name": {
+          "name": "bank_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "last4": {
+          "name": "last4",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "balance_minor_units": {
+          "name": "balance_minor_units",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "balance_as_of": {
+          "name": "balance_as_of",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "balance_sender": {
+          "name": "balance_sender",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "estimated_balance_minor_units": {
+          "name": "estimated_balance_minor_units",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "estimated_as_of": {
+          "name": "estimated_as_of",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "reconciliation_delta_minor_units": {
+          "name": "reconciliation_delta_minor_units",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "activity": {
+      "name": "activity",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sms_id": {
+          "name": "sms_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "category": {
+          "name": "category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "date": {
+          "name": "date",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "activity_sms_category_idx": {
+          "name": "activity_sms_category_idx",
+          "columns": ["sms_id", "category"],
+          "isUnique": true
+        },
+        "activity_category_idx": {
+          "name": "activity_category_idx",
+          "columns": ["category"],
+          "isUnique": false
+        },
+        "activity_date_idx": {
+          "name": "activity_date_idx",
+          "columns": ["date"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "activity_sms_id_sms_ledger_id_fk": {
+          "name": "activity_sms_id_sms_ledger_id_fk",
+          "tableFrom": "activity",
+          "tableTo": "sms_ledger",
+          "columnsFrom": ["sms_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "balance_readings": {
+      "name": "balance_readings",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sms_id": {
+          "name": "sms_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "balance_minor_units": {
+          "name": "balance_minor_units",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "as_of": {
+          "name": "as_of",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "detected_bank_name": {
+          "name": "detected_bank_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "detected_account": {
+          "name": "detected_account",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "association_kind": {
+          "name": "association_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sender": {
+          "name": "sender",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "reconciliation_previous_as_of": {
+          "name": "reconciliation_previous_as_of",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "reconciliation_expected_balance_minor_units": {
+          "name": "reconciliation_expected_balance_minor_units",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "reconciliation_delta_minor_units": {
+          "name": "reconciliation_delta_minor_units",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "captured_income_minor_units": {
+          "name": "captured_income_minor_units",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "captured_expense_minor_units": {
+          "name": "captured_expense_minor_units",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "captured_transaction_count": {
+          "name": "captured_transaction_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "balance_readings_account_id_idx": {
+          "name": "balance_readings_account_id_idx",
+          "columns": ["account_id"],
+          "isUnique": false
+        },
+        "balance_readings_as_of_idx": {
+          "name": "balance_readings_as_of_idx",
+          "columns": ["as_of"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "balance_readings_sms_id_sms_ledger_id_fk": {
+          "name": "balance_readings_sms_id_sms_ledger_id_fk",
+          "tableFrom": "balance_readings",
+          "tableTo": "sms_ledger",
+          "columnsFrom": ["sms_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "balance_readings_account_id_accounts_id_fk": {
+          "name": "balance_readings_account_id_accounts_id_fk",
+          "tableFrom": "balance_readings",
+          "tableTo": "accounts",
+          "columnsFrom": ["account_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "balance_readings_association_kind_check": {
+          "name": "balance_readings_association_kind_check",
+          "value": "\"balance_readings\".\"association_kind\" IN ('confirmed', 'suggested', 'unassigned')"
+        }
+      }
+    },
+    "mandate_events": {
+      "name": "mandate_events",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sms_id": {
+          "name": "sms_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "mandate_id": {
+          "name": "mandate_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "date": {
+          "name": "date",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sender": {
+          "name": "sender",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "mandate_events_sms_id_idx": {
+          "name": "mandate_events_sms_id_idx",
+          "columns": ["sms_id"],
+          "isUnique": true
+        },
+        "mandate_events_mandate_id_idx": {
+          "name": "mandate_events_mandate_id_idx",
+          "columns": ["mandate_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "mandate_events_sms_id_sms_ledger_id_fk": {
+          "name": "mandate_events_sms_id_sms_ledger_id_fk",
+          "tableFrom": "mandate_events",
+          "tableTo": "sms_ledger",
+          "columnsFrom": ["sms_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "mandate_events_mandate_id_mandates_mandate_id_fk": {
+          "name": "mandate_events_mandate_id_mandates_mandate_id_fk",
+          "tableFrom": "mandate_events",
+          "tableTo": "mandates",
+          "columnsFrom": ["mandate_id"],
+          "columnsTo": ["mandate_id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "mandate_events_status_check": {
+          "name": "mandate_events_status_check",
+          "value": "\"mandate_events\".\"status\" IN ('active', 'cancelled')"
+        }
+      }
+    },
+    "mandates": {
+      "name": "mandates",
+      "columns": {
+        "mandate_id": {
+          "name": "mandate_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "merchant": {
+          "name": "merchant",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "amount_minor_units": {
+          "name": "amount_minor_units",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "last_updated": {
+          "name": "last_updated",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sender": {
+          "name": "sender",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "mandates_status_check": {
+          "name": "mandates_status_check",
+          "value": "\"mandates\".\"status\" IN ('active', 'cancelled')"
+        }
+      }
+    },
+    "sms_ledger": {
+      "name": "sms_ledger",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "fingerprint": {
+          "name": "fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "provider_id": {
+          "name": "provider_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "contested_provider_id": {
+          "name": "contested_provider_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "sender": {
+          "name": "sender",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "date": {
+          "name": "date",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "parser_version": {
+          "name": "parser_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "parsed_result": {
+          "name": "parsed_result",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ingestion_status": {
+          "name": "ingestion_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ingestion_error": {
+          "name": "ingestion_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "sms_ledger_date_idx": {
+          "name": "sms_ledger_date_idx",
+          "columns": ["date"],
+          "isUnique": false
+        },
+        "sms_ledger_fingerprint_idx": {
+          "name": "sms_ledger_fingerprint_idx",
+          "columns": ["fingerprint"],
+          "isUnique": true
+        },
+        "sms_ledger_provider_id_idx": {
+          "name": "sms_ledger_provider_id_idx",
+          "columns": ["provider_id"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "sms_ledger_parsed_result_matches_status": {
+          "name": "sms_ledger_parsed_result_matches_status",
+          "value": "(\"sms_ledger\".\"ingestion_status\" = 'parsed' AND \"sms_ledger\".\"parsed_result\" IS NOT NULL AND \"sms_ledger\".\"ingestion_error\" IS NULL) OR (\"sms_ledger\".\"ingestion_status\" = 'error' AND \"sms_ledger\".\"parsed_result\" IS NULL AND \"sms_ledger\".\"ingestion_error\" IS NOT NULL)"
+        }
+      }
+    },
+    "sync_checkpoint": {
+      "name": "sync_checkpoint",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "last_ingested_date": {
+          "name": "last_ingested_date",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "last_ingested_provider_id": {
+          "name": "last_ingested_provider_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "transactions": {
+      "name": "transactions",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sms_id": {
+          "name": "sms_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "amount_minor_units": {
+          "name": "amount_minor_units",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "direction": {
+          "name": "direction",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "trx_type_rich": {
+          "name": "trx_type_rich",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "vendor": {
+          "name": "vendor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "brand_name": {
+          "name": "brand_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "merchant_category": {
+          "name": "merchant_category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ref": {
+          "name": "ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "bank_name": {
+          "name": "bank_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "date": {
+          "name": "date",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "mandate_id": {
+          "name": "mandate_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "transactions_account_id_idx": {
+          "name": "transactions_account_id_idx",
+          "columns": ["account_id"],
+          "isUnique": false
+        },
+        "transactions_date_idx": {
+          "name": "transactions_date_idx",
+          "columns": ["date"],
+          "isUnique": false
+        },
+        "transactions_sms_id_idx": {
+          "name": "transactions_sms_id_idx",
+          "columns": ["sms_id"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "transactions_sms_id_sms_ledger_id_fk": {
+          "name": "transactions_sms_id_sms_ledger_id_fk",
+          "tableFrom": "transactions",
+          "tableTo": "sms_ledger",
+          "columnsFrom": ["sms_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "transactions_account_id_accounts_id_fk": {
+          "name": "transactions_account_id_accounts_id_fk",
+          "tableFrom": "transactions",
+          "tableTo": "accounts",
+          "columnsFrom": ["account_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "transactions_direction_check": {
+          "name": "transactions_direction_check",
+          "value": "\"transactions\".\"direction\" IN ('income', 'expense', 'neutral')"
+        }
+      }
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}

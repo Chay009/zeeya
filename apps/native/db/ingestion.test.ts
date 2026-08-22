@@ -265,35 +265,77 @@ describe("ingestSmsBatch", () => {
     expect(rowAfter!.providerId).toBe("provider-B");
   });
 
-  it("merges two genuinely different messages sharing one provider id instead of silently dropping either", async () => {
+  it("keeps both messages as separate rows when two genuinely different messages share one provider id, recording the conflict", async () => {
     // Two distinct SMS (different sender/date/body -> different
-    // fingerprints) sharing a literal provider id: fingerprint-only
-    // grouping put these in two separate MergedGroups that both computed
-    // the same rowId (providerId), so both were parsed and both attempted
-    // an insert under that id — onConflictDoNothing() kept whichever
-    // inserted first and silently discarded the other message's entire
-    // row, with no error. Grouping must merge them into exactly one group
-    // (and therefore exactly one row) up front instead.
-    const first = rawSms({ id: "provider-SHARED", date: 8080, sender: "VM-HDFCBK" });
-    const second = rawSms({
+    // fingerprints) sharing a literal provider id. The provider_id column
+    // is unique, so only one row can actually hold it — but that must not
+    // mean the other message's content is discarded: it's inserted as its
+    // own row, keyed by its own fingerprint, with the contested provider
+    // id recorded rather than silently dropped. Ownership goes to the
+    // newest of the two (deterministic, order-independent — verified by
+    // the reverse-order test below).
+    const older = rawSms({ id: "provider-SHARED", date: 8080, sender: "VM-HDFCBK" });
+    const newer = rawSms({
       id: "provider-SHARED",
       date: 8181,
       sender: "VM-ICICI",
       body: "INR 200.00 debited from account XX2222 on 10-08-2026. Avail Bal: INR 300.00",
     });
 
-    await ingestSmsBatch([first, second]);
+    await ingestSmsBatch([older, newer]);
 
-    // The count/id alone can't distinguish "merged into one group up
-    // front" from "two separate groups raced to insert and one silently
-    // lost" — both land on one row with this id either way. The parse
-    // count is the tell: fingerprint-only grouping put these in two
-    // separate groups, and both got parsed before either insert was
-    // attempted.
-    expect(parseSpy).toHaveBeenCalledTimes(1);
+    expect(parseSpy).toHaveBeenCalledTimes(2);
     const rows = testDb.select().from(schema.smsLedger).all();
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!.id).toBe("provider-SHARED");
+    expect(rows).toHaveLength(2);
+
+    const winner = rows.find((r) => r.providerId === "provider-SHARED");
+    const loser = rows.find((r) => r.providerId === null);
+    expect(winner).toBeDefined();
+    expect(loser).toBeDefined();
+    expect(winner!.date).toBe(8181); // the newer message won the contested id
+    expect(loser!.date).toBe(8080);
+    expect(loser!.contestedProviderId).toBe("provider-SHARED");
+    // Every stored row's fingerprint must actually describe its own
+    // stored sender/date/body — not an arbitrary component representative.
+    expect(winner!.fingerprint).toBe(
+      computeFingerprint(winner!.sender, winner!.date, winner!.body),
+    );
+    expect(loser!.fingerprint).toBe(computeFingerprint(loser!.sender, loser!.date, loser!.body));
+  });
+
+  it("resolves the same provider-id contention winner regardless of array order", async () => {
+    const older = rawSms({ id: "provider-ORDER", date: 8080, sender: "VM-HDFCBK" });
+    const newer = rawSms({
+      id: "provider-ORDER",
+      date: 8181,
+      sender: "VM-ICICI",
+      body: "INR 200.00 debited from account XX2222 on 10-08-2026. Avail Bal: INR 300.00",
+    });
+
+    await ingestSmsBatch([newer, older]); // reverse of the test above
+
+    const rows = testDb.select().from(schema.smsLedger).all();
+    const winner = rows.find((r) => r.providerId === "provider-ORDER");
+    expect(winner!.date).toBe(8181);
+  });
+
+  it("advances the checkpoint from the true newest raw message even when it lost provider-id contention", async () => {
+    // The checkpoint must reflect the batch's actual newest message, never
+    // an arbitrary per-group representative — including when that newest
+    // message is the one that lost provider-id contention (and so isn't
+    // the row holding the checkpoint's own provider id).
+    const older = rawSms({ id: "provider-CKPT", date: 100, sender: "VM-HDFCBK" });
+    const newerLoser = rawSms({
+      id: "provider-CKPT",
+      date: 200,
+      sender: "VM-ICICI",
+      body: "distinct content",
+    });
+
+    await ingestSmsBatch([older, newerLoser]);
+
+    const status = await getSyncStatus();
+    expect(status.lastIngestedDate).toBe(200);
   });
 
   it("does not throw or roll back the batch when an incoming fingerprint and provider id resolve to two different existing rows", async () => {
@@ -322,10 +364,49 @@ describe("ingestSmsBatch", () => {
       (r) => r.fingerprint === computeFingerprint(rowA.sender, rowA.date, rowA.body ?? ""),
     );
     // B keeps the provider id it legitimately earned; A is recognized by
-    // its fingerprint and is not corrupted into claiming B's provider id.
+    // its fingerprint and is not corrupted into claiming B's provider id —
+    // but the conflict is recorded on A rather than silently dropped.
     expect(rowBAfter).toBeDefined();
     expect(rowAAfter).toBeDefined();
     expect(rowAAfter!.providerId).not.toBe("provider-CONTESTED");
+    expect(rowAAfter!.contestedProviderId).toBe("provider-CONTESTED");
+  });
+
+  it("records the conflict, without throwing, when a concurrent call claims the proposed provider id between preflight and the enrichment write", async () => {
+    // The narrower race Codex's spec review named specifically: call A's
+    // preflight queues an enrichment (row R + provider id P), yields
+    // during its parse loop, and — only reachable once A's synchronous
+    // portion actually yields — call B runs to completion in that window
+    // and gives provider id P to a *different* row, R2. By the time A's
+    // transaction opens and re-checks R2's ownership immediately before
+    // writing, P no longer belongs to R; the enrichment must be skipped
+    // and recorded, not attempted (which would throw on the unique index).
+    const rSeed = rawSms({ id: "", date: 5050, sender: "VM-KOTAK", body: "row R seed" });
+    await ingestSmsBatch([rSeed]);
+
+    const enrichR = { ...rSeed, id: "provider-RACE" };
+    const filler = Array.from({ length: 60 }, (_, i) =>
+      rawSms({ id: `race2-filler-${i}`, date: 800000 + i }),
+    );
+    const callA = ingestSmsBatch([enrichR, ...filler]);
+    const r2Seed = rawSms({
+      id: "provider-RACE",
+      date: 5151,
+      sender: "VM-YES",
+      body: "row R2, a different message claiming the same provider id",
+    });
+    const callB = ingestSmsBatch([r2Seed]);
+    await expect(Promise.all([callA, callB])).resolves.toBeDefined();
+
+    const rows = testDb.select().from(schema.smsLedger).all();
+    const rowR = rows.find(
+      (r) => r.fingerprint === computeFingerprint(rSeed.sender, rSeed.date, rSeed.body ?? ""),
+    );
+    const rowR2 = rows.find((r) => r.providerId === "provider-RACE");
+    expect(rowR2).toBeDefined();
+    expect(rowR).toBeDefined();
+    expect(rowR!.providerId).not.toBe("provider-RACE");
+    expect(rowR!.contestedProviderId).toBe("provider-RACE");
   });
 
   it("actually yields while parsing, not merely while classifying messages", async () => {

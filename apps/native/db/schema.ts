@@ -37,6 +37,13 @@ export const smsLedger = sqliteTable(
     // instead of silently creating a second row for the same SMS.
     fingerprint: text("fingerprint").notNull(),
     providerId: text("provider_id"),
+    // Set only when ingestion saw a provider id for this row's content but
+    // could not claim it — another row already legitimately owns it (the
+    // provider_id unique index allows exactly one owner). Recorded rather
+    // than silently dropped, so a genuine identity collision (two distinct
+    // messages sharing one provider id) leaves a trace instead of vanishing
+    // with no signal that anything was contested.
+    contestedProviderId: text("contested_provider_id"),
     sender: text("sender").notNull(),
     body: text("body").notNull(),
     date: integer("date").notNull(), // epoch ms, matches RawSms.date
