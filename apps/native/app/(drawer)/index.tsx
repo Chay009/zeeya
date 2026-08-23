@@ -94,7 +94,13 @@ export default function Home() {
   // the first successful load can read dashboard.* unconditionally, same
   // as before this screen read from the ledger.
   const [dashboard, setDashboard] = useState<Dashboard>(() => deriveDashboard([]));
-  const [refreshing, setRefreshing] = useState(false);
+  // Drives the pull-to-refresh spinner for EVERY sync, not just an
+  // explicit pull — a background sync (AppState foreground-resume,
+  // focus-return from the backfill screen) previously had no visual
+  // indicator at all, only pull-to-refresh did. Sharing one flag across
+  // both means whichever way a sync got triggered, the same familiar
+  // spinner shows it's happening.
+  const [isSyncing, setIsSyncing] = useState(false);
   const [activityFilter, setActivityFilter] = useState<ActivityCategoryFilter>("all");
   // Bumped on every load() call so a slow, stale in-flight read can't
   // overwrite a newer one's result if a refresh is triggered before the
@@ -112,6 +118,7 @@ export default function Home() {
       return;
     }
     const id = ++loadIdRef.current;
+    setIsSyncing(true);
     try {
       const nextDashboard = await syncInbox(readSmsInbox);
       if (id !== loadIdRef.current) return;
@@ -121,6 +128,11 @@ export default function Home() {
       if (id !== loadIdRef.current) return;
       setStatus("error");
       setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      // Guarded the same way as the state updates above: a slower, now-
+      // stale call finishing after a newer one already started must not
+      // clear the spinner out from under that newer, still-in-flight sync.
+      if (id === loadIdRef.current) setIsSyncing(false);
     }
   }, []);
 
@@ -185,11 +197,10 @@ export default function Home() {
     }
   }, [load]);
 
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await load();
-    setRefreshing(false);
-  }, [load]);
+  // load() itself now manages isSyncing (see its own comment) — RefreshControl
+  // reads that same flag directly below, so a pull-triggered refresh and a
+  // background sync both show the identical spinner.
+  const onRefresh = load;
 
   const activityByCategory = useMemo(
     () => indexActivityByCategory(dashboard.activity),
@@ -205,7 +216,7 @@ export default function Home() {
         data={status === "ready" ? filteredActivity.slice(0, 25) : []}
         keyExtractor={(item) => item.id}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={t.accent} />
+          <RefreshControl refreshing={isSyncing} onRefresh={onRefresh} tintColor={t.accent} />
         }
         ListHeaderComponent={
           <View>
