@@ -28,7 +28,7 @@ const PRESETS: { label: string; days: number | null }[] = [
   { label: "All time", days: null },
 ];
 
-function Modal() {
+export function BackfillScreen() {
   const [status, setStatus] = useState<BackfillStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [ingestedCount, setIngestedCount] = useState<number | null>(null);
@@ -206,5 +206,3 @@ function Modal() {
     </Container>
   );
 }
-
-export default Modal;
