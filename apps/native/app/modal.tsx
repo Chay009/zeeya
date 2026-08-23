@@ -6,11 +6,10 @@ import { ActivityIndicator, PermissionsAndroid, Pressable, Text, View } from "re
 import { Container } from "@/components/container";
 import { dashboardTheme as t } from "@/constants/dashboard-theme";
 import { backfillSms } from "@/db/backfill";
-import { loadDashboard } from "@/db/ingestion";
 import { isSmsReadSupported, readSmsInbox, requestSmsReadPermission } from "@/lib/sms";
 
 type BackfillStatus = "idle" | "running" | "done" | "error";
-type PermissionStatus = "checking" | "needs-permission" | "granted";
+type PermissionStatus = "checking" | "needs-permission" | "granted" | "error";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -44,9 +43,17 @@ function Modal() {
 
   useEffect(() => {
     if (!isSmsReadSupported()) return;
-    PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_SMS).then((granted) => {
-      setPermission(granted ? "granted" : "needs-permission");
-    });
+    PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_SMS)
+      .then((granted) => {
+        setPermission(granted ? "granted" : "needs-permission");
+      })
+      .catch(() => {
+        // Without this, a rejection here (PermissionsAndroid.check itself
+        // failing, however unlikely) would leave `permission` stuck on
+        // "checking" forever — the presets never appear, and there's no
+        // way for the user to retry, since nothing ever prompts again.
+        setPermission("error");
+      });
   }, []);
 
   function handleClose() {
@@ -54,8 +61,12 @@ function Modal() {
   }
 
   const grantPermission = useCallback(async () => {
-    const granted = await requestSmsReadPermission();
-    setPermission(granted ? "granted" : "needs-permission");
+    try {
+      const granted = await requestSmsReadPermission();
+      setPermission(granted ? "granted" : "needs-permission");
+    } catch {
+      setPermission("error");
+    }
   }, []);
 
   const runBackfill = useCallback(async (label: string, days: number | null) => {
@@ -65,14 +76,8 @@ function Modal() {
     try {
       const to = Date.now();
       const from = days === null ? 0 : to - days * DAY_MS;
-      const before = await loadDashboard();
-      const after = await backfillSms({ from, to }, readSmsInbox);
-      // dashboard.recent is the financial-transactions-only list (see its
-      // own definition in lib/dashboard.ts) — dashboard.activity is
-      // broader and includes non-transaction delivery/travel/event/OTP
-      // messages, which would make this count claim things that aren't
-      // transactions at all.
-      setIngestedCount(after.recent.length - before.recent.length);
+      const result = await backfillSms({ from, to }, readSmsInbox);
+      setIngestedCount(result.insertedCount);
       setStatus("done");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -105,6 +110,23 @@ function Modal() {
           </Text>
         ) : permission === "checking" ? (
           <Text style={{ color: t.textMuted, fontSize: 13 }}>Checking permissions…</Text>
+        ) : permission === "error" ? (
+          <View>
+            <Text style={{ color: t.negative, fontSize: 13, marginBottom: 14 }}>
+              Couldn't check SMS permission.
+            </Text>
+            <Pressable
+              onPress={() => void grantPermission()}
+              style={{
+                backgroundColor: t.accent,
+                paddingVertical: 12,
+                borderRadius: 12,
+                alignItems: "center",
+              }}
+            >
+              <Text style={{ color: t.background, fontWeight: "700" }}>Try again</Text>
+            </Pressable>
+          </View>
         ) : permission === "needs-permission" ? (
           <View>
             <Text style={{ color: t.textMuted, fontSize: 13, marginBottom: 14 }}>

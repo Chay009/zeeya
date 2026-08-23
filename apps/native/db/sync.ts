@@ -40,14 +40,19 @@ export type InboxReader = (options: {
   maxCount?: number;
 }) => Promise<RawSms[]>;
 
-// Idempotent and safe to call from a mount effect, a pull-to-refresh, and
-// an app-foreground listener alike — every call re-reads the checkpoint
-// fresh, so overlapping/rapid calls only ever do redundant-but-harmless
-// work (ingestSmsBatch's own idempotency), never lose or duplicate data.
-// withIngestionLock also means truly concurrent calls (including a
-// concurrent backfillSms()) never actually interleave — each one's full
-// checkpoint-read-ingest sequence runs to completion before the next
-// starts.
+// True single-flight, not just mutual exclusion: while a sync is already
+// running, a second concurrent call reuses that SAME in-flight promise
+// instead of queuing up a brand new, fully redundant sync behind it (which
+// withIngestionLock's mutex alone would do — it prevents two syncs from
+// running at the *same time*, but not from each doing the full work
+// sequentially). Several syncInbox() calls arriving close together — e.g.
+// overlapping AppState events, or a foreground resume racing a pull-to-
+// refresh — all legitimately want "the inbox is caught up," and one
+// execution satisfies all of them identically. Reset to null once the
+// in-flight call settles (success or failure), so a later, genuinely
+// separate call still triggers a fresh sync.
+let inFlightSync: Promise<Dashboard> | null = null;
+
 // `pageSize` is a test-only override of inbox-pagination.ts's default
 // page size — real callers never need it (the default is sized for real
 // device usage), but tests exercising the multi-page path with a handful
@@ -57,23 +62,25 @@ export function syncInbox(
   readInbox: InboxReader,
   options: { pageSize?: number } = {},
 ): Promise<Dashboard> {
-  return withIngestionLock(async () => {
+  if (inFlightSync) return inFlightSync;
+
+  const promise = withIngestionLock(async () => {
     const checkpoint = await getSyncStatus();
     const hasCheckpoint = checkpoint.lastIngestedDate !== null;
 
-    let raw: RawSms[];
     if (hasCheckpoint) {
       // Real, position-based multi-page draining (see inbox-pagination.ts
       // for why this replaced an earlier time-boundary-based approach that
-      // could silently stop early on tightly-packed messages) — this call
-      // fully catches up to "now" in one syncInbox() invocation, not just
-      // one bounded page per call.
+      // could silently stop early on tightly-packed messages), ingesting
+      // each page as it's fetched rather than buffering the whole catch-up
+      // in memory first — this call fully catches up to "now" in one
+      // syncInbox() invocation, not just one bounded page per call.
       const since = checkpoint.lastIngestedDate! - SYNC_OVERLAP_MS;
-      raw = await drainInbox(readInbox, {
-        since,
-        order: "oldest-first",
-        pageSize: options.pageSize,
-      });
+      await drainInbox(
+        readInbox,
+        { since, order: "oldest-first", pageSize: options.pageSize },
+        (page) => ingestSmsBatch(page),
+      );
     } else {
       // A first-ever sync (no checkpoint at all) reads one bounded,
       // newest-first page rather than draining everything: there's no
@@ -82,10 +89,15 @@ export function syncInbox(
       // first is the better initial experience. Reaching further back
       // than that first page is what the separate, explicit manual
       // backfill feature (db/backfill.ts) exists for.
-      raw = await readInbox({ order: "newest-first" });
+      const raw = await readInbox({ order: "newest-first" });
+      await ingestSmsBatch(raw);
     }
 
-    await ingestSmsBatch(raw);
     return loadDashboard();
+  }).finally(() => {
+    inFlightSync = null;
   });
+
+  inFlightSync = promise;
+  return promise;
 }

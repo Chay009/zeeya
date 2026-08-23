@@ -15,8 +15,18 @@
 // source: a position counter over the since/until-filtered result set,
 // applied before maxCount truncation) has no such failure mode — it walks
 // the filtered result set by position, not by time, so it's correct
-// regardless of how many messages share a timestamp.
+// regardless of how many messages share a timestamp, PROVIDED the
+// underlying query orders those tied rows deterministically across
+// separate calls — see lib/sms.ts's readSmsInbox for why its sortOrder
+// includes `_id` as a secondary key, not just `date`.
+//
+// Pages are ingested as they're fetched (onPage), not accumulated into one
+// big array first: a backfill over a large inbox could otherwise hold the
+// whole history in memory, and ingest it as a single very large
+// transaction, for the entire duration this runs under
+// db/single-flight.ts's lock.
 import type { RawSms } from "../lib/sms";
+import type { IngestResult } from "./ingestion";
 import type { InboxOrder, InboxReader } from "./sync";
 
 const DEFAULT_PAGE_SIZE = 1000;
@@ -36,10 +46,14 @@ export interface DrainOptions {
 // callers — see their own comments for why a single, unpaginated
 // newest-first read is deliberately sufficient for the one case that
 // still uses that order (a first-ever sync).
-export async function drainInbox(readInbox: InboxReader, options: DrainOptions): Promise<RawSms[]> {
+export async function drainInbox(
+  readInbox: InboxReader,
+  options: DrainOptions,
+  onPage: (page: RawSms[]) => Promise<IngestResult>,
+): Promise<IngestResult> {
   const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
-  const all: RawSms[] = [];
   let indexFrom = 0;
+  let inserted = 0;
 
   while (true) {
     const page = await readInbox({
@@ -49,10 +63,13 @@ export async function drainInbox(readInbox: InboxReader, options: DrainOptions):
       indexFrom,
       maxCount: pageSize,
     });
-    all.push(...page);
+    if (page.length > 0) {
+      const result = await onPage(page);
+      inserted += result.inserted;
+    }
     if (page.length < pageSize) break; // fewer than a full page — reached the end
     indexFrom += pageSize;
   }
 
-  return all;
+  return { inserted };
 }

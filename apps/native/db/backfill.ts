@@ -24,24 +24,38 @@ export interface BackfillRange {
   to: number;
 }
 
+export interface BackfillResult {
+  dashboard: Dashboard;
+  // Rows genuinely newly created by this run — not the number of messages
+  // read (a backfill routinely re-scans already-ingested content, which
+  // contributes nothing new). Sourced directly from ingestSmsBatch's own
+  // IngestResult, not inferred from a before/after dashboard diff: an
+  // indirect diff can't distinguish "this backfill inserted nothing" from
+  // "something else changed the dashboard in between," and dashboard.recent
+  // vs. dashboard.activity is a separate, easy-to-get-wrong distinction on
+  // top of that (see app/modal.tsx's own history).
+  insertedCount: number;
+}
+
 // Real, position-based multi-page draining (see inbox-pagination.ts) over
 // the explicit [from, to] range, rather than the earlier time-boundary
 // approach that could silently stop early once messages were packed more
-// tightly than its overlap window. `pageSize` is a test-only override —
-// see syncInbox's own comment on why.
+// tightly than its overlap window. Each page is ingested as it's fetched
+// (see drainInbox/inbox-pagination.ts's own comment on why), not
+// accumulated into one large in-memory array and one large transaction.
+// `pageSize` is a test-only override — see syncInbox's own comment on why.
 export function backfillSms(
   range: BackfillRange,
   readInbox: InboxReader,
   options: { pageSize?: number } = {},
-): Promise<Dashboard> {
+): Promise<BackfillResult> {
   return withIngestionLock(async () => {
-    const raw = await drainInbox(readInbox, {
-      since: range.from,
-      until: range.to,
-      order: "oldest-first",
-      pageSize: options.pageSize,
-    });
-    await ingestSmsBatch(raw, { advanceCheckpoint: false });
-    return loadDashboard();
+    const { inserted } = await drainInbox(
+      readInbox,
+      { since: range.from, until: range.to, order: "oldest-first", pageSize: options.pageSize },
+      (page) => ingestSmsBatch(page, { advanceCheckpoint: false }),
+    );
+    const dashboard = await loadDashboard();
+    return { dashboard, insertedCount: inserted };
   });
 }

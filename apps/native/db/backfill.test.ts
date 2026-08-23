@@ -91,9 +91,12 @@ describe("backfillSms", () => {
     const outOfRange = rawSms({ id: "m4", date: T + 100 * TEN_MINUTES });
     const reader = fakeInboxReader([...inRange, outOfRange]);
 
-    const dashboard = await backfillSms({ from: T, to: T + 2 * TEN_MINUTES }, reader);
+    const result = await backfillSms({ from: T, to: T + 2 * TEN_MINUTES }, reader);
 
-    expect(dashboard.activity.map((m) => m.id).sort()).toEqual(inRange.map(fingerprintOf).sort());
+    expect(result.insertedCount).toBe(3);
+    expect(result.dashboard.activity.map((m) => m.id).sort()).toEqual(
+      inRange.map(fingerprintOf).sort(),
+    );
   });
 
   it("paginates across a range wider than one reader page without skipping anything", async () => {
@@ -102,52 +105,65 @@ describe("backfillSms", () => {
     );
     const reader = fakeInboxReader(messages);
 
-    const dashboard = await backfillSms(
+    const result = await backfillSms(
       { from: T, to: messages[messages.length - 1]!.date },
       reader,
       { pageSize: 2 }, // page smaller than the 9-message range
     );
 
-    expect(dashboard.activity.map((m) => m.id).sort()).toEqual(messages.map(fingerprintOf).sort());
+    expect(result.insertedCount).toBe(9);
+    expect(result.dashboard.activity.map((m) => m.id).sort()).toEqual(
+      messages.map(fingerprintOf).sort(),
+    );
   });
 
   it("paginates a range densely packed within the old overlap window (1 second apart) without skipping anything", async () => {
-    // The exact bug Codex's review caught: an earlier version paginated by
-    // moving the time boundary itself between pages, which could
-    // re-return the same page (and then stop, believing there was no more
-    // progress to make) whenever messages were packed more tightly than
-    // its overlap window. Position-based (indexFrom) pagination has no
-    // such failure mode, however densely the messages are packed.
+    // The exact bug an earlier review caught: pagination that moved the
+    // time boundary itself between pages could re-return the same page
+    // (and then stop, believing there was no more progress to make)
+    // whenever messages were packed more tightly than its overlap window.
+    // Position-based (indexFrom) pagination has no such failure mode,
+    // however densely the messages are packed.
     const ONE_SECOND = 1_000;
     const messages = Array.from({ length: 11 }, (_, i) =>
       rawSms({ id: `m${i}`, date: T + i * ONE_SECOND }),
     );
     const reader = fakeInboxReader(messages);
 
-    const dashboard = await backfillSms(
-      { from: T, to: messages[messages.length - 1]!.date },
-      reader,
-      { pageSize: 3 },
-    );
+    const result = await backfillSms({ from: T, to: messages[messages.length - 1]!.date }, reader, {
+      pageSize: 3,
+    });
 
-    expect(dashboard.activity.map((m) => m.id).sort()).toEqual(messages.map(fingerprintOf).sort());
+    expect(result.insertedCount).toBe(11);
+    expect(result.dashboard.activity.map((m) => m.id).sort()).toEqual(
+      messages.map(fingerprintOf).sort(),
+    );
   });
 
   it("paginates a burst of messages sharing the exact same timestamp without skipping anything", async () => {
-    // The sharpest version of the same bug: with a shared timestamp, ANY
-    // backward time shift still matches `since <= that timestamp`, so a
-    // time-boundary approach re-matches the identical set forever. Only
-    // position-based pagination can make progress here at all.
-    const burst = Array.from({ length: 10 }, (_, i) => rawSms({ id: `b${i}`, date: T }));
+    // A later review round caught this test's own gap: every fixture had
+    // identical sender/date/body, so they all shared ONE fingerprint —
+    // the assertion (exactly one ledger row) would have passed even if
+    // pagination were completely broken and only read the first page,
+    // since a single page already contains every distinct fingerprint
+    // there is (one). Distinct bodies make these genuinely 20 different
+    // fingerprints sharing one timestamp, which is what actually exercises
+    // same-timestamp page-boundary behavior — the sharpest version of the
+    // pagination bug this guards: with a shared timestamp, ANY backward
+    // time shift still matches `since <= that timestamp`, so the old
+    // time-boundary approach re-matched the identical set forever. Only
+    // position-based pagination, with a deterministic tiebreak on ties
+    // (see lib/sms.ts's `_id` secondary sort key), can make progress here.
+    const burst = Array.from({ length: 20 }, (_, i) =>
+      rawSms({ id: `b${i}`, date: T, body: `${HDFC_DEBIT} (variant ${i})` }),
+    );
     const reader = fakeInboxReader(burst);
 
-    const dashboard = await backfillSms({ from: T, to: T }, reader, { pageSize: 3 });
+    const result = await backfillSms({ from: T, to: T }, reader, { pageSize: 3 });
 
-    // All 10 share one fingerprint (identical sender/date/body) — one
-    // ledger row, but every message must still have been read and none
-    // silently dropped from the page walk itself (a stuck loop would have
-    // thrown/hung or returned far fewer reader pages than needed).
-    expect(dashboard.activity).toHaveLength(1);
+    expect(result.insertedCount).toBe(20);
+    const rows = testDb.select().from(schema.smsLedger).all();
+    expect(rows.map((r) => r.id).sort()).toEqual(burst.map(fingerprintOf).sort());
   });
 
   it("never advances the automatic-sync checkpoint when the backfilled range is entirely older history", async () => {
@@ -171,7 +187,7 @@ describe("backfillSms", () => {
   });
 
   it("never advances the automatic-sync checkpoint even when the backfilled range includes dates newer than the current checkpoint", async () => {
-    // The gap in the previous version's own test: it only proved backfill
+    // The gap in an earlier version's own test: it only proved backfill
     // was harmless for a range entirely OLDER than the checkpoint, which
     // ingestSmsBatch's ordinary "only if newer" upsert already guarantees
     // on its own — it didn't prove the { advanceCheckpoint: false } option

@@ -71,10 +71,21 @@ export function readSmsInbox(
       minDate: options.since,
       maxDate: options.until,
       indexFrom: options.indexFrom,
-      // Without an explicit sort order, the native module passes null
-      // straight to ContentResolver.query() and which messages survive a
-      // maxCount truncation is OS/OEM-defined.
-      sortOrder: (options.order ?? "newest-first") === "newest-first" ? "date DESC" : "date ASC",
+      // A `date`-only ORDER BY has no defined tiebreak among rows sharing
+      // one timestamp — separate ContentResolver.query() calls (each page
+      // is its own query, see db/inbox-pagination.ts) aren't guaranteed to
+      // return tied rows in the same relative order every time. Without a
+      // stable secondary key, equal-timestamp rows could shuffle between
+      // pages across two calls to this same paginated read, getting
+      // skipped or duplicated at the page boundary even though `indexFrom`
+      // itself is a real, correct offset. `_id` — the content provider's
+      // own unique row id (already read elsewhere in this file) — is
+      // stable and unique per message, so appending it as a secondary sort
+      // key makes the full ordering deterministic across repeated queries.
+      sortOrder:
+        (options.order ?? "newest-first") === "newest-first"
+          ? "date DESC, _id DESC"
+          : "date ASC, _id ASC",
     });
     SmsAndroid.list(
       filter,

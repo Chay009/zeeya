@@ -196,6 +196,43 @@ describe("syncInbox", () => {
     expect(rows).toHaveLength(9);
   });
 
+  it("coalesces concurrent syncInbox() calls into one real sync, not one queued sync per caller", async () => {
+    // Distinct from the mutex test below: mutual exclusion alone (never
+    // running two syncs at the same instant) would still let three
+    // concurrent callers each trigger a full, genuinely separate sync,
+    // one after another — correct, but 3x the real device-inbox reads and
+    // parses for calls that all just wanted "caught up." True single-
+    // flight coalescing means only the first call's execution is real;
+    // the other two reuse its in-flight result instead of running the
+    // reader again themselves.
+    let callCount = 0;
+    const reader: InboxReader = async () => {
+      callCount++;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return [];
+    };
+
+    await Promise.all([syncInbox(reader), syncInbox(reader), syncInbox(reader)]);
+
+    // A first-ever sync makes exactly one reader call (the no-checkpoint
+    // branch isn't paginated) — three genuinely separate executions would
+    // have made three.
+    expect(callCount).toBe(1);
+  });
+
+  it("triggers a genuinely new sync for a call that arrives after the previous one has already finished", async () => {
+    let callCount = 0;
+    const reader: InboxReader = async () => {
+      callCount++;
+      return [];
+    };
+
+    await syncInbox(reader);
+    await syncInbox(reader);
+
+    expect(callCount).toBe(2); // not coalesced — these never overlapped
+  });
+
   it("never runs concurrently with another syncInbox()/backfillSms() call", async () => {
     let active = 0;
     let sawOverlap = false;

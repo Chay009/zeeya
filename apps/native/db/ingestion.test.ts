@@ -382,7 +382,11 @@ describe("ingestSmsBatch", () => {
     // Conflicting message: A's fingerprint (same sender/date/body as rowA),
     // but claims B's provider id. B's date (9090) is newer than A's
     // (8000), so B deterministically keeps ownership.
-    await expect(ingestSmsBatch([{ ...rowA, id: "provider-CONTESTED" }])).resolves.toBeUndefined();
+    // A's fingerprint already exists (inserted above) — this call only
+    // ever updates it, never inserts, hence 0.
+    await expect(ingestSmsBatch([{ ...rowA, id: "provider-CONTESTED" }])).resolves.toEqual({
+      inserted: 0,
+    });
 
     const rows = testDb.select().from(schema.smsLedger).all();
     const rowBAfter = rows.find((r) => r.providerId === "provider-CONTESTED");

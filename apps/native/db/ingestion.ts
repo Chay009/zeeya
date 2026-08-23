@@ -455,12 +455,24 @@ function yieldToEventLoop(): Promise<void> {
 // the very first automatic sync) would silently advance it — checkpoint
 // semantics should only ever reflect what syncInbox itself has verified
 // complete, never a manually-scoped operation with its own range bounds.
+export interface IngestResult {
+  // Rows newly created in the ledger by this call — not the size of
+  // `messages`, which may include already-ingested duplicates (recognized
+  // by fingerprint) that contribute nothing new. This is what lets a
+  // caller (db/backfill.ts) report a real "N new transactions" count
+  // instead of inferring it indirectly from a dashboard before/after diff,
+  // which conflates "the ledger changed" with "this call's own messages
+  // caused it," and can't tell "nothing new" apart from "something else
+  // changed the dashboard" at all.
+  inserted: number;
+}
+
 export async function ingestSmsBatch(
   messages: RawSms[],
   options: { advanceCheckpoint?: boolean } = {},
-): Promise<void> {
+): Promise<IngestResult> {
   const database = requireDb();
-  if (messages.length === 0) return;
+  if (messages.length === 0) return { inserted: 0 };
   const advanceCheckpoint = options.advanceCheckpoint ?? true;
 
   const groups = groupByFingerprint(messages.map(prepareMessage));
@@ -494,6 +506,7 @@ export async function ingestSmsBatch(
       .filter((id): id is string => id !== null)
       .sort()[0] ?? null;
 
+  let insertedCount = 0;
   database.transaction((tx) => {
     // The entire plan is recomputed from scratch against a fresh read,
     // not incrementally patched from the preflight one: another call
@@ -504,6 +517,7 @@ export async function ingestSmsBatch(
     // that first pass.
     const recheck = findExistingRows(tx, fingerprints, allClaimedProviderIds);
     const plan = planOwnership(groups, recheck);
+    insertedCount = plan.insert.size;
 
     // Every existing row whose providerId is changing has that value
     // cleared FIRST — unconditionally, whether its final value is null
@@ -628,6 +642,8 @@ export async function ingestSmsBatch(
         .run();
     }
   });
+
+  return { inserted: insertedCount };
 }
 
 export interface SyncStatus {
