@@ -65,11 +65,21 @@ export async function backfillSms(
   readInbox: InboxReader,
   options: { pageSize?: number } = {},
 ): Promise<BackfillResult> {
-  // Checked before ever touching withIngestionLock — an inverted range
-  // wouldn't hang (readInbox would just return zero matching rows for a
-  // contradictory since/until pair), but it would silently do nothing
-  // while occupying the sync/backfill queue for no reason, for a caller
-  // bug that's better rejected loudly and immediately.
+  // Checked before ever touching withIngestionLock — none of these would
+  // hang (readInbox would just get an already-nonsensical filter, or in
+  // the inverted-range case, zero matching rows), but they'd silently do
+  // nothing or misbehave while occupying the sync/backfill queue for no
+  // reason, for a caller bug that's better rejected loudly and
+  // immediately. NaN/Infinity in particular serialize into the native
+  // filter's JSON as `null` (JSON.stringify(NaN) === "null"), which the
+  // native module would then read via org.json's `opt`-style accessors —
+  // not a crash, but a range boundary silently turning into "no boundary
+  // at all" instead of the caller's actual (broken) intent.
+  if (!Number.isSafeInteger(range.from) || !Number.isSafeInteger(range.to)) {
+    throw new Error(
+      `backfillSms: range.from/range.to must be finite safe integers, got from=${range.from}, to=${range.to}`,
+    );
+  }
   if (range.from > range.to) {
     throw new Error(`backfillSms: range.from (${range.from}) must be <= range.to (${range.to})`);
   }

@@ -8,7 +8,7 @@
 import type { Dashboard } from "../lib/dashboard";
 import type { RawSms } from "../lib/sms";
 import type { InboxOrder } from "../lib/sms-filter";
-import { drainInbox } from "./inbox-pagination";
+import { drainInbox, validatePageSize } from "./inbox-pagination";
 import { getSyncStatus, ingestSmsBatch, loadDashboard } from "./ingestion";
 import { withIngestionLock } from "./single-flight";
 
@@ -78,6 +78,13 @@ export function syncInbox(
   if (inFlightSync) return inFlightSync;
 
   const promise = withIngestionLock(async () => {
+    // Validated here, unconditionally, rather than only where drainInbox
+    // happens to be reached — a previous version validated pageSize only
+    // inside drainInbox itself, which the first-ever-sync branch below
+    // never calls at all (it reads one unpaginated page), so an invalid
+    // pageSize on that path was silently ignored instead of rejected.
+    if (options.pageSize !== undefined) validatePageSize(options.pageSize);
+
     const checkpoint = await getSyncStatus();
     const hasCheckpoint = checkpoint.lastIngestedDate !== null;
 

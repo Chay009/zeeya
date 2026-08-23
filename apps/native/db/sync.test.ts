@@ -265,4 +265,13 @@ describe("syncInbox", () => {
 
     await expect(syncInbox(async () => [], { pageSize: 0 })).rejects.toThrow(/positive integer/);
   });
+
+  it("rejects a non-positive pageSize on a first-ever sync too, not just once a checkpoint exists", async () => {
+    // A previous version validated pageSize only inside drainInbox, which
+    // the no-checkpoint branch never calls (it reads one unpaginated
+    // page) — so an invalid pageSize on a first-ever sync was silently
+    // ignored instead of rejected, unlike the already-covered checkpoint
+    // case above.
+    await expect(syncInbox(async () => [], { pageSize: 0 })).rejects.toThrow(/positive integer/);
+  });
 });

@@ -226,4 +226,20 @@ describe("backfillSms", () => {
       /must be <=/,
     );
   });
+
+  it("rejects NaN/Infinity range bounds instead of silently mis-serializing them into the native filter", async () => {
+    // NaN/Infinity survive `from <= to` undetected (NaN comparisons are
+    // always false, so the inverted-range check above never fires for
+    // them) and JSON.stringify(NaN) === "null" — the native filter would
+    // silently receive `minDate: null`/`maxDate: null` instead of the
+    // caller's actual (broken) intent, turning a range boundary into "no
+    // boundary at all" rather than failing loudly.
+    const reader = fakeInboxReader([rawSms({ id: "m1", date: T })]);
+    await expect(backfillSms({ from: Number.NaN, to: T }, reader)).rejects.toThrow(
+      /finite safe integers/,
+    );
+    await expect(backfillSms({ from: T, to: Number.POSITIVE_INFINITY }, reader)).rejects.toThrow(
+      /finite safe integers/,
+    );
+  });
 });
