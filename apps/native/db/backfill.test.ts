@@ -94,9 +94,8 @@ describe("backfillSms", () => {
     const result = await backfillSms({ from: T, to: T + 2 * TEN_MINUTES }, reader);
 
     expect(result.insertedCount).toBe(3);
-    expect(result.dashboard.activity.map((m) => m.id).sort()).toEqual(
-      inRange.map(fingerprintOf).sort(),
-    );
+    const rows = testDb.select().from(schema.smsLedger).all();
+    expect(rows.map((r) => r.id).sort()).toEqual(inRange.map(fingerprintOf).sort());
   });
 
   it("paginates across a range wider than one reader page without skipping anything", async () => {
@@ -112,9 +111,8 @@ describe("backfillSms", () => {
     );
 
     expect(result.insertedCount).toBe(9);
-    expect(result.dashboard.activity.map((m) => m.id).sort()).toEqual(
-      messages.map(fingerprintOf).sort(),
-    );
+    const rows = testDb.select().from(schema.smsLedger).all();
+    expect(rows.map((r) => r.id).sort()).toEqual(messages.map(fingerprintOf).sort());
   });
 
   it("paginates a range densely packed within the old overlap window (1 second apart) without skipping anything", async () => {
@@ -135,9 +133,8 @@ describe("backfillSms", () => {
     });
 
     expect(result.insertedCount).toBe(11);
-    expect(result.dashboard.activity.map((m) => m.id).sort()).toEqual(
-      messages.map(fingerprintOf).sort(),
-    );
+    const rows = testDb.select().from(schema.smsLedger).all();
+    expect(rows.map((r) => r.id).sort()).toEqual(messages.map(fingerprintOf).sort());
   });
 
   it("paginates a burst of messages sharing the exact same timestamp without skipping anything", async () => {

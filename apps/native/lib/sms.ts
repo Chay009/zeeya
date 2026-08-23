@@ -1,6 +1,7 @@
 import { createMalanaEngine, type MalanaResult } from "@zeeya/parser/malana";
 import { PermissionsAndroid, Platform } from "react-native";
 import SmsAndroid from "react-native-get-sms-android";
+import { buildInboxFilter, type InboxFilterOptions } from "./sms-filter";
 
 export interface RawSms {
   id: string;
@@ -55,38 +56,12 @@ export async function requestSmsReadPermission(): Promise<boolean> {
 // db/backfill.ts's own comments on why an oldest-vs-newest choice here is
 // a correctness question, not a cosmetic one, once a checkpoint or a
 // bounded range is involved).
-export function readSmsInbox(
-  options: {
-    maxCount?: number;
-    since?: number;
-    until?: number;
-    indexFrom?: number;
-    order?: "newest-first" | "oldest-first";
-  } = {},
-): Promise<RawSms[]> {
+export function readSmsInbox(options: InboxFilterOptions = {}): Promise<RawSms[]> {
   return new Promise((resolve, reject) => {
-    const filter = JSON.stringify({
-      box: "inbox",
-      maxCount: options.maxCount ?? 5000,
-      minDate: options.since,
-      maxDate: options.until,
-      indexFrom: options.indexFrom,
-      // A `date`-only ORDER BY has no defined tiebreak among rows sharing
-      // one timestamp — separate ContentResolver.query() calls (each page
-      // is its own query, see db/inbox-pagination.ts) aren't guaranteed to
-      // return tied rows in the same relative order every time. Without a
-      // stable secondary key, equal-timestamp rows could shuffle between
-      // pages across two calls to this same paginated read, getting
-      // skipped or duplicated at the page boundary even though `indexFrom`
-      // itself is a real, correct offset. `_id` — the content provider's
-      // own unique row id (already read elsewhere in this file) — is
-      // stable and unique per message, so appending it as a secondary sort
-      // key makes the full ordering deterministic across repeated queries.
-      sortOrder:
-        (options.order ?? "newest-first") === "newest-first"
-          ? "date DESC, _id DESC"
-          : "date ASC, _id ASC",
-    });
+    // Filter construction itself is a pure function in lib/sms-filter.ts —
+    // see that module's own comment for why (unit-testable there, where
+    // this whole file cannot be imported under Vitest at all).
+    const filter = JSON.stringify(buildInboxFilter(options));
     SmsAndroid.list(
       filter,
       (error) => reject(new Error(error)),

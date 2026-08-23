@@ -51,6 +51,14 @@ export type InboxReader = (options: {
 // execution satisfies all of them identically. Reset to null once the
 // in-flight call settles (success or failure), so a later, genuinely
 // separate call still triggers a fresh sync.
+//
+// Known, currently-harmless gap: this coalesces purely on "is a sync
+// already running," ignoring whether a concurrent call passed a different
+// `readInbox`/`pageSize`. Production only ever calls this with one real
+// reader (lib/sms.ts's readSmsInbox) and no pageSize override, so that
+// mismatch can't actually occur today — but if a future caller ever needs
+// a second, meaningfully different concurrent reader, this would silently
+// reuse the first call's result for it instead of running the second.
 let inFlightSync: Promise<Dashboard> | null = null;
 
 // `pageSize` is a test-only override of inbox-pagination.ts's default

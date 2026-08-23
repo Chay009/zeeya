@@ -13,9 +13,8 @@
 //
 //  2. withIngestionLock (db/single-flight.ts) serializes this against any
 //     concurrent syncInbox() call, so the two can't interleave.
-import type { Dashboard } from "../lib/dashboard";
 import { drainInbox } from "./inbox-pagination";
-import { ingestSmsBatch, loadDashboard } from "./ingestion";
+import { ingestSmsBatch } from "./ingestion";
 import { withIngestionLock } from "./single-flight";
 import type { InboxReader } from "./sync";
 
@@ -25,15 +24,19 @@ export interface BackfillRange {
 }
 
 export interface BackfillResult {
-  dashboard: Dashboard;
   // Rows genuinely newly created by this run — not the number of messages
   // read (a backfill routinely re-scans already-ingested content, which
   // contributes nothing new). Sourced directly from ingestSmsBatch's own
   // IngestResult, not inferred from a before/after dashboard diff: an
   // indirect diff can't distinguish "this backfill inserted nothing" from
-  // "something else changed the dashboard in between," and dashboard.recent
-  // vs. dashboard.activity is a separate, easy-to-get-wrong distinction on
-  // top of that (see app/modal.tsx's own history).
+  // "something else changed the dashboard in between."
+  //
+  // Note this counts every newly-persisted ledger row, including ones
+  // that failed to parse or didn't recognize as a financial transaction —
+  // it is a count of *messages*, not of transactions. app/modal.tsx labels
+  // it accordingly ("N new messages imported"), not as a transaction
+  // count, which would need a separate, narrower count (dashboard.recent)
+  // this doesn't compute.
   insertedCount: number;
 }
 
@@ -44,6 +47,13 @@ export interface BackfillResult {
 // (see drainInbox/inbox-pagination.ts's own comment on why), not
 // accumulated into one large in-memory array and one large transaction.
 // `pageSize` is a test-only override — see syncInbox's own comment on why.
+//
+// Deliberately does NOT call loadDashboard() — callers that only need the
+// insertedCount (app/modal.tsx) would otherwise pay to decode the entire
+// ledger for a value they never use, and the dashboard screen itself
+// already reloads on its own when navigation returns to it (see its
+// useFocusEffect). A future caller that genuinely needs the post-backfill
+// Dashboard can call loadDashboard() itself.
 export function backfillSms(
   range: BackfillRange,
   readInbox: InboxReader,
@@ -55,7 +65,6 @@ export function backfillSms(
       { since: range.from, until: range.to, order: "oldest-first", pageSize: options.pageSize },
       (page) => ingestSmsBatch(page, { advanceCheckpoint: false }),
     );
-    const dashboard = await loadDashboard();
-    return { dashboard, insertedCount: inserted };
+    return { insertedCount: inserted };
   });
 }

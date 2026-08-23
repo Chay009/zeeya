@@ -186,7 +186,11 @@ function Modal() {
               <Text style={{ color: t.positive, fontSize: 13, marginTop: 18 }}>
                 Backfill complete
                 {ingestedCount !== null
-                  ? ` — ${ingestedCount} new transaction${ingestedCount === 1 ? "" : "s"} added.`
+                  ? // insertedCount is every newly-persisted message, not
+                    // just financial transactions — it includes parser
+                    // errors and non-transaction categories too, so "N new
+                    // messages imported" is what this number actually is.
+                    ` — ${ingestedCount} new message${ingestedCount === 1 ? "" : "s"} imported.`
                   : "."}
               </Text>
             )}
