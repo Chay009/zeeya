@@ -444,9 +444,24 @@ function yieldToEventLoop(): Promise<void> {
 // callback, then immediately runs COMMIT on the next line), so an async
 // callback would commit before its own writes finished running. Since it
 // contains no parsing, it stays fast regardless of batch size.
-export async function ingestSmsBatch(messages: RawSms[]): Promise<void> {
+//
+// `advanceCheckpoint` (default true) lets a caller ingest a batch without
+// touching syncCheckpoint at all — db/backfill.ts sets this false: a
+// manual historical backfill's job is to fill in older/missing history,
+// not to move the "what's already covered going forward" boundary that
+// db/sync.ts's syncInbox owns exclusively. Without this, backfilling any
+// range that happens to include messages newer than the current
+// checkpoint (e.g. an "All time" or "Last 30 days" backfill run before
+// the very first automatic sync) would silently advance it — checkpoint
+// semantics should only ever reflect what syncInbox itself has verified
+// complete, never a manually-scoped operation with its own range bounds.
+export async function ingestSmsBatch(
+  messages: RawSms[],
+  options: { advanceCheckpoint?: boolean } = {},
+): Promise<void> {
   const database = requireDb();
   if (messages.length === 0) return;
+  const advanceCheckpoint = options.advanceCheckpoint ?? true;
 
   const groups = groupByFingerprint(messages.map(prepareMessage));
   const fingerprints = groups.map((g) => g.fingerprint);
@@ -573,37 +588,45 @@ export async function ingestSmsBatch(messages: RawSms[]): Promise<void> {
     // preferring a non-null id over null, and the lexicographically
     // smaller of two non-null ids — rather than keeping whichever batch
     // happened to write the checkpoint first.
-    tx.insert(syncCheckpoint)
-      .values({
-        id: "inbox",
-        lastIngestedDate: batchNewestDate,
-        lastIngestedProviderId: batchNewestProviderId,
-        updatedAt: Date.now(),
-      })
-      .onConflictDoUpdate({
-        target: syncCheckpoint.id,
-        set: {
+    //
+    // Skipped entirely when advanceCheckpoint is false — not just left
+    // unadvanced, since the INSERT branch alone would still create the
+    // "inbox" row from nothing on a database with no checkpoint yet,
+    // which is itself an advance (null -> some date) a caller explicitly
+    // asked not to make.
+    if (advanceCheckpoint) {
+      tx.insert(syncCheckpoint)
+        .values({
+          id: "inbox",
           lastIngestedDate: batchNewestDate,
           lastIngestedProviderId: batchNewestProviderId,
           updatedAt: Date.now(),
-        },
-        where: sql`
-          ${syncCheckpoint.lastIngestedDate} IS NULL
-          OR ${syncCheckpoint.lastIngestedDate} < ${batchNewestDate}
-          OR (
-            ${syncCheckpoint.lastIngestedDate} = ${batchNewestDate}
-            AND (
-              (${syncCheckpoint.lastIngestedProviderId} IS NULL AND ${batchNewestProviderId} IS NOT NULL)
-              OR (
-                ${syncCheckpoint.lastIngestedProviderId} IS NOT NULL
-                AND ${batchNewestProviderId} IS NOT NULL
-                AND ${batchNewestProviderId} < ${syncCheckpoint.lastIngestedProviderId}
+        })
+        .onConflictDoUpdate({
+          target: syncCheckpoint.id,
+          set: {
+            lastIngestedDate: batchNewestDate,
+            lastIngestedProviderId: batchNewestProviderId,
+            updatedAt: Date.now(),
+          },
+          where: sql`
+            ${syncCheckpoint.lastIngestedDate} IS NULL
+            OR ${syncCheckpoint.lastIngestedDate} < ${batchNewestDate}
+            OR (
+              ${syncCheckpoint.lastIngestedDate} = ${batchNewestDate}
+              AND (
+                (${syncCheckpoint.lastIngestedProviderId} IS NULL AND ${batchNewestProviderId} IS NOT NULL)
+                OR (
+                  ${syncCheckpoint.lastIngestedProviderId} IS NOT NULL
+                  AND ${batchNewestProviderId} IS NOT NULL
+                  AND ${batchNewestProviderId} < ${syncCheckpoint.lastIngestedProviderId}
+                )
               )
             )
-          )
-        `,
-      })
-      .run();
+          `,
+        })
+        .run();
+    }
   });
 }
 

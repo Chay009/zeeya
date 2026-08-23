@@ -1,15 +1,16 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useCallback, useState } from "react";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { useCallback, useEffect, useState } from "react";
+import { ActivityIndicator, PermissionsAndroid, Pressable, Text, View } from "react-native";
 
 import { Container } from "@/components/container";
 import { dashboardTheme as t } from "@/constants/dashboard-theme";
 import { backfillSms } from "@/db/backfill";
 import { loadDashboard } from "@/db/ingestion";
-import { isSmsReadSupported, readSmsInbox } from "@/lib/sms";
+import { isSmsReadSupported, readSmsInbox, requestSmsReadPermission } from "@/lib/sms";
 
 type BackfillStatus = "idle" | "running" | "done" | "error";
+type PermissionStatus = "checking" | "needs-permission" | "granted";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -33,10 +34,29 @@ function Modal() {
   const [error, setError] = useState<string | null>(null);
   const [ingestedCount, setIngestedCount] = useState<number | null>(null);
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
+  // Reaching this screen (via the dashboard's header icon) doesn't itself
+  // prove SMS read permission was granted — the dashboard's own status
+  // gates only its own load(), not navigation to other routes. Checked
+  // independently here rather than assumed, so tapping a preset without
+  // permission shows a real "grant access" prompt instead of readSmsInbox
+  // failing opaquely mid-backfill.
+  const [permission, setPermission] = useState<PermissionStatus>("checking");
+
+  useEffect(() => {
+    if (!isSmsReadSupported()) return;
+    PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_SMS).then((granted) => {
+      setPermission(granted ? "granted" : "needs-permission");
+    });
+  }, []);
 
   function handleClose() {
     router.back();
   }
+
+  const grantPermission = useCallback(async () => {
+    const granted = await requestSmsReadPermission();
+    setPermission(granted ? "granted" : "needs-permission");
+  }, []);
 
   const runBackfill = useCallback(async (label: string, days: number | null) => {
     setStatus("running");
@@ -47,7 +67,12 @@ function Modal() {
       const from = days === null ? 0 : to - days * DAY_MS;
       const before = await loadDashboard();
       const after = await backfillSms({ from, to }, readSmsInbox);
-      setIngestedCount(after.activity.length - before.activity.length);
+      // dashboard.recent is the financial-transactions-only list (see its
+      // own definition in lib/dashboard.ts) — dashboard.activity is
+      // broader and includes non-transaction delivery/travel/event/OTP
+      // messages, which would make this count claim things that aren't
+      // transactions at all.
+      setIngestedCount(after.recent.length - before.recent.length);
       setStatus("done");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -78,6 +103,25 @@ function Modal() {
           <Text style={{ color: t.textMuted, fontSize: 13 }}>
             Reading the SMS inbox isn't possible on iOS.
           </Text>
+        ) : permission === "checking" ? (
+          <Text style={{ color: t.textMuted, fontSize: 13 }}>Checking permissions…</Text>
+        ) : permission === "needs-permission" ? (
+          <View>
+            <Text style={{ color: t.textMuted, fontSize: 13, marginBottom: 14 }}>
+              Backfill needs SMS read access, same as the dashboard.
+            </Text>
+            <Pressable
+              onPress={() => void grantPermission()}
+              style={{
+                backgroundColor: t.accent,
+                paddingVertical: 12,
+                borderRadius: 12,
+                alignItems: "center",
+              }}
+            >
+              <Text style={{ color: t.background, fontWeight: "700" }}>Allow SMS Access</Text>
+            </Pressable>
+          </View>
         ) : (
           <>
             <Text style={{ color: t.textMuted, fontSize: 13, marginBottom: 18 }}>
@@ -120,7 +164,7 @@ function Modal() {
               <Text style={{ color: t.positive, fontSize: 13, marginTop: 18 }}>
                 Backfill complete
                 {ingestedCount !== null
-                  ? ` — ${ingestedCount} new recognized transaction${ingestedCount === 1 ? "" : "s"} added.`
+                  ? ` — ${ingestedCount} new transaction${ingestedCount === 1 ? "" : "s"} added.`
                   : "."}
               </Text>
             )}

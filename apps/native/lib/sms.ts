@@ -40,6 +40,15 @@ export async function requestSmsReadPermission(): Promise<boolean> {
 // / `date <=` checks applied before maxCount truncation) — omitting them
 // reads the whole inbox, same as before these parameters existed.
 //
+// `indexFrom` is a genuine offset into the since/until-*filtered* result
+// set (confirmed against the same Java source: it's a position counter
+// `c` that only increments on a filter match, checked before maxCount
+// truncation) — this is what makes real multi-page draining possible
+// (db/inbox-pagination.ts) without relying on message timestamps at all,
+// unlike an earlier version of this pagination that moved the `since`
+// boundary itself and broke whenever messages were packed more tightly
+// than its overlap window.
+//
 // `order` controls which end of a maxCount-truncated result survives: it
 // matters whenever a caller bounds this by `since`/`until` and the
 // matching message count could exceed `maxCount` (see db/sync.ts's and
@@ -51,6 +60,7 @@ export function readSmsInbox(
     maxCount?: number;
     since?: number;
     until?: number;
+    indexFrom?: number;
     order?: "newest-first" | "oldest-first";
   } = {},
 ): Promise<RawSms[]> {
@@ -60,6 +70,7 @@ export function readSmsInbox(
       maxCount: options.maxCount ?? 5000,
       minDate: options.since,
       maxDate: options.until,
+      indexFrom: options.indexFrom,
       // Without an explicit sort order, the native module passes null
       // straight to ContentResolver.query() and which messages survive a
       // maxCount truncation is OS/OEM-defined.

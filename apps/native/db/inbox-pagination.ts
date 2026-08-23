@@ -1,0 +1,58 @@
+// Real, position-based multi-page draining over an InboxReader — shared by
+// db/sync.ts (catching up to now) and db/backfill.ts (a bounded [from, to]
+// range), both of which can need more than one reader page to cover fully.
+//
+// An earlier version of this pagination advanced the *time* boundary
+// itself between pages (moving `since` forward to the previous page's
+// newest date, minus a small overlap). That broke whenever messages were
+// packed more tightly than the overlap window (a burst of same- or
+// near-timestamp messages larger than one page): the next page's read,
+// bounded by the same shifted-back `since`, could return the *exact same*
+// rows again — sorting is stable and the underlying data hadn't changed —
+// so the loop detected "no forward progress" and stopped, silently
+// abandoning everything past that point. Genuine offset-based pagination
+// via the native module's own `indexFrom` (confirmed against its Java
+// source: a position counter over the since/until-filtered result set,
+// applied before maxCount truncation) has no such failure mode — it walks
+// the filtered result set by position, not by time, so it's correct
+// regardless of how many messages share a timestamp.
+import type { RawSms } from "../lib/sms";
+import type { InboxOrder, InboxReader } from "./sync";
+
+const DEFAULT_PAGE_SIZE = 1000;
+
+export interface DrainOptions {
+  since?: number;
+  until?: number;
+  order: InboxOrder;
+  pageSize?: number;
+}
+
+// Ascending-order (oldest-first) pagination is safe against the inbox
+// growing mid-drain: a real Android SMS inbox only ever appends newer
+// messages, which sort *after* everything already paged through in an
+// ASC view, so earlier pages' positions never shift underneath this loop.
+// This helper is only ever used with order: "oldest-first" by both
+// callers — see their own comments for why a single, unpaginated
+// newest-first read is deliberately sufficient for the one case that
+// still uses that order (a first-ever sync).
+export async function drainInbox(readInbox: InboxReader, options: DrainOptions): Promise<RawSms[]> {
+  const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
+  const all: RawSms[] = [];
+  let indexFrom = 0;
+
+  while (true) {
+    const page = await readInbox({
+      since: options.since,
+      until: options.until,
+      order: options.order,
+      indexFrom,
+      maxCount: pageSize,
+    });
+    all.push(...page);
+    if (page.length < pageSize) break; // fewer than a full page — reached the end
+    indexFrom += pageSize;
+  }
+
+  return all;
+}
