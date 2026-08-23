@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AppState,
@@ -141,13 +142,20 @@ export default function Home() {
       });
   }, [load]);
 
-  useEffect(() => {
-    if (!isSmsReadSupported()) {
-      setStatus("unsupported");
-      return;
-    }
-    checkPermissionThenLoad();
-  }, [checkPermissionThenLoad]);
+  // useFocusEffect (not a plain useEffect) so this also resyncs whenever
+  // this screen regains focus after navigating back — e.g. returning here
+  // from the backfill screen (app/modal.tsx) — not only on the very first
+  // mount. It still runs on that first mount too (a screen is "focused"
+  // the first time it renders), so nothing here needs to run twice.
+  useFocusEffect(
+    useCallback(() => {
+      if (!isSmsReadSupported()) {
+        setStatus("unsupported");
+        return;
+      }
+      checkPermissionThenLoad();
+    }, [checkPermissionThenLoad]),
+  );
 
   // Resyncs whenever the app returns to the foreground (e.g. backgrounded
   // during a bank OTP/SMS arrival, then reopened) — not just on initial
@@ -210,7 +218,9 @@ export default function Home() {
               }}
             >
               <Text style={{ color: t.textPrimary, fontSize: 24, fontWeight: "800" }}>zeeya</Text>
-              <Ionicons name="ellipsis-horizontal-circle-outline" size={26} color={t.textMuted} />
+              <Pressable onPress={() => router.push("/modal")} hitSlop={10}>
+                <Ionicons name="ellipsis-horizontal-circle-outline" size={26} color={t.textMuted} />
+              </Pressable>
             </View>
 
             {status === "checking" && (

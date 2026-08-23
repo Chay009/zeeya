@@ -34,25 +34,32 @@ export async function requestSmsReadPermission(): Promise<boolean> {
 
 // Reads the device's existing SMS inbox via the native content provider
 // (react-native-get-sms-android). Defaults to 5,000 messages, matching this
-// app's expected per-user scale. `since`, when given, is passed through as
-// the native module's own `minDate` filter (confirmed against its Java
-// source: it's an inclusive per-row `date >=` check applied before
-// maxCount truncation) — omitting it here reads the whole inbox, same as
-// before this parameter existed.
+// app's expected per-user scale. `since`/`until`, when given, are passed
+// through as the native module's own `minDate`/`maxDate` filters
+// (confirmed against its Java source: both are inclusive per-row `date >=`
+// / `date <=` checks applied before maxCount truncation) — omitting them
+// reads the whole inbox, same as before these parameters existed.
 //
 // `order` controls which end of a maxCount-truncated result survives: it
-// matters whenever a caller bounds this by `since` and the matching
-// message count could exceed `maxCount` (see db/sync.ts's own comment on
-// why an oldest-vs-newest choice here is a correctness question, not a
-// cosmetic one, once a checkpoint is involved).
+// matters whenever a caller bounds this by `since`/`until` and the
+// matching message count could exceed `maxCount` (see db/sync.ts's and
+// db/backfill.ts's own comments on why an oldest-vs-newest choice here is
+// a correctness question, not a cosmetic one, once a checkpoint or a
+// bounded range is involved).
 export function readSmsInbox(
-  options: { maxCount?: number; since?: number; order?: "newest-first" | "oldest-first" } = {},
+  options: {
+    maxCount?: number;
+    since?: number;
+    until?: number;
+    order?: "newest-first" | "oldest-first";
+  } = {},
 ): Promise<RawSms[]> {
   return new Promise((resolve, reject) => {
     const filter = JSON.stringify({
       box: "inbox",
       maxCount: options.maxCount ?? 5000,
       minDate: options.since,
+      maxDate: options.until,
       // Without an explicit sort order, the native module passes null
       // straight to ContentResolver.query() and which messages survive a
       // maxCount truncation is OS/OEM-defined.

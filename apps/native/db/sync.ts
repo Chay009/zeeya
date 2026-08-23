@@ -21,9 +21,16 @@ export type InboxOrder = "newest-first" | "oldest-first";
 
 // Deliberately not react-native-get-sms-android's own filter shape (e.g. a
 // raw `sortOrder: "date ASC"` string) — this interface is what makes
-// syncInbox() testable with a plain in-memory fake, decoupled from any
-// native module or its SQL-ish filter syntax.
-export type InboxReader = (options: { since?: number; order?: InboxOrder }) => Promise<RawSms[]>;
+// syncInbox() and backfillSms() (db/backfill.ts, which reuses this same
+// type) testable with a plain in-memory fake, decoupled from any native
+// module or its SQL-ish filter syntax. `until` is unused by syncInbox
+// itself (an open-ended "catch up to now" has no upper bound) but is part
+// of the shared reader contract backfillSms needs.
+export type InboxReader = (options: {
+  since?: number;
+  until?: number;
+  order?: InboxOrder;
+}) => Promise<RawSms[]>;
 
 // Idempotent and safe to call from a mount effect, a pull-to-refresh, and
 // an app-foreground listener alike — every call re-reads the checkpoint
