@@ -212,4 +212,18 @@ describe("backfillSms", () => {
       [oldSeed, newerThanCheckpoint].map(fingerprintOf).sort(),
     );
   });
+
+  it("rejects a non-positive pageSize instead of looping forever", async () => {
+    const reader = fakeInboxReader([rawSms({ id: "m1", date: T })]);
+    await expect(
+      backfillSms({ from: T, to: T + TEN_MINUTES }, reader, { pageSize: 0 }),
+    ).rejects.toThrow(/positive integer/);
+  });
+
+  it("rejects an inverted range (from > to) instead of silently doing nothing", async () => {
+    const reader = fakeInboxReader([rawSms({ id: "m1", date: T })]);
+    await expect(backfillSms({ from: T + TEN_MINUTES, to: T }, reader)).rejects.toThrow(
+      /must be <=/,
+    );
+  });
 });

@@ -52,6 +52,22 @@ export async function drainInbox(
   onPage: (page: RawSms[]) => Promise<IngestResult>,
 ): Promise<IngestResult> {
   const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
+  // A pageSize <= 0 (or non-integer) breaks this loop's two termination
+  // conditions at once: the real native reader ignores a non-positive
+  // maxCount and returns everything unbounded (confirmed against its Java
+  // source: `if (maxCount > 0 && ...)` never fires for maxCount <= 0), so
+  // `page.length < pageSize` can never be true, AND `indexFrom += pageSize`
+  // never advances — an infinite loop that re-fetches the same unbounded
+  // result forever. Rejected up front rather than left to manifest as a
+  // hang with no useful error.
+  if (!Number.isInteger(pageSize) || pageSize <= 0) {
+    throw new Error(`drainInbox: pageSize must be a positive integer, got ${pageSize}`);
+  }
+  // indexFrom itself isn't a caller-exposed parameter anywhere in this
+  // module's public surface — it's entirely derived below, starting at 0
+  // and advancing only by the pageSize just validated above — so
+  // validating pageSize is what guarantees indexFrom stays a nonnegative
+  // integer throughout, without a separate check needed for it directly.
   let indexFrom = 0;
   let inserted = 0;
 

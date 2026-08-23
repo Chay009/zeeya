@@ -252,4 +252,17 @@ describe("syncInbox", () => {
 
     expect(sawOverlap).toBe(false);
   });
+
+  it("rejects a non-positive pageSize instead of looping forever", async () => {
+    // pageSize: 0 breaks drainInbox's two termination conditions at once
+    // (see inbox-pagination.ts's own comment): the real native reader
+    // ignores a non-positive maxCount and returns everything unbounded, so
+    // `page.length < pageSize` can never be true, and indexFrom never
+    // advances either — an infinite loop with no useful error. Establish a
+    // checkpoint first so this actually reaches drainInbox (the no-
+    // checkpoint branch doesn't paginate at all).
+    await syncInbox(async () => [rawSms({ id: "seed", date: T })]);
+
+    await expect(syncInbox(async () => [], { pageSize: 0 })).rejects.toThrow(/positive integer/);
+  });
 });

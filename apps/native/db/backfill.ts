@@ -54,11 +54,26 @@ export interface BackfillResult {
 // already reloads on its own when navigation returns to it (see its
 // useFocusEffect). A future caller that genuinely needs the post-backfill
 // Dashboard can call loadDashboard() itself.
-export function backfillSms(
+// `async` here specifically so an invalid `range` rejects the returned
+// promise rather than throwing synchronously out of the call itself — a
+// plain (non-async) function returning `withIngestionLock(...)` would
+// otherwise throw before ever producing a promise for an early validation
+// failure, forcing callers to handle this function's errors two different
+// ways depending on which check failed.
+export async function backfillSms(
   range: BackfillRange,
   readInbox: InboxReader,
   options: { pageSize?: number } = {},
 ): Promise<BackfillResult> {
+  // Checked before ever touching withIngestionLock — an inverted range
+  // wouldn't hang (readInbox would just return zero matching rows for a
+  // contradictory since/until pair), but it would silently do nothing
+  // while occupying the sync/backfill queue for no reason, for a caller
+  // bug that's better rejected loudly and immediately.
+  if (range.from > range.to) {
+    throw new Error(`backfillSms: range.from (${range.from}) must be <= range.to (${range.to})`);
+  }
+
   return withIngestionLock(async () => {
     const { inserted } = await drainInbox(
       readInbox,

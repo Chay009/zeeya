@@ -7,6 +7,7 @@
 // correct sequence rather than re-implementing it.
 import type { Dashboard } from "../lib/dashboard";
 import type { RawSms } from "../lib/sms";
+import type { InboxOrder } from "../lib/sms-filter";
 import { drainInbox } from "./inbox-pagination";
 import { getSyncStatus, ingestSmsBatch, loadDashboard } from "./ingestion";
 import { withIngestionLock } from "./single-flight";
@@ -22,7 +23,11 @@ import { withIngestionLock } from "./single-flight";
 // how tightly messages are packed together.
 const SYNC_OVERLAP_MS = 60_000;
 
-export type InboxOrder = "newest-first" | "oldest-first";
+// InboxOrder itself lives in lib/sms-filter.ts (re-exported here) — that's
+// where buildInboxFilter() also uses it to construct the real native
+// filter's sortOrder, so there is exactly one definition rather than two
+// independently-maintained copies that could drift apart.
+export type { InboxOrder };
 
 // Deliberately not react-native-get-sms-android's own filter shape (e.g. a
 // raw `sortOrder: "date ASC"` string) — this interface is what makes
