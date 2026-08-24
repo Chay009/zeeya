@@ -915,6 +915,59 @@ describe("deriveDashboard — duplicate referenced transactions", () => {
   });
 });
 
+describe("deriveDashboard — detected bank visibility", () => {
+  it("surfaces a bank detected from transaction-only SBI messages", () => {
+    const engine = createMalanaEngine();
+    const bodies = [
+      "Dear UPI user A/C X1234 debited by 50.00 on date 21Aug26 trf to SAMPLE PERSON Refno 123456789012 If not u? call-1800111109 for other services-18001234-SBI",
+      "Dear UPI user A/C X1234 debited by 175.00 on date 28Jul26 trf to SAMPLE MERCHANT Refno 123456789013 If not u? call-1800111109 for other services-18001234-SBI",
+    ];
+    const messages: ParsedSms[] = bodies.map((body, index) => ({
+      id: `sbi-${index}`,
+      sender: "+916300000000",
+      body,
+      date: now + index,
+      result: engine.parse(body, "+916300000000"),
+    }));
+
+    const dashboard = deriveDashboard(messages);
+
+    expect(messages.map((message) => message.result.bankName)).toEqual([
+      "State Bank of India",
+      "State Bank of India",
+    ]);
+    expect(dashboard.recent).toHaveLength(2);
+    expect(dashboard.detectedAccounts).toEqual([
+      expect.objectContaining({
+        bankName: "State Bank of India",
+        last4: "1234",
+        currency: "INR",
+      }),
+    ]);
+  });
+
+  it("does not duplicate a detected account after a balance confirms it", () => {
+    const messages: ParsedSms[] = [
+      sms("transaction", "VM-TESTBK", 1000, {
+        bankName: "Test Bank",
+        acc: "X1234",
+        trx: "50.00",
+        trxTypeRich: "EXPENSE",
+      }),
+      sms("balance", "VM-TESTBK", 2000, {
+        bankName: "Test Bank",
+        acc: "XX1234",
+        bal: "950.00",
+      }),
+    ];
+
+    const dashboard = deriveDashboard(messages);
+
+    expect(dashboard.accounts).toHaveLength(1);
+    expect(dashboard.detectedAccounts).toHaveLength(0);
+  });
+});
+
 describe("deriveDashboard — currency-separated monthly totals", () => {
   it("keeps a TRANSFER debit out of income and counts it as an expense", () => {
     const messages: ParsedSms[] = [

@@ -69,6 +69,18 @@ export interface AccountBalance {
   history: BalanceReading[];
 }
 
+// A bank account identified from a message that carries bank + account
+// digits but no balance. It is real account-identity evidence, but it must
+// remain separate from AccountBalance so callers never mistake an unknown
+// balance for zero or run reconciliation math against an invented value.
+export interface DetectedAccount {
+  bankName: string;
+  last4: string;
+  currency: string;
+  asOf: number;
+  sender: string;
+}
+
 export interface BankGroup {
   bankName: string;
   accounts: AccountBalance[];
@@ -110,6 +122,7 @@ export interface Dashboard {
   // Flat confirmed-account view retained for account-level consumers and
   // tests. `banks` is the canonical presentation hierarchy used by the UI.
   accounts: AccountBalance[];
+  detectedAccounts: DetectedAccount[];
   banks: BankGroup[];
   // Keyed by ISO currency code — summing across currencies as raw numbers
   // would silently mix e.g. INR and USD into one meaningless total.
@@ -232,6 +245,7 @@ function referencedTransactionKey(message: ParsedSms): string | null {
 // time and when this function calls `new Date()` internally.
 export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): Dashboard {
   const accountsByKey = new Map<string, AccountBalance>();
+  const detectedAccountsByKey = new Map<string, DetectedAccount>();
   const unassignedReadingsByBank = new Map<string, BalanceReading[]>();
   const monthIncomeByCurrency: Record<string, number> = {};
   const monthExpenseByCurrency: Record<string, number> = {};
@@ -251,6 +265,21 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
   for (const m of messages) {
     const { result } = m;
     if (!isParserRecognized(m)) continue;
+
+    const detectedAccountKey = result.bankName ? accountKey(result.bankName, result.acc) : null;
+    const detectedLast4 = normalizeAcc(result.acc);
+    if (detectedAccountKey && detectedLast4 && result.bankName) {
+      const existing = detectedAccountsByKey.get(detectedAccountKey);
+      if (!existing || m.date > existing.asOf) {
+        detectedAccountsByKey.set(detectedAccountKey, {
+          bankName: result.bankName,
+          last4: detectedLast4,
+          currency: result.currency ?? "INR",
+          asOf: m.date,
+          sender: m.sender,
+        });
+      }
+    }
 
     const transactionKey = referencedTransactionKey(m);
     const isDuplicateTransaction = transactionKey
@@ -437,6 +466,10 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
 
   const accounts = [...accountsByKey.values()];
   for (const acc of accounts) acc.history.sort((a, b) => b.asOf - a.asOf);
+  const detectedAccounts = [...detectedAccountsByKey.entries()]
+    .filter(([key]) => !accountsByKey.has(key))
+    .map(([, account]) => account)
+    .sort((a, b) => b.asOf - a.asOf || a.last4.localeCompare(b.last4));
 
   const banksByKey = new Map<string, BankGroup>();
   for (const account of accounts) {
@@ -491,6 +524,7 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
 
   return {
     accounts,
+    detectedAccounts,
     banks,
     monthIncomeByCurrency,
     monthExpenseByCurrency,
