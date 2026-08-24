@@ -3,9 +3,7 @@
 
 import type { Token } from "./types";
 import { parseCategorizerData } from "./asset-schemas";
-import vendorBanksRaw from "./data/vendor_banks.json";
 import vendorBrandsRaw from "./data/vendor_brands.json";
-import bankSeedRaw from "./data/bank.json"; // malanaSeed — 32 banks, complete sender IDs
 import addrSeedRaw from "./data/addr.json"; // malanaSeed — 424 sender IDs → grammar category
 import upiSeedRaw from "./data/upi.json"; // malanaSeed — 111 UPI handles
 import categorizerRaw from "./data/categorizer.json"; // Naive Bayes binary classifier (3708 words)
@@ -53,91 +51,8 @@ export function grammarForSender(sender: string): string | null {
 
 // ── Bank name ─────────────────────────────────────────────────────────────────
 
-// bank.json (malanaSeed) — 32 banks, each with their real SMS sender fragments.
-// Primary source: more complete than vendor_banks.json (13 banks).
-const BANK_SEED: Array<[string, string[]]> = Object.entries(
-  bankSeedRaw as Record<string, string[]>,
-);
-
-// vendor_banks.json (vendorSeed) — covers a few extra UPI handles (okhdfc, okaxis, etc.)
-// used as supplementary match layer. Its keys ("hdfc", "state bank of india", ...)
-// are lowercase shorthand for the same real banks bank.json already names in full
-// ("HDFC Bank", "State Bank of India"), so resolve through bank.json's own name list
-// instead of hand-listing each bank again here — that list is the single source of
-// truth and the only thing that needs updating when a new bank is added.
-const BANK_SEED_NAMES: string[] = BANK_SEED.map(([name]) => name);
-
-function toTitleCase(key: string): string {
-  return key
-    .split(" ")
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ");
-}
-
-// Resolves a vendor_banks.json key to bank.json's canonical name for the same
-// bank, when one exists. Exact match first; then "key" as a leading word of a
-// canonical name (never a plain substring — "bank of india" is a substring of
-// "state bank of india" but they're two different real banks, so a bare
-// `.includes()` would wrongly merge them). No bank.json match at all (e.g.
-// "rbi", "idfc" — not present under any spelling) falls back to a plain
-// title-cased version of the key.
-function resolveBankName(key: string): string {
-  const lower = key.toLowerCase();
-  const exact = BANK_SEED_NAMES.find((name) => name.toLowerCase() === lower);
-  if (exact) return exact;
-  const prefixMatches = BANK_SEED_NAMES.filter((name) =>
-    name.toLowerCase().startsWith(lower + " "),
-  );
-  if (prefixMatches.length === 1) return prefixMatches[0]!;
-  return toTitleCase(key);
-}
-
-const VENDOR_BANKS: Array<[string, string[]]> = Object.entries(
-  vendorBanksRaw as Record<string, string[]>,
-).map(([name, patterns]) => [resolveBankName(name), patterns] as [string, string[]]);
-
-// Message-body fallback for banks without sender-based detection.
-const BODY_BANK_PATTERNS: Array<[RegExp, string]> = [
-  [/bandhan/i, "Bandhan Bank"],
-  [/equitas/i, "Equitas Small Finance Bank"],
-  [/karnataka bank/i, "Karnataka Bank"],
-  [/au small finance|au bank/i, "AU Small Finance Bank"],
-  [/uco bank/i, "UCO Bank"],
-  [/central bank/i, "Central Bank of India"],
-  [/punjab.*sind|sind.*bank/i, "Punjab & Sind Bank"],
-  [/airtel.*bank/i, "Airtel Payments Bank"],
-  [/jio.*bank/i, "Jio Payments Bank"],
-  [/saraswat/i, "Saraswat Bank"],
-  [/dbs bank/i, "DBS Bank"],
-  [/city union/i, "City Union Bank"],
-  [/nsdl/i, "NSDL Payments Bank"],
-  [/jupiter/i, "Jupiter"],
-  [/\bslice\b/i, "Slice"],
-  [/\bcred\b/i, "CRED"],
-];
-
-export function detectBank(sender: string, message: string): string | null {
-  const s = sender.toLowerCase();
-  const fragments = s.split(/[-_\s]/);
-
-  // Layer 1: bank.json exact sender fragment match (primary — 32 banks, complete sender lists)
-  for (const [name, senders] of BANK_SEED) {
-    if (senders.some((id) => fragments.includes(id.toLowerCase()))) return name;
-  }
-
-  // Layer 2: vendor_banks.json substring match (covers UPI handles: okhdfc, okaxis, oksbi, etc.)
-  for (const [name, patterns] of VENDOR_BANKS) {
-    if (patterns.some((p) => s.includes(p))) return name;
-  }
-
-  // Layer 3: message body keyword match
-  const haystack = sender + " " + message;
-  for (const [re, name] of BODY_BANK_PATTERNS) {
-    if (re.test(haystack)) return name;
-  }
-
-  return null;
-}
+export { detectBank, resolveBankIdentity } from "./bank-identity";
+export type { BankIdentity, BankIdentitySource } from "./bank-identity";
 
 // ── UPI mandate lifecycle ──────────────────────────────────────────────────────
 // Not part of the ported grammar (Truecaller's own engine doesn't track mandate

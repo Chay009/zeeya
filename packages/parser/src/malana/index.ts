@@ -18,6 +18,7 @@ export type {
 } from "./types";
 export {
   detectBank,
+  resolveBankIdentity,
   detectMerchantCategory,
   detectSubcategory,
   detectBrand,
@@ -27,6 +28,7 @@ export {
   extractMandateMerchant,
 } from "./enrichment";
 export type { BrandMatch } from "./enrichment";
+export type { BankIdentity, BankIdentitySource } from "./enrichment";
 
 // The compiled grammar/token/classifier seed pulled from the Truecaller APK
 // (resources/assets/malanaSeed/seeddata.json), bundled as a package asset so
