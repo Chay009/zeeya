@@ -268,7 +268,11 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
 
     const detectedAccountKey = result.bankName ? accountKey(result.bankName, result.acc) : null;
     const detectedLast4 = normalizeAcc(result.acc);
-    if (detectedAccountKey && detectedLast4 && result.bankName) {
+    const hasAccountEvidence =
+      parseAmount(result.bal) !== null ||
+      (result.trxTypeRich !== null && parseAmount(result.trx) !== null) ||
+      result.mandateId !== null;
+    if (detectedAccountKey && detectedLast4 && result.bankName && hasAccountEvidence) {
       const existing = detectedAccountsByKey.get(detectedAccountKey);
       if (!existing || m.date > existing.asOf) {
         detectedAccountsByKey.set(detectedAccountKey, {

@@ -966,6 +966,26 @@ describe("deriveDashboard — detected bank visibility", () => {
     expect(dashboard.accounts).toHaveLength(1);
     expect(dashboard.detectedAccounts).toHaveLength(0);
   });
+
+  it("does not surface an account from a failed card transaction notice", () => {
+    const engine = createMalanaEngine();
+    const body =
+      "Txn at SAMPLE SUBSCRIPTION via Kotak Debit Card XX8068 on 11/08/2026 IST failed due to low balance in a/c XX9152. Charges apply on declined txns.";
+    const message: ParsedSms = {
+      id: "failed-kotak",
+      sender: "VM-KOTAKB",
+      body,
+      date: now,
+      result: engine.parse(body, "VM-KOTAKB"),
+    };
+
+    const dashboard = deriveDashboard([message]);
+
+    expect(message.result.category).toBe("GRM_BANK");
+    expect(message.result.bankName).toBe("Kotak Bank");
+    expect(dashboard.detectedAccounts).toHaveLength(0);
+    expect(dashboard.recent).toHaveLength(0);
+  });
 });
 
 describe("deriveDashboard — currency-separated monthly totals", () => {
