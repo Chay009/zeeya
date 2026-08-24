@@ -40,9 +40,8 @@ export const seedData = parseSeedData(seeddataRaw);
 // Consumers that persist parsed results (e.g. apps/native's on-device
 // ledger) need a version to detect which persisted rows were parsed by an
 // older build and may need reprocessing. This package's own package.json
-// version is the best signal available — it only actually serves that
-// purpose once this package adopts real version-bump discipline on
-// grammar/logic changes, which it doesn't have yet.
+// version is the persistence contract: any parsing, grammar, or enrichment
+// change that can alter MalanaResult must bump it so cached rows are reparsed.
 export const PARSER_VERSION: string = packageJson.version;
 
 let sharedEngine: MalanaEngine | null = null;

@@ -945,11 +945,37 @@ describe("loadDashboard", () => {
   });
 
   it("derives a dashboard from ledger rows without re-parsing them", async () => {
+    const parseSpy = vi.spyOn(MalanaEngine.prototype, "parse");
     await ingestSmsBatch([rawSms({ id: "1", body: HDFC_DEBIT, sender: "VM-HDFCBK" })]);
+    parseSpy.mockClear();
 
     const dashboard = await loadDashboard();
     expect(dashboard.recent).toHaveLength(1);
     expect(dashboard.recent[0]!.result.trx).toBe("5000.00");
+    expect(parseSpy).not.toHaveBeenCalled();
+    parseSpy.mockRestore();
+  });
+
+  it("reprocesses a cached SBI result produced by an older parser", async () => {
+    const parseSpy = vi.spyOn(MalanaEngine.prototype, "parse");
+    await ingestSmsBatch([rawSms({ id: "sbi-1", body: SBI_UPI, sender: "+916300000000" })]);
+    const [row] = testDb.select().from(schema.smsLedger).all();
+    const staleResult = { ...JSON.parse(row!.parsedResult!), bankName: null };
+
+    testDb
+      .update(schema.smsLedger)
+      .set({ parsedResult: JSON.stringify(staleResult), parserVersion: "0.1.0" })
+      .where(eq(schema.smsLedger.id, row!.id))
+      .run();
+
+    parseSpy.mockClear();
+    const dashboard = await loadDashboard();
+    expect(dashboard.recent[0]!.result.bankName).toBe("State Bank of India");
+    expect(parseSpy).toHaveBeenCalledTimes(1);
+
+    await loadDashboard();
+    expect(parseSpy).toHaveBeenCalledTimes(1);
+    parseSpy.mockRestore();
   });
 
   it("excludes ledger rows that failed to parse", async () => {

@@ -6,7 +6,7 @@ import {
   parsePersistedMalanaResult,
   PARSER_VERSION,
 } from "@zeeya/parser/malana";
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { deriveDashboard, type Dashboard } from "../lib/dashboard";
 import type { ParsedSms, RawSms } from "../lib/sms";
 import { db } from "./client";
@@ -677,20 +677,58 @@ export async function getSyncStatus(): Promise<SyncStatus> {
 // is skipped rather than crashing — the same error-isolation principle
 // ingestSmsBatch itself uses.
 //
-// What this does NOT yet do, deliberately deferred rather than rushed in
-// the same pass as ingestion: read from the normalized accounts/
-// balanceReadings/transactions/activity/mandates tables directly, and
-// detect/reprocess rows whose stored parserVersion is stale (tracked
-// explicitly on issue #17, not silently dropped — parserVersion is
-// currently write-only). Those tables are part of the locked schema but
-// aren't written or read yet — that's a pure optimization on top of this
-// (same derivation, cached instead of recomputed on every load), not a
-// correctness change, and deserves its own slice, as does version-based
-// reprocessing. The real, load-bearing win in this pass is that restart/
-// refresh no longer re-parses already-ingested SMS through Malana — only
-// deriveDashboard()'s cheap in-memory aggregation reruns.
+// Before reading, stale rows are reparsed from their on-device source text.
+// This makes parser fixes apply to messages cached by an older build; inbox
+// sync correctly treats those SMS as duplicates and cannot refresh their
+// parsedResult itself. Current-version rows remain parse-free on restart.
+//
+// Reading from the normalized accounts/balanceReadings/transactions/activity/
+// mandates tables remains a separate caching optimization. Dashboard
+// correctness still comes from the ledger and deriveDashboard().
+async function reprocessStaleLedgerRows(database: Database): Promise<void> {
+  const staleRows = await database
+    .select({
+      id: smsLedger.id,
+      providerId: smsLedger.providerId,
+      sender: smsLedger.sender,
+      body: smsLedger.body,
+      date: smsLedger.date,
+    })
+    .from(smsLedger)
+    .where(ne(smsLedger.parserVersion, PARSER_VERSION));
+
+  for (const batch of chunk(staleRows, PARSE_YIELD_EVERY)) {
+    const reparsed = batch.map((row) => ({
+      id: row.id,
+      content: parseMessageContent({
+        id: row.providerId ?? "",
+        sender: row.sender,
+        body: row.body,
+        date: row.date,
+      }),
+    }));
+
+    database.transaction((tx) => {
+      for (const { id, content } of reparsed) {
+        tx.update(smsLedger)
+          .set({
+            parserVersion: content.parserVersion,
+            parsedResult: content.parsedResult,
+            ingestionStatus: content.ingestionStatus,
+            ingestionError: content.ingestionError,
+          })
+          .where(and(eq(smsLedger.id, id), ne(smsLedger.parserVersion, PARSER_VERSION)))
+          .run();
+      }
+    });
+
+    await yieldToEventLoop();
+  }
+}
+
 export async function loadDashboard(now: Date = new Date()): Promise<Dashboard> {
   const database = requireDb();
+  await reprocessStaleLedgerRows(database);
   const rows = await database.select().from(smsLedger);
   const messages: ParsedSms[] = [];
   for (const row of rows) {
