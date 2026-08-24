@@ -97,7 +97,18 @@ const VENDOR_BANKS: Array<[string, string[]]> = Object.entries(
 ).map(([name, patterns]) => [resolveBankName(name), patterns] as [string, string[]]);
 
 // Message-body fallback for banks without sender-based detection.
+//
+// State Bank of India was a real gap here despite being India's largest
+// bank: bank.json's sender-ID list (Layer 1) only covers ~12 known SBI
+// short codes, and while vendor_banks.json (Layer 2) does list "sbi" as a
+// pattern, Layer 2 only matches it against the *sender*, never the message
+// body — so a genuine SBI SMS from any sender ID outside that 12-entry
+// list had zero fallback, even though real SBI UPI notifications reliably
+// end their body with a "-SBI" suffix (e.g. "...for other services-18001234-SBI").
+// Confirmed directly: detectBank() returned null for three real SBI UPI
+// messages before this fix, despite each body ending in "-SBI".
 const BODY_BANK_PATTERNS: Array<[RegExp, string]> = [
+  [/\bsbi\b/i, "State Bank of India"],
   [/bandhan/i, "Bandhan Bank"],
   [/equitas/i, "Equitas Small Finance Bank"],
   [/karnataka bank/i, "Karnataka Bank"],
