@@ -8,7 +8,37 @@
     },
     "name": "zeeya",
     "slug": "zeeya",
-    "plugins": ["expo-font", "./plugins/withReadSmsPermission.js"],
+    "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/eda40d60-d791-4e4a-bbf4-3f58d941a4eb"
+    },
+    "plugins": [
+      "expo-font",
+      "./plugins/withReadSmsPermission.js",
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#f5fbf7",
+          "dark": {
+            "backgroundColor": "#10251e"
+          }
+        }
+      ],
+      "expo-background-task",
+      "expo-local-authentication",
+      "expo-notifications",
+      "expo-secure-store",
+      [
+        "expo-sqlite",
+        {
+          "useSQLCipher": true
+        }
+      ]
+    ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true

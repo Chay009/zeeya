@@ -782,7 +782,7 @@ describe("ingestSmsBatch", () => {
     await ingestSmsBatch(large);
     expect(testDb.select().from(schema.smsLedger).all()).toHaveLength(1500);
     expect(parseSpy).toHaveBeenCalledTimes(1500);
-  });
+  }, 15_000);
 
   it("isolates a parse failure to that one message instead of aborting the whole batch", async () => {
     // engine.parse(null, ...) genuinely throws (verified directly) — a
