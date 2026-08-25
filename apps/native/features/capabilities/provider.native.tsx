@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   AppState,
   PermissionsAndroid,
+  Platform,
   Pressable,
   Text,
   View,
@@ -15,6 +16,11 @@ import {
   type LocalSettings,
   updateLocalSettings,
 } from "@/db/settings";
+import {
+  deviceMessageCaptureRequiresPermission,
+  isDeviceMessageCaptureSupported,
+  syncDeviceMessages,
+} from "@/lib/device-message-sync";
 import { setBackgroundSyncRegistration } from "./background/task";
 import { requestTransactionNotificationPermission } from "./notifications/notifications";
 import {
@@ -47,6 +53,24 @@ export function CapabilityProvider({ children }: PropsWithChildren) {
   const authenticating = useRef(false);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
+
+  const syncCapturedMessages = useCallback(async () => {
+    if (!isDeviceMessageCaptureSupported()) return;
+    if (
+      deviceMessageCaptureRequiresPermission() &&
+      !(await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_SMS))
+    ) {
+      return;
+    }
+    try {
+      await syncDeviceMessages();
+    } catch (cause) {
+      // Capture is opportunistic at the app root. The dashboard still owns
+      // user-visible retry/error state, while this path ensures queued iOS
+      // Shortcut messages are not stranded on non-dashboard routes.
+      console.warn("Zeeya could not synchronize captured messages", cause);
+    }
+  }, []);
 
   const unlock = useCallback(async () => {
     if (authenticating.current) return;
@@ -100,15 +124,20 @@ export function CapabilityProvider({ children }: PropsWithChildren) {
   }, [unlock]);
 
   useEffect(() => {
+    if (loaded) void syncCapturedMessages();
+  }, [loaded, syncCapturedMessages]);
+
+  useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
       if (state !== "active") {
         if (settingsRef.current.biometricLockEnabled) setUnlocked(false);
         return;
       }
+      if (loaded) void syncCapturedMessages();
       if (loaded && settingsRef.current.biometricLockEnabled) void unlock();
     });
     return () => subscription.remove();
-  }, [loaded, unlock]);
+  }, [loaded, syncCapturedMessages, unlock]);
 
   const setPreference = useCallback(
     async (key: CapabilityPreference, enabled: boolean): Promise<boolean> => {
@@ -116,6 +145,7 @@ export function CapabilityProvider({ children }: PropsWithChildren) {
       try {
         if (key === "backgroundSyncEnabled") {
           if (
+            Platform.OS === "android" &&
             enabled &&
             !(await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_SMS))
           ) {

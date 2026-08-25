@@ -19,13 +19,9 @@ type PermissionStatus = "checking" | "needs-permission" | "granted" | "error";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-// Fixed presets rather than a free-form calendar picker: no date-picker
-// dependency is installed yet, and a handful of named ranges covers the
-// realistic backfill need (catching up an inbox this app hasn't seen
-// before) without pulling in and native-linking a new library for this
-// alone. `from: 0` for "All time" reads from the epoch — readSmsInbox
-// already treats an out-of-range `since` as "no earlier match," so this
-// needs no special-casing.
+// Presets provide fast paths for common imports; the custom-range calendar
+// below covers exact dates. `from: 0` for "All time" reads from the epoch —
+// readSmsInbox treats an out-of-range `since` as "no earlier match."
 const PRESETS: { label: string; days: number | null }[] = [
   { label: "Last 30 days", days: 30 },
   { label: "Last 3 months", days: 90 },
@@ -149,9 +145,16 @@ export function BackfillScreen() {
         </View>
 
         {!isSmsReadSupported() ? (
-          <Text style={{ color: t.textMuted, fontSize: 13 }}>
-            Reading the SMS inbox isn't possible on iOS.
-          </Text>
+          <View style={{ gap: 10 }}>
+            <Text style={{ color: t.textPrimary, fontSize: 15, fontWeight: "700" }}>
+              Historical Messages are unavailable on iOS
+            </Text>
+            <Text style={{ color: t.textMuted, fontSize: 13, lineHeight: 20 }}>
+              Apple does not provide apps access to your existing Messages history. Zeeya can
+              capture new financial messages after you configure its Personal Automation in
+              Shortcuts from Privacy & automation settings.
+            </Text>
+          </View>
         ) : permission === "checking" ? (
           <Text style={{ color: t.textMuted, fontSize: 13 }}>Checking permissions…</Text>
         ) : permission === "error" ? (

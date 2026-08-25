@@ -1,8 +1,10 @@
 import { useState } from "react";
-import { ActivityIndicator, ScrollView, Switch, Text, View } from "react-native";
+import { ActivityIndicator, Platform, ScrollView, Switch, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { type CapabilityPreference, useCapabilities } from "@/features/capabilities/provider";
+import { ShortcutsSetupCard } from "@/features/shortcuts/components/shortcuts-setup-card";
+import { deviceMessagePolicy } from "@/lib/device-message-policy";
 
 interface PreferenceRowProps {
   title: string;
@@ -44,6 +46,9 @@ export function PrivacySettingsScreen() {
   const insets = useSafeAreaInsets();
   const { settings, error, setPreference } = useCapabilities();
   const [pending, setPending] = useState<CapabilityPreference | null>(null);
+  const policy = deviceMessagePolicy(
+    Platform.OS === "android" || Platform.OS === "ios" ? Platform.OS : "other",
+  );
 
   const change = async (key: CapabilityPreference, enabled: boolean) => {
     setPending(key);
@@ -84,13 +89,15 @@ export function PrivacySettingsScreen() {
           borderColor: "#dfe8e2",
         }}
       >
-        <PreferenceRow
-          title="Periodic background sync"
-          description="Let Android periodically catch up new SMS using WorkManager. Android chooses the exact time; no battery-exemption permission is requested."
-          value={settings.backgroundSyncEnabled}
-          disabled={pending !== null}
-          onChange={(value) => void change("backgroundSyncEnabled", value)}
-        />
+        {policy.showsBackgroundSync ? (
+          <PreferenceRow
+            title="Periodic background sync"
+            description="Let Android WorkManager or iOS BGTaskScheduler periodically process newly captured messages. The OS chooses the exact time; no battery-exemption permission is requested."
+            value={settings.backgroundSyncEnabled}
+            disabled={pending !== null}
+            onChange={(value) => void change("backgroundSyncEnabled", value)}
+          />
+        ) : null}
         <PreferenceRow
           title="Transaction notifications"
           description="Show a privacy-safe local notification only when a newly imported SMS is recognized as financial activity."
@@ -107,12 +114,14 @@ export function PrivacySettingsScreen() {
         />
         <PreferenceRow
           title="Block screenshots and recording"
-          description="Protect financial screens from screenshots, screen recording, and Android app-switcher previews."
+          description="Protect financial screens from screenshots, recording, and app-switcher previews."
           value={settings.screenCaptureProtectionEnabled}
           disabled={pending !== null}
           onChange={(value) => void change("screenCaptureProtectionEnabled", value)}
         />
       </View>
+
+      {policy.showsShortcutsSetup ? <ShortcutsSetupCard /> : null}
 
       {pending ? (
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 18 }}>

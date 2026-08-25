@@ -7,8 +7,7 @@ import { db, migrateLegacyDatabaseIfNeeded } from "@/db/client";
 import { loadDashboard } from "@/db/ingestion";
 import migrations from "@/db/migrations/migrations";
 import { getLocalSettings } from "@/db/settings";
-import { syncInbox } from "@/db/sync";
-import { readSmsInbox } from "@/lib/sms";
+import { syncDeviceMessages } from "@/lib/device-message-sync";
 import { notifyNewFinancialTransactions } from "../notifications/notifications";
 import { runPeriodicSync } from "./periodic-sync";
 
@@ -26,20 +25,20 @@ if (!TaskManager.isTaskDefined(BACKGROUND_SYNC_TASK)) {
       await runPeriodicSync({
         getSettings: getLocalSettings,
         loadDashboard,
-        sync: () => syncInbox(readSmsInbox),
+        sync: syncDeviceMessages,
         notify: notifyNewFinancialTransactions,
       });
       return BackgroundTask.BackgroundTaskResult.Success;
     } catch (error) {
-      console.error("Zeeya background SMS sync failed", error);
+      console.error("Zeeya background message sync failed", error);
       return BackgroundTask.BackgroundTaskResult.Failed;
     }
   });
 }
 
 export async function setBackgroundSyncRegistration(enabled: boolean): Promise<void> {
-  if (Platform.OS !== "android") {
-    if (enabled) throw new Error("Background SMS sync is Android-only.");
+  if (Platform.OS !== "android" && Platform.OS !== "ios") {
+    if (enabled) throw new Error("Background message sync is unavailable on this platform.");
     return;
   }
   if (!enabled) {
