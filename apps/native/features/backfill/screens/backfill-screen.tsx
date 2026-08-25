@@ -2,11 +2,17 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, PermissionsAndroid, Pressable, Text, View } from "react-native";
+import { Calendar, type DateData } from "react-native-calendars";
 
 import { Container } from "@/components/container";
 import { dashboardTheme as t } from "@/constants/dashboard-theme";
 import { backfillSms } from "@/db/backfill";
 import { isSmsReadSupported, readSmsInbox, requestSmsReadPermission } from "@/lib/sms";
+import {
+  calendarSelectionToEpochRange,
+  selectCalendarDay,
+  type CalendarRangeSelection,
+} from "../date-range";
 
 type BackfillStatus = "idle" | "running" | "done" | "error";
 type PermissionStatus = "checking" | "needs-permission" | "granted" | "error";
@@ -33,6 +39,8 @@ export function BackfillScreen() {
   const [error, setError] = useState<string | null>(null);
   const [ingestedCount, setIngestedCount] = useState<number | null>(null);
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
+  const [showCustomRange, setShowCustomRange] = useState(false);
+  const [customRange, setCustomRange] = useState<CalendarRangeSelection | null>(null);
   // Reaching this screen (via the dashboard's header icon) doesn't itself
   // prove SMS read permission was granted — the dashboard's own status
   // gates only its own load(), not navigation to other routes. Checked
@@ -84,6 +92,42 @@ export function BackfillScreen() {
       setStatus("error");
     }
   }, []);
+
+  const runCustomBackfill = useCallback(async () => {
+    if (!customRange?.to) return;
+    setStatus("running");
+    setSelectedLabel("Custom range");
+    setError(null);
+    try {
+      const result = await backfillSms(calendarSelectionToEpochRange(customRange), readSmsInbox);
+      setIngestedCount(result.insertedCount);
+      setStatus("done");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      setStatus("error");
+    }
+  }, [customRange]);
+
+  const markedDates = customRange
+    ? {
+        [customRange.from]: {
+          startingDay: true,
+          endingDay: customRange.to === customRange.from,
+          color: t.accent,
+          textColor: t.background,
+        },
+        ...(customRange.to
+          ? {
+              [customRange.to]: {
+                startingDay: customRange.to === customRange.from,
+                endingDay: true,
+                color: t.accent,
+                textColor: t.background,
+              },
+            }
+          : {}),
+      }
+    : {};
 
   return (
     <Container>
@@ -180,7 +224,61 @@ export function BackfillScreen() {
                   </Pressable>
                 );
               })}
+              <Pressable
+                disabled={status === "running"}
+                onPress={() => setShowCustomRange((visible) => !visible)}
+                style={{
+                  backgroundColor: t.surface,
+                  borderRadius: 14,
+                  borderWidth: 1,
+                  borderColor: t.accent,
+                  paddingVertical: 14,
+                  paddingHorizontal: 16,
+                }}
+              >
+                <Text style={{ color: t.textPrimary, fontWeight: "600", fontSize: 14 }}>
+                  Choose custom dates
+                </Text>
+              </Pressable>
             </View>
+
+            {showCustomRange ? (
+              <View style={{ marginTop: 16, borderRadius: 16, overflow: "hidden" }}>
+                <Calendar
+                  markingType="period"
+                  markedDates={markedDates}
+                  maxDate={new Date().toISOString().slice(0, 10)}
+                  enableSwipeMonths
+                  onDayPress={(day: DateData) =>
+                    setCustomRange((current) => selectCalendarDay(current, day.dateString))
+                  }
+                  theme={{
+                    calendarBackground: t.surface,
+                    dayTextColor: t.textPrimary,
+                    monthTextColor: t.textPrimary,
+                    textDisabledColor: t.textMuted,
+                    arrowColor: t.accent,
+                    todayTextColor: t.accent,
+                  }}
+                />
+                <Pressable
+                  disabled={!customRange?.to || status === "running"}
+                  onPress={() => void runCustomBackfill()}
+                  style={{
+                    alignItems: "center",
+                    backgroundColor: t.accent,
+                    paddingVertical: 13,
+                    opacity: customRange?.to && status !== "running" ? 1 : 0.45,
+                  }}
+                >
+                  <Text style={{ color: t.background, fontWeight: "800" }}>
+                    {customRange?.to
+                      ? `Import ${customRange.from} to ${customRange.to}`
+                      : "Choose a start and end date"}
+                  </Text>
+                </Pressable>
+              </View>
+            ) : null}
 
             {status === "done" && (
               <Text style={{ color: t.positive, fontSize: 13, marginTop: 18 }}>
