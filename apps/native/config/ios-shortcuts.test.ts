@@ -1,21 +1,17 @@
+import plist from "@expo/plist";
+import { getConfig } from "expo/config";
 import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
+import nativeCapabilities from "./native-capabilities.json";
+
 const require = createRequire(import.meta.url);
-const appConfig = JSON.parse(readFileSync(path.join(__dirname, "..", "app.json"), "utf8")) as {
-  expo: {
-    ios: {
-      bundleIdentifier: string;
-      infoPlist: Record<string, string>;
-      entitlements: Record<string, string[]>;
-    };
-    plugins: Array<string | [string, Record<string, unknown>]>;
-  };
-};
+const projectRoot = path.join(__dirname, "..");
+const appConfig = getConfig(projectRoot, { skipSDKVersionRequirement: true }).exp;
 const targetConfigFactory = require("../targets/app-intent/expo-target.config.js") as (
-  config: typeof appConfig.expo,
+  config: typeof appConfig,
 ) => {
   type: string;
   bundleIdentifier: string;
@@ -23,9 +19,8 @@ const targetConfigFactory = require("../targets/app-intent/expo-target.config.js
   frameworks: string[];
   entitlements: Record<string, string[]>;
 };
-const targetInfoPlist = readFileSync(
-  path.join(__dirname, "..", "targets", "app-intent", "Info.plist"),
-  "utf8",
+const targetInfoPlist = plist.parse(
+  readFileSync(path.join(projectRoot, "targets", "app-intent", "Info.plist"), "utf8"),
 );
 const targetSource = readFileSync(
   path.join(__dirname, "..", "targets", "app-intent", "extension.swift"),
@@ -42,33 +37,52 @@ const moduleSource = readFileSync(
   ),
   "utf8",
 );
+const modulePodspec = readFileSync(
+  path.join(projectRoot, "modules", "zeeya-message-queue", "ios", "ZeeyaMessageQueue.podspec"),
+  "utf8",
+);
 
 describe("iOS Shortcuts build contract", () => {
   it("shares one App Group between the Expo app, native queue module, and App Intent target", () => {
-    const group = "group.com.anonymous.zeeya";
-    const target = targetConfigFactory(appConfig.expo);
+    const group = nativeCapabilities.iosAppGroup;
+    const target = targetConfigFactory(appConfig);
 
-    expect(appConfig.expo.ios.bundleIdentifier).toBe("com.anonymous.zeeya");
-    expect(appConfig.expo.ios.infoPlist.ZeeyaMessageQueueAppGroup).toBe(group);
-    expect(appConfig.expo.ios.infoPlist.ZeeyaMessageQueueRoot).toBe("message-queue");
-    expect(appConfig.expo.ios.infoPlist.ZeeyaMessageQueueVersion).toBe("v1");
-    expect(appConfig.expo.ios.entitlements["com.apple.security.application-groups"]).toEqual([
-      group,
-    ]);
+    expect(appConfig.ios?.bundleIdentifier).toBe(nativeCapabilities.iosBundleIdentifier);
+    expect(appConfig.ios?.infoPlist?.ZeeyaMessageQueueAppGroup).toBe(group);
+    expect(appConfig.ios?.infoPlist?.ZeeyaMessageQueueRoot).toBe(
+      nativeCapabilities.messageQueueRoot,
+    );
+    expect(appConfig.ios?.infoPlist?.ZeeyaMessageQueueVersion).toBe(
+      nativeCapabilities.messageQueueVersion,
+    );
+    expect(appConfig.ios?.entitlements?.["com.apple.security.application-groups"]).toEqual([group]);
     expect(target).toMatchObject({
       type: "app-intent",
-      bundleIdentifier: ".shortcuts",
-      deploymentTarget: "17.0",
+      name: nativeCapabilities.appIntent.name,
+      bundleIdentifier: nativeCapabilities.appIntent.bundleIdentifierSuffix,
+      deploymentTarget: nativeCapabilities.iosDeploymentTarget,
       frameworks: ["CryptoKit"],
       entitlements: { "com.apple.security.application-groups": [group] },
     });
-    expect(targetInfoPlist).toContain(`<string>${group}</string>`);
-    expect(targetInfoPlist).toContain("<key>ZeeyaMessageQueueRoot</key>");
-    expect(targetInfoPlist).toContain("<string>message-queue</string>");
-    expect(targetInfoPlist).toContain("<key>ZeeyaMessageQueueVersion</key>");
-    expect(targetInfoPlist).toContain("<string>v1</string>");
+    expect(targetInfoPlist).toMatchObject({
+      ZeeyaMessageQueueAppGroup: group,
+      ZeeyaMessageQueueRoot: nativeCapabilities.messageQueueRoot,
+      ZeeyaMessageQueueVersion: nativeCapabilities.messageQueueVersion,
+      EXAppExtensionAttributes: {
+        EXExtensionPointIdentifier: nativeCapabilities.appIntent.extensionPointIdentifier,
+      },
+    });
     expect(targetSource).toContain('forInfoDictionaryKey: "ZeeyaMessageQueueAppGroup"');
     expect(moduleSource).toContain('forInfoDictionaryKey: "ZeeyaMessageQueueAppGroup"');
+  });
+
+  it("fails configuration when the App Intent cannot access Zeeya's App Group", () => {
+    expect(() =>
+      targetConfigFactory({
+        ...appConfig,
+        ios: { ...appConfig.ios, entitlements: {} },
+      }),
+    ).toThrow(/requires the group\.com\.anonymous\.zeeya App Group entitlement/);
   });
 
   it("keeps the App Intent producer and Expo module consumer on queue contract v1", () => {
@@ -93,13 +107,16 @@ describe("iOS Shortcuts build contract", () => {
   });
 
   it("declares the Face ID permission copy used by the shared biometric setting", () => {
-    expect(appConfig.expo.ios.infoPlist.NSFaceIDUsageDescription).toMatch(/Face ID/);
+    expect(appConfig.ios?.infoPlist?.NSFaceIDUsageDescription).toMatch(/Face ID/);
   });
 
   it("aligns the Expo app deployment target with its iOS 17 App Intent extension", () => {
-    expect(appConfig.expo.plugins).toContainEqual([
+    expect(appConfig.plugins).toContainEqual([
       "expo-build-properties",
-      { ios: { deploymentTarget: "17.0" } },
+      { ios: { deploymentTarget: nativeCapabilities.iosDeploymentTarget } },
     ]);
+    expect(modulePodspec).toContain("native_capabilities.fetch('iosDeploymentTarget')");
+    expect(modulePodspec).not.toContain(":ios => '17.0'");
+    expect(modulePodspec).not.toContain(":tvos");
   });
 });

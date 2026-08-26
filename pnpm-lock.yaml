@@ -282,6 +282,9 @@ importers:
         specifier: 'catalog:'
         version: 4.4.3
     devDependencies:
+      '@expo/plist':
+        specifier: 0.8.1
+        version: 0.8.1
       '@types/better-sqlite3':
         specifier: ^9.6.0
         version: 9.6.0

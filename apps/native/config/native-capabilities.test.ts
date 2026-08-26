@@ -1,0 +1,148 @@
+import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { getConfig, getConfigFilePaths, type ConfigContext } from "expo/config";
+import { describe, expect, it } from "vitest";
+import { z } from "zod";
+
+import appConfig from "../app.config";
+
+const projectRoot = path.join(__dirname, "..");
+const require = createRequire(import.meta.url);
+const expoCli = require.resolve("expo/bin/cli");
+
+const IntrospectionSchema = z.object({
+  extra: z.object({
+    eas: z.object({
+      build: z.object({
+        experimental: z.object({
+          ios: z.object({
+            appExtensions: z.array(z.unknown()),
+          }),
+        }),
+      }),
+    }),
+  }),
+  _internal: z.object({
+    modResults: z.object({
+      android: z.object({
+        manifest: z.object({
+          manifest: z.object({
+            "uses-permission": z.array(
+              z.object({ $: z.record(z.string(), z.string()).optional() }),
+            ),
+          }),
+        }),
+      }),
+      ios: z.object({
+        infoPlist: z.record(z.string(), z.unknown()),
+        entitlements: z.record(z.string(), z.unknown()),
+        podfileProperties: z.record(z.string(), z.unknown()),
+      }),
+    }),
+  }),
+});
+
+function compileNativeContract() {
+  const output = execFileSync(
+    process.execPath,
+    [expoCli, "config", "--type", "introspect", "--json"],
+    {
+      cwd: projectRoot,
+      encoding: "utf8",
+      env: { ...process.env, FORCE_COLOR: "0" },
+      maxBuffer: 10 * 1024 * 1024,
+    },
+  );
+  const jsonLine = output.trim().split(/\r?\n/).at(-1);
+
+  if (!jsonLine) {
+    throw new Error("Expo config introspection returned no JSON output.");
+  }
+
+  const compiled = IntrospectionSchema.parse(JSON.parse(jsonLine));
+  const modResults = compiled._internal.modResults;
+  const permissions = modResults.android.manifest.manifest["uses-permission"];
+
+  return {
+    readSmsDeclarationCount: permissions.filter(
+      (permission) => permission.$?.["android:name"] === "android.permission.READ_SMS",
+    ).length,
+    queueInfo: {
+      appGroup: modResults.ios.infoPlist.ZeeyaMessageQueueAppGroup,
+      root: modResults.ios.infoPlist.ZeeyaMessageQueueRoot,
+      version: modResults.ios.infoPlist.ZeeyaMessageQueueVersion,
+    },
+    appGroups: modResults.ios.entitlements["com.apple.security.application-groups"],
+    deploymentTarget: modResults.ios.podfileProperties["ios.deploymentTarget"],
+    usesSqlCipher: modResults.ios.podfileProperties["expo.sqlite.useSQLCipher"],
+    appExtensions: compiled.extra.eas.build.experimental.ios.appExtensions,
+  };
+}
+
+describe("Zeeya native capability configuration", () => {
+  it("evaluates one dynamic Expo config for the platform identity and Android SMS permission", () => {
+    const paths = getConfigFilePaths(projectRoot);
+    const { exp } = getConfig(projectRoot, { skipSDKVersionRequirement: true });
+
+    expect(paths.dynamicConfigPath).toBe(path.join(projectRoot, "app.config.ts"));
+    expect(exp.android).toMatchObject({
+      package: "com.anonymous.zeeya",
+      permissions: expect.arrayContaining(["android.permission.READ_SMS"]),
+    });
+    expect(exp.ios).toMatchObject({
+      bundleIdentifier: "com.anonymous.zeeya",
+      infoPlist: {
+        ZeeyaMessageQueueAppGroup: "group.com.anonymous.zeeya",
+        ZeeyaMessageQueueRoot: "message-queue",
+        ZeeyaMessageQueueVersion: "v1",
+      },
+      entitlements: {
+        "com.apple.security.application-groups": ["group.com.anonymous.zeeya"],
+      },
+    });
+    expect(exp.plugins).not.toContain("./plugins/withReadSmsPermission.js");
+  });
+
+  it("rejects a second plugin owner outside the dynamic config", () => {
+    const context = {
+      projectRoot,
+      staticConfigPath: path.join(projectRoot, "app.json"),
+      packageJsonPath: path.join(projectRoot, "package.json"),
+      config: {
+        name: "zeeya",
+        slug: "zeeya",
+        plugins: ["expo-router"],
+      },
+    } satisfies ConfigContext;
+
+    expect(() => appConfig(context)).toThrow(
+      /Declare Expo plugins in app\.config\.ts so Zeeya's native plugin order has one owner/,
+    );
+  });
+
+  it("compiles the Android permission and iOS queue contract through Expo's real mod graph", () => {
+    const first = compileNativeContract();
+    const second = compileNativeContract();
+
+    expect(first).toMatchObject({
+      readSmsDeclarationCount: 1,
+      queueInfo: {
+        appGroup: "group.com.anonymous.zeeya",
+        root: "message-queue",
+        version: "v1",
+      },
+      appGroups: ["group.com.anonymous.zeeya"],
+      deploymentTarget: "17.0",
+      usesSqlCipher: "true",
+    });
+    expect(first.appExtensions).toContainEqual({
+      bundleIdentifier: "com.anonymous.zeeya.shortcuts",
+      targetName: "ZeeyaMessageImport",
+      entitlements: {
+        "com.apple.security.application-groups": ["group.com.anonymous.zeeya"],
+      },
+    });
+    expect(second).toEqual(first);
+  }, 30_000);
+});
