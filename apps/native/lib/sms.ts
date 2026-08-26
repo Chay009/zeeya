@@ -21,16 +21,25 @@ export function isSmsReadSupported(): boolean {
   return Platform.OS === "android";
 }
 
+export async function hasSmsCapturePermissions(): Promise<boolean> {
+  if (!isSmsReadSupported()) return false;
+  const [canRead, canReceive] = await Promise.all([
+    PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_SMS),
+    PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.RECEIVE_SMS),
+  ]);
+  return canRead && canReceive;
+}
+
 export async function requestSmsReadPermission(): Promise<boolean> {
   if (!isSmsReadSupported()) return false;
-  const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.READ_SMS, {
-    title: "Read SMS",
-    message:
-      "zeeya reads your bank and transaction messages on-device to build your transaction history. Your SMS content never leaves your phone.",
-    buttonPositive: "Allow",
-    buttonNegative: "Deny",
-  });
-  return granted === PermissionsAndroid.RESULTS.GRANTED;
+  const results = await PermissionsAndroid.requestMultiple([
+    PermissionsAndroid.PERMISSIONS.READ_SMS,
+    PermissionsAndroid.PERMISSIONS.RECEIVE_SMS,
+  ]);
+  return (
+    results[PermissionsAndroid.PERMISSIONS.READ_SMS] === PermissionsAndroid.RESULTS.GRANTED &&
+    results[PermissionsAndroid.PERMISSIONS.RECEIVE_SMS] === PermissionsAndroid.RESULTS.GRANTED
+  );
 }
 
 // Reads the device's existing SMS inbox via the native content provider

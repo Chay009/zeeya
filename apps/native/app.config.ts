@@ -6,6 +6,7 @@ import path from "node:path";
 import nativeCapabilities from "./config/native-capabilities.json";
 
 const READ_SMS = "android.permission.READ_SMS";
+const RECEIVE_SMS = "android.permission.RECEIVE_SMS";
 
 function unique<T>(values: T[]): T[] {
   return [...new Set(values)];
@@ -64,7 +65,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     android: {
       ...config.android,
       package: nativeCapabilities.androidPackage,
-      permissions: unique([...(config.android?.permissions ?? []), READ_SMS]),
+      permissions: unique([...(config.android?.permissions ?? []), READ_SMS, RECEIVE_SMS]),
     },
     ios: {
       ...config.ios,
@@ -101,6 +102,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         "expo-build-properties",
         { ios: { deploymentTarget: nativeCapabilities.iosDeploymentTarget } },
       ],
+      "./plugins/withRealtimeSmsReceiver",
       "@bacons/apple-targets",
     ],
   };

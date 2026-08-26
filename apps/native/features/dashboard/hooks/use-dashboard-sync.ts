@@ -1,6 +1,6 @@
 import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AppState, PermissionsAndroid } from "react-native";
+import { AppState } from "react-native";
 
 import { deriveDashboard, type Dashboard } from "@/lib/dashboard";
 import {
@@ -8,7 +8,8 @@ import {
   isDeviceMessageCaptureSupported,
   syncDeviceMessages,
 } from "@/lib/device-message-sync";
-import { requestSmsReadPermission } from "@/lib/sms";
+import { hasSmsCapturePermissions, requestSmsReadPermission } from "@/lib/sms";
+import { subscribeToMessageSync } from "@/features/capabilities/message-sync-events";
 
 export type Status =
   | "checking"
@@ -52,14 +53,14 @@ export function useDashboardSync() {
     }
   }, []);
 
-  // Android requires READ_SMS before the shared load; iOS has no inbox
-  // permission and can immediately drain its Shortcuts queue.
+  // Android requires READ_SMS and RECEIVE_SMS before the shared load; iOS
+  // has no inbox permission and can immediately drain its Shortcuts queue.
   const checkPermissionThenLoad = useCallback(() => {
     if (!deviceMessageCaptureRequiresPermission()) {
       void load();
       return;
     }
-    PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_SMS)
+    hasSmsCapturePermissions()
       .then((granted) => {
         if (granted) void load();
         else setStatus("needs-permission");
@@ -95,6 +96,19 @@ export function useDashboardSync() {
     });
     return () => subscription.remove();
   }, [checkPermissionThenLoad]);
+
+  // The app-root CapabilityProvider also syncs the inbox so messages are not
+  // stranded while another route is visible. Reuse its already-derived
+  // dashboard here when that sync completes instead of parsing the inbox a
+  // second time just to refresh this screen.
+  useEffect(() => {
+    return subscribeToMessageSync((nextDashboard) => {
+      loadIdRef.current += 1;
+      setDashboard(nextDashboard);
+      setError(null);
+      setStatus("ready");
+    });
+  }, []);
 
   const connect = useCallback(async () => {
     setStatus("loading");

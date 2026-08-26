@@ -1,13 +1,18 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, PermissionsAndroid, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { Calendar, type DateData } from "react-native-calendars";
 
 import { Container } from "@/components/container";
 import { dashboardTheme as t } from "@/constants/dashboard-theme";
 import { backfillSms } from "@/db/backfill";
-import { isSmsReadSupported, readSmsInbox, requestSmsReadPermission } from "@/lib/sms";
+import {
+  hasSmsCapturePermissions,
+  isSmsReadSupported,
+  readSmsInbox,
+  requestSmsReadPermission,
+} from "@/lib/sms";
 import {
   calendarSelectionToEpochRange,
   selectCalendarDay,
@@ -38,7 +43,7 @@ export function BackfillScreen() {
   const [showCustomRange, setShowCustomRange] = useState(false);
   const [customRange, setCustomRange] = useState<CalendarRangeSelection | null>(null);
   // Reaching this screen (via the dashboard's header icon) doesn't itself
-  // prove SMS read permission was granted — the dashboard's own status
+  // prove SMS capture permissions were granted — the dashboard's own status
   // gates only its own load(), not navigation to other routes. Checked
   // independently here rather than assumed, so tapping a preset without
   // permission shows a real "grant access" prompt instead of readSmsInbox
@@ -47,7 +52,7 @@ export function BackfillScreen() {
 
   useEffect(() => {
     if (!isSmsReadSupported()) return;
-    PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_SMS)
+    hasSmsCapturePermissions()
       .then((granted) => {
         setPermission(granted ? "granted" : "needs-permission");
       })

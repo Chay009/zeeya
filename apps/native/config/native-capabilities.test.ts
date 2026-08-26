@@ -31,6 +31,26 @@ const IntrospectionSchema = z.object({
             "uses-permission": z.array(
               z.object({ $: z.record(z.string(), z.string()).optional() }),
             ),
+            application: z.array(
+              z.object({
+                receiver: z
+                  .array(
+                    z.object({
+                      $: z.record(z.string(), z.string()).optional(),
+                      "intent-filter": z
+                        .array(
+                          z.object({
+                            action: z.array(
+                              z.object({ $: z.record(z.string(), z.string()).optional() }),
+                            ),
+                          }),
+                        )
+                        .optional(),
+                    }),
+                  )
+                  .optional(),
+              }),
+            ),
           }),
         }),
       }),
@@ -63,11 +83,19 @@ function compileNativeContract() {
   const compiled = IntrospectionSchema.parse(JSON.parse(jsonLine));
   const modResults = compiled._internal.modResults;
   const permissions = modResults.android.manifest.manifest["uses-permission"];
+  const receivers = modResults.android.manifest.manifest.application[0]?.receiver ?? [];
 
   return {
     readSmsDeclarationCount: permissions.filter(
       (permission) => permission.$?.["android:name"] === "android.permission.READ_SMS",
     ).length,
+    receiveSmsDeclarationCount: permissions.filter(
+      (permission) => permission.$?.["android:name"] === "android.permission.RECEIVE_SMS",
+    ).length,
+    realtimeSmsReceivers: receivers.filter(
+      (receiver) =>
+        receiver.$?.["android:name"] === "expo.modules.zeeyamessagequeue.ZeeyaSmsReceiver",
+    ),
     queueInfo: {
       appGroup: modResults.ios.infoPlist.ZeeyaMessageQueueAppGroup,
       root: modResults.ios.infoPlist.ZeeyaMessageQueueRoot,
@@ -88,7 +116,10 @@ describe("Zeeya native capability configuration", () => {
     expect(paths.dynamicConfigPath).toBe(path.join(projectRoot, "app.config.ts"));
     expect(exp.android).toMatchObject({
       package: "com.anonymous.zeeya",
-      permissions: expect.arrayContaining(["android.permission.READ_SMS"]),
+      permissions: expect.arrayContaining([
+        "android.permission.READ_SMS",
+        "android.permission.RECEIVE_SMS",
+      ]),
     });
     expect(exp.ios).toMatchObject({
       bundleIdentifier: "com.anonymous.zeeya",
@@ -127,6 +158,7 @@ describe("Zeeya native capability configuration", () => {
 
     expect(first).toMatchObject({
       readSmsDeclarationCount: 1,
+      receiveSmsDeclarationCount: 1,
       queueInfo: {
         appGroup: "group.com.anonymous.zeeya",
         root: "message-queue",
@@ -136,6 +168,24 @@ describe("Zeeya native capability configuration", () => {
       deploymentTarget: "17.0",
       usesSqlCipher: "true",
     });
+    expect(first.realtimeSmsReceivers).toEqual([
+      {
+        $: {
+          "android:name": "expo.modules.zeeyamessagequeue.ZeeyaSmsReceiver",
+          "android:exported": "true",
+          "android:permission": "android.permission.BROADCAST_SMS",
+        },
+        "intent-filter": [
+          {
+            action: [
+              {
+                $: { "android:name": "android.provider.Telephony.SMS_RECEIVED" },
+              },
+            ],
+          },
+        ],
+      },
+    ]);
     expect(first.appExtensions).toContainEqual({
       bundleIdentifier: "com.anonymous.zeeya.shortcuts",
       targetName: "ZeeyaMessageImport",

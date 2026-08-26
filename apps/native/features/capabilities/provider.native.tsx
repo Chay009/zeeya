@@ -1,14 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { PropsWithChildren } from "react";
-import {
-  ActivityIndicator,
-  AppState,
-  PermissionsAndroid,
-  Platform,
-  Pressable,
-  Text,
-  View,
-} from "react-native";
+import { ActivityIndicator, AppState, Platform, Pressable, Text, View } from "react-native";
 
 import {
   DEFAULT_LOCAL_SETTINGS,
@@ -21,13 +13,16 @@ import {
   isDeviceMessageCaptureSupported,
   syncDeviceMessages,
 } from "@/lib/device-message-sync";
+import { hasSmsCapturePermissions } from "@/lib/sms";
 import { setBackgroundSyncRegistration } from "./background/task";
+import { publishMessageSync } from "./message-sync-events";
 import { requestTransactionNotificationPermission } from "./notifications/notifications";
 import {
   authenticateForAppAccess,
   canEnableBiometricLock,
   setScreenCaptureProtection,
 } from "./native-capabilities";
+import { subscribeToRealtimeSms } from "./realtime-sms";
 
 export type CapabilityPreference = keyof LocalSettings;
 
@@ -56,14 +51,12 @@ export function CapabilityProvider({ children }: PropsWithChildren) {
 
   const syncCapturedMessages = useCallback(async () => {
     if (!isDeviceMessageCaptureSupported()) return;
-    if (
-      deviceMessageCaptureRequiresPermission() &&
-      !(await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_SMS))
-    ) {
+    if (deviceMessageCaptureRequiresPermission() && !(await hasSmsCapturePermissions())) {
       return;
     }
     try {
-      await syncDeviceMessages();
+      const dashboard = await syncDeviceMessages();
+      publishMessageSync(dashboard);
     } catch (cause) {
       // Capture is opportunistic at the app root. The dashboard still owns
       // user-visible retry/error state, while this path ensures queued iOS
@@ -128,6 +121,13 @@ export function CapabilityProvider({ children }: PropsWithChildren) {
   }, [loaded, syncCapturedMessages]);
 
   useEffect(() => {
+    if (!loaded) return;
+    return subscribeToRealtimeSms(syncCapturedMessages, (cause) => {
+      console.warn("Zeeya could not process a newly received SMS", cause);
+    });
+  }, [loaded, syncCapturedMessages]);
+
+  useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
       if (state !== "active") {
         if (settingsRef.current.biometricLockEnabled) setUnlocked(false);
@@ -144,12 +144,8 @@ export function CapabilityProvider({ children }: PropsWithChildren) {
       setError(null);
       try {
         if (key === "backgroundSyncEnabled") {
-          if (
-            Platform.OS === "android" &&
-            enabled &&
-            !(await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_SMS))
-          ) {
-            setError("Grant SMS read access from the dashboard before enabling background sync.");
+          if (Platform.OS === "android" && enabled && !(await hasSmsCapturePermissions())) {
+            setError("Grant SMS access from the dashboard before enabling background sync.");
             return false;
           }
           await setBackgroundSyncRegistration(enabled);

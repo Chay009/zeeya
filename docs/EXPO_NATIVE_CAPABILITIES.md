@@ -6,9 +6,13 @@ This document records the product and operational boundaries of Zeeya's native c
 
 - Uses `expo-background-task` / Android WorkManager, with a 15-minute minimum interval.
 - Android chooses the actual execution time. It is periodic catch-up, not instant SMS delivery.
+- Android's `SMS_RECEIVED` receiver records a durable, privacy-safe arrival signal and wakes the
+  existing inbox/ledger sync while the app process is active. If the process is stopped, the signal
+  is consumed on the next app/background sync; the receiver never parses or stores raw SMS text.
 - Zeeya does not request battery-optimization exemption or an unrestricted background-service permission.
 - The task reuses the same checkpointed, idempotent `syncInbox()` path as foreground refresh.
-- It is opt-in under **Privacy & automation** and requires existing `READ_SMS` permission.
+- It is opt-in under **Privacy & automation** and requires existing `READ_SMS` and `RECEIVE_SMS`
+  permissions.
 
 ## Notifications
 
@@ -20,6 +24,8 @@ This document records the product and operational boundaries of Zeeya's native c
 ## Local privacy controls
 
 - Biometric lock and screen-capture protection are opt-in and stored in on-device SQLite.
+- Biometric lock permits the operating system's enrolled device PIN, pattern, password, or passcode
+  as its fallback; Zeeya does not store a second app-specific PIN.
 - Biometric results and secrets are never stored in SQLite.
 - The SQLite encryption key is 256 random bits stored in `expo-secure-store` with device-only accessibility.
 - Existing `zeeya.db` installations are copied transactionally to `zeeya-secure.db`; the plaintext file is

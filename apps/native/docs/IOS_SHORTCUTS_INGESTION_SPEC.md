@@ -12,7 +12,11 @@ Zeeya's parser, ledger, dashboard, privacy controls, and insights are shared Rea
 
 Add an Apple Shortcuts/App Intent capture adapter alongside the existing Android inbox adapter. A user creates a Personal Automation for incoming Messages and passes the message content and sender to Zeeya's “Import Financial Message” action. The App Intent stores an immutable pending-message envelope in an App Group queue. When Zeeya opens or returns to the foreground, a local Expo native module drains that queue through the existing idempotent SMS ledger and Malana parser.
 
-Android continues direct SMS inbox/checkpoint synchronization. Both platforms converge at the shared ingestion boundary and use the same parser, bank/account model, transactions, balances, subscriptions, categories, privacy settings, and UI.
+Android continues direct SMS inbox/checkpoint synchronization. Its manifest receiver records a
+privacy-safe arrival signal so the existing inbox/ledger sync can catch up while the process is
+active; it never parses or stores broadcast payloads. Both platforms converge at the shared
+ingestion boundary and use the same parser, bank/account model, transactions, balances,
+subscriptions, categories, privacy settings, and UI.
 
 ## User Stories
 
@@ -65,7 +69,6 @@ Android continues direct SMS inbox/checkpoint synchronization. Both platforms co
 
 - Historical iOS Messages access or silent Personal Automation installation.
 - Reimplementing Malana in Swift.
-- Android `SMS_RECEIVED` BroadcastReceiver work.
 - Raw-SMS server upload, category redesign, or unrelated normalized-table optimization.
 
 ## Further Notes

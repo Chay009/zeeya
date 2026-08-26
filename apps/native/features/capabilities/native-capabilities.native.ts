@@ -1,6 +1,7 @@
 import * as LocalAuthentication from "expo-local-authentication";
 import * as ScreenCapture from "expo-screen-capture";
 import { Platform } from "react-native";
+import { DEVICE_LOCK_AUTHENTICATION_OPTIONS } from "./device-lock-policy";
 
 const SCREEN_CAPTURE_KEY = "zeeya-financial-data";
 
@@ -8,13 +9,7 @@ export async function authenticateForAppAccess(): Promise<boolean> {
   if (!(await LocalAuthentication.hasHardwareAsync())) return false;
   if (!(await LocalAuthentication.isEnrolledAsync())) return false;
 
-  const result = await LocalAuthentication.authenticateAsync({
-    promptMessage: "Unlock Zeeya",
-    promptSubtitle: "Authenticate to view your financial data",
-    cancelLabel: "Cancel",
-    biometricsSecurityLevel: "strong",
-    disableDeviceFallback: false,
-  });
+  const result = await LocalAuthentication.authenticateAsync(DEVICE_LOCK_AUTHENTICATION_OPTIONS);
   return result.success;
 }
 
