@@ -7,9 +7,22 @@ import { hp } from "../theme";
 const SIZE = 104;
 const R = 44;
 const CIRC = 2 * Math.PI * R;
-const PCT = 0.85;
 
-export function BudgetCard() {
+export function BudgetCard({
+  monthLabel,
+  spent,
+  limit,
+  usedPercent,
+  remaining,
+}: {
+  monthLabel: string;
+  spent: string;
+  limit: string | null;
+  usedPercent: number | null;
+  remaining: string | null;
+}) {
+  const hasBudget = limit !== null && usedPercent !== null;
+
   return (
     <View
       style={{
@@ -38,7 +51,7 @@ export function BudgetCard() {
             stroke={hp.emerald}
             strokeWidth="9"
             strokeLinecap="round"
-            strokeDasharray={`${CIRC * PCT} ${CIRC}`}
+            strokeDasharray={`${hasBudget ? (CIRC * usedPercent) / 100 : 0} ${CIRC}`}
           />
         </Svg>
         <View
@@ -48,7 +61,9 @@ export function BudgetCard() {
             justifyContent: "center",
           }}
         >
-          <Text style={{ fontSize: 20, fontWeight: "800", color: hp.ink }}>85%</Text>
+          <Text style={{ fontSize: 20, fontWeight: "800", color: hp.ink }}>
+            {hasBudget ? `${usedPercent}%` : "—"}
+          </Text>
           <Text style={{ fontSize: 9, fontWeight: "700", letterSpacing: 1.2, color: hp.mutedSoft }}>
             USED
           </Text>
@@ -57,16 +72,41 @@ export function BudgetCard() {
 
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={{ fontSize: 10, fontWeight: "700", letterSpacing: 1.6, color: hp.muted }}>
-          MAY BUDGET
+          {monthLabel.toUpperCase()} BUDGET
         </Text>
-        <Text style={{ marginTop: 4, fontSize: 21, fontWeight: "800", color: hp.ink }}>
-          ₹1,35,200{" "}
-          <Text style={{ fontSize: 14, fontWeight: "700", color: hp.mutedSoft }}>of ₹1,60,000</Text>
-        </Text>
+        {limit ? (
+          <Text
+            style={{
+              marginTop: 4,
+              fontSize: 21,
+              fontWeight: "800",
+              letterSpacing: -1.25,
+              color: hp.ink,
+            }}
+          >
+            {spent}{" "}
+            <Text style={{ fontSize: 14, fontWeight: "700", color: hp.mutedSoft }}>of {limit}</Text>
+          </Text>
+        ) : (
+          <Text
+            style={{
+              marginTop: 4,
+              fontSize: 19,
+              fontWeight: "800",
+              color: hp.ink,
+            }}
+          >
+            No budget set
+          </Text>
+        )}
         <View style={{ marginTop: 8, flexDirection: "row", alignItems: "center", gap: 6 }}>
-          <Ionicons name="trending-up" size={14} color={hp.emeraldDeep} />
+          <Ionicons
+            name={hasBudget ? "trending-up" : "information-circle-outline"}
+            size={14}
+            color={hp.emeraldDeep}
+          />
           <Text style={{ fontSize: 12, fontWeight: "700", color: hp.emeraldDeep }}>
-            ₹24,800 left · on track
+            {remaining ?? "Set a limit to track progress"}
           </Text>
         </View>
       </View>

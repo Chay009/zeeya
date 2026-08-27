@@ -1,4 +1,4 @@
-import { Text } from "react-native";
+import { Text, View } from "react-native";
 
 import type { PreviewSub } from "../data";
 import { hp } from "../theme";
@@ -28,6 +28,48 @@ export const previewScreenTitleStyle = {
   letterSpacing: -1.3,
   color: hp.ink,
 };
+
+export function SubscriptionSpendValue({ value, size = 28 }: { value: string; size?: number }) {
+  const lines = value.split(" + ").map((part, index) => (index === 0 ? part : `+ ${part}`));
+  const hasAmount = value !== "—";
+
+  return (
+    <View
+      style={{
+        marginTop: 6,
+        minWidth: 0,
+      }}
+    >
+      {lines.map((line, index) => (
+        <Text
+          key={`${index}-${line}`}
+          style={{
+            fontSize: size,
+            fontWeight: "800",
+            letterSpacing: -(size * (size >= 32 ? 0.07 : 0.06)),
+            lineHeight: size,
+            color: hp.ink,
+          }}
+        >
+          {line}
+          {hasAmount && index === lines.length - 1 && (
+            <Text
+              style={{
+                fontSize: 10,
+                fontWeight: "700",
+                letterSpacing: 0.2,
+                color: hp.mutedSoft,
+              }}
+            >
+              {" "}
+              / month
+            </Text>
+          )}
+        </Text>
+      ))}
+    </View>
+  );
+}
 
 const typePalette: Record<PreviewSub["type"], { backgroundColor: string; color: string }> = {
   autopay: { backgroundColor: hp.chipBg, color: hp.emeraldDeep },

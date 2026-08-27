@@ -16,7 +16,7 @@ export function BrandLogo({
   letter: string;
   tile: string;
   ink: string;
-  img: string;
+  img?: string;
   size?: number;
   radius?: number;
   iconRatio?: number;
@@ -37,7 +37,7 @@ export function BrandLogo({
       <Text style={{ color: ink, fontWeight: "800", fontSize: Math.round(size * 0.36) }}>
         {letter}
       </Text>
-      {!failed && (
+      {!failed && img && (
         <Image
           source={{ uri: img }}
           onError={() => setFailed(true)}

@@ -1,9 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
-import * as React from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { useMemo, useState } from "react";
+import { FlatList, Pressable, ScrollView, Text, View } from "react-native";
 
-import { previewSubs } from "../data";
-import type { PreviewSub } from "../data";
+import type { HomePreviewData, PreviewSub } from "../data";
 import { hp } from "../theme";
 import { BrandLogo } from "./brand-logo";
 import {
@@ -11,6 +10,7 @@ import {
   previewEyebrowStyle,
   previewScreenTitleStyle,
   ReactivatedBadge,
+  SubscriptionSpendValue,
   SubscriptionStatusBadge,
   SubscriptionTypeBadge,
 } from "./subscription-ui";
@@ -28,26 +28,28 @@ export function SubscriptionsList({
   onBack,
   onSelect,
   topInset,
+  subscriptions,
 }: {
   onBack: () => void;
   onSelect: (subscription: PreviewSub) => void;
   topInset: number;
+  subscriptions: HomePreviewData["subscriptions"];
 }) {
-  const [filter, setFilter] = React.useState<Filter>("all");
-  const visible = filter === "all" ? previewSubs : previewSubs.filter((sub) => sub.type === filter);
+  const [filter, setFilter] = useState<Filter>("all");
+  const visible = useMemo(
+    () =>
+      filter === "all"
+        ? subscriptions.items
+        : subscriptions.items.filter((sub) => sub.type === filter),
+    [filter, subscriptions.items],
+  );
   const count = (key: Filter) =>
-    key === "all" ? previewSubs.length : previewSubs.filter((sub) => sub.type === key).length;
+    key === "all"
+      ? subscriptions.items.length
+      : subscriptions.items.filter((sub) => sub.type === key).length;
 
-  return (
-    <ScrollView
-      style={{ flex: 1 }}
-      contentContainerStyle={{
-        paddingHorizontal: 20,
-        paddingTop: Math.max(12, topInset),
-        paddingBottom: 140,
-      }}
-      showsVerticalScrollIndicator={false}
-    >
+  const header = (
+    <View style={{ paddingHorizontal: 20 }}>
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
         <Pressable
           onPress={onBack}
@@ -60,15 +62,7 @@ export function SubscriptionsList({
           <Text style={previewEyebrowStyle}>RECURRING PAYMENTS</Text>
           <Text style={previewScreenTitleStyle}>Subscriptions</Text>
         </View>
-        <Pressable
-          accessibilityLabel="Add subscription"
-          style={[
-            previewCircleButtonStyle,
-            { backgroundColor: hp.inkDeep, borderColor: hp.inkDeep },
-          ]}
-        >
-          <Ionicons name="add" size={20} color={hp.lime} />
-        </Pressable>
+        <View style={{ width: 42 }} />
       </View>
 
       <View
@@ -84,20 +78,9 @@ export function SubscriptionsList({
           gap: 12,
         }}
       >
-        <View>
+        <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={previewEyebrowStyle}>MONTHLY SPEND</Text>
-          <Text
-            style={{
-              marginTop: 8,
-              fontSize: 32,
-              fontWeight: "800",
-              letterSpacing: -2,
-              color: hp.ink,
-            }}
-          >
-            ₹27,498{" "}
-            <Text style={{ fontSize: 11, letterSpacing: 0, color: hp.mutedSoft }}>/ month</Text>
-          </Text>
+          <SubscriptionSpendValue value={subscriptions.monthlySpend} size={32} />
         </View>
         <View
           style={{
@@ -108,7 +91,7 @@ export function SubscriptionsList({
           }}
         >
           <Text style={{ fontSize: 10, fontWeight: "800", color: hp.emeraldDeep }}>
-            4 active · 1 cancelled
+            {subscriptions.activeCount} active · {subscriptions.cancelledCount} cancelled
           </Text>
         </View>
       </View>
@@ -124,6 +107,8 @@ export function SubscriptionsList({
             <Pressable
               key={item.key}
               onPress={() => setFilter(item.key)}
+              accessibilityRole="button"
+              accessibilityState={{ selected }}
               style={{
                 flexDirection: "row",
                 alignItems: "center",
@@ -151,90 +136,129 @@ export function SubscriptionsList({
         })}
       </ScrollView>
 
-      <View
-        style={{
-          borderRadius: 24,
-          borderWidth: 1,
-          borderColor: hp.border,
-          backgroundColor: "rgba(255,255,255,0.75)",
-          paddingHorizontal: 16,
-        }}
-      >
-        {visible.length === 0 ? (
-          <View style={{ alignItems: "center", paddingVertical: 32 }}>
-            <Text style={{ fontSize: 14, fontWeight: "800", color: hp.inkSoft }}>
-              Nothing here yet
-            </Text>
-            <Text style={{ marginTop: 4, fontSize: 12, color: hp.muted }}>
-              Try another filter to see your recurring payments.
-            </Text>
-          </View>
-        ) : (
-          visible.map((sub, index) => (
-            <Pressable
-              key={sub.key}
-              onPress={() => onSelect(sub)}
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 12,
-                paddingVertical: 12,
-                borderTopWidth: index === 0 ? 0 : 1,
-                borderTopColor: "#eef4ef",
-              }}
-            >
-              <BrandLogo
-                letter={sub.letter}
-                tile={sub.tile}
-                ink={sub.ink}
-                img={sub.img}
-                size={44}
-                radius={15}
-                iconRatio={0.64}
-              />
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text
-                  numberOfLines={1}
-                  style={{
-                    fontSize: 15,
-                    fontWeight: "800",
-                    color: sub.status === "Cancelled" ? "#7c8a80" : hp.ink,
-                  }}
-                >
-                  {sub.name}
-                </Text>
-                <View
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    flexWrap: "wrap",
-                    gap: 6,
-                    marginTop: 5,
-                  }}
-                >
-                  <SubscriptionStatusBadge subscription={sub} />
-                  <Text style={{ fontSize: 11, color: hp.mutedSoft }}>
-                    {sub.status === "Cancelled" ? "14 Jul" : `Renews ${sub.renew}`}
-                  </Text>
-                  {sub.reactivated && <ReactivatedBadge />}
-                  <SubscriptionTypeBadge subscription={sub} />
-                </View>
-              </View>
+      {visible.length > 0 && (
+        <Text
+          style={{
+            marginBottom: 8,
+            fontSize: 10,
+            fontWeight: "700",
+            letterSpacing: 1.6,
+            color: hp.muted,
+          }}
+        >
+          {visible.length} {visible.length === 1 ? "subscription" : "subscriptions"}
+        </Text>
+      )}
+    </View>
+  );
+
+  return (
+    <FlatList<PreviewSub>
+      data={visible}
+      keyExtractor={(item) => item.key}
+      renderItem={({ item, index }) => {
+        const first = index === 0;
+        const last = index === visible.length - 1;
+        return (
+          <Pressable
+            onPress={() => onSelect(item)}
+            accessibilityRole="button"
+            accessibilityLabel={`Open ${item.name}`}
+            style={{
+              marginHorizontal: 20,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 12,
+              paddingHorizontal: 16,
+              paddingVertical: 12,
+              backgroundColor: "rgba(255,255,255,0.75)",
+              borderLeftWidth: 1,
+              borderRightWidth: 1,
+              borderColor: hp.border,
+              borderTopWidth: 1,
+              borderTopColor: hp.border,
+              borderBottomWidth: last ? 1 : 0,
+              borderBottomColor: hp.border,
+              borderTopLeftRadius: first ? 24 : 0,
+              borderTopRightRadius: first ? 24 : 0,
+              borderBottomLeftRadius: last ? 24 : 0,
+              borderBottomRightRadius: last ? 24 : 0,
+            }}
+          >
+            <BrandLogo
+              letter={item.letter}
+              tile={item.tile}
+              ink={item.ink}
+              img={item.img}
+              size={44}
+              radius={15}
+              iconRatio={0.64}
+            />
+            <View style={{ flex: 1, minWidth: 0 }}>
               <Text
+                numberOfLines={1}
                 style={{
-                  fontSize: 14,
+                  fontSize: 15,
                   fontWeight: "800",
-                  color: sub.status === "Cancelled" ? "#7d8980" : hp.ink,
-                  textDecorationLine: sub.status === "Cancelled" ? "line-through" : "none",
-                  textDecorationColor: "#b8b5ab",
+                  color: item.status === "Cancelled" ? "#7c8a80" : hp.ink,
                 }}
               >
-                {sub.amount}
+                {item.name}
               </Text>
-            </Pressable>
-          ))
-        )}
-      </View>
-    </ScrollView>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: 6,
+                  marginTop: 5,
+                }}
+              >
+                <SubscriptionStatusBadge subscription={item} />
+                <Text style={{ fontSize: 11, color: hp.mutedSoft }}>{item.dateLabel}</Text>
+                {item.reactivated && <ReactivatedBadge />}
+                <SubscriptionTypeBadge subscription={item} />
+              </View>
+            </View>
+            <Text
+              style={{
+                fontSize: 14,
+                fontWeight: "800",
+                color: item.status === "Cancelled" ? "#7d8980" : hp.ink,
+                textDecorationLine: item.status === "Cancelled" ? "line-through" : "none",
+                textDecorationColor: "#b8b5ab",
+              }}
+            >
+              {item.amount}
+            </Text>
+          </Pressable>
+        );
+      }}
+      ListHeaderComponent={header}
+      ListEmptyComponent={
+        <View
+          style={{
+            marginHorizontal: 20,
+            borderWidth: 1,
+            borderColor: hp.border,
+            borderRadius: 24,
+            backgroundColor: "rgba(255,255,255,0.75)",
+            alignItems: "center",
+            paddingVertical: 32,
+            paddingHorizontal: 20,
+          }}
+        >
+          <Text style={{ fontSize: 14, fontWeight: "800", color: hp.inkSoft }}>
+            Nothing here yet
+          </Text>
+          <Text style={{ marginTop: 4, fontSize: 12, color: hp.muted, textAlign: "center" }}>
+            Try another filter to see your recurring payments.
+          </Text>
+        </View>
+      }
+      contentContainerStyle={{ paddingTop: Math.max(12, topInset), paddingBottom: 32 }}
+      showsVerticalScrollIndicator={false}
+      style={{ flex: 1 }}
+    />
   );
 }

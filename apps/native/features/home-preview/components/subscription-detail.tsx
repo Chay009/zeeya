@@ -27,7 +27,7 @@ export function SubscriptionDetail({
       contentContainerStyle={{
         paddingHorizontal: 20,
         paddingTop: Math.max(12, topInset),
-        paddingBottom: 140,
+        paddingBottom: 32,
       }}
       showsVerticalScrollIndicator={false}
     >
@@ -45,9 +45,7 @@ export function SubscriptionDetail({
             {subscription.name}
           </Text>
         </View>
-        <Pressable accessibilityLabel="More options" style={previewCircleButtonStyle}>
-          <Ionicons name="ellipsis-horizontal" size={19} color={hp.inkSoft} />
-        </Pressable>
+        <View style={{ width: 42 }} />
       </View>
 
       <View
@@ -100,15 +98,22 @@ export function SubscriptionDetail({
           <View style={{ flex: 1 }}>
             <Text style={metricLabel}>AMOUNT</Text>
             <Text style={metricValue}>
-              {subscription.amount}{" "}
-              <Text style={{ fontSize: 10, fontWeight: "500", color: hp.mutedSoft }}>/ month</Text>
+              {subscription.amount}
+              {subscription.amountValue !== null && (
+                <Text style={{ fontSize: 10, fontWeight: "500", color: hp.mutedSoft }}>
+                  {" "}
+                  / month
+                </Text>
+              )}
             </Text>
           </View>
           <View
             style={{ flex: 1, borderLeftWidth: 1, borderLeftColor: "#eef4ef", paddingLeft: 16 }}
           >
-            <Text style={metricLabel}>NEXT RENEWAL</Text>
-            <Text style={metricValue}>{subscription.renew}</Text>
+            <Text style={metricLabel}>{subscription.dateLabelTitle}</Text>
+            <Text style={metricValue}>
+              {subscription.dateLabel.replace(/^(Last seen|Updated) /, "")}
+            </Text>
           </View>
         </View>
       </View>
@@ -129,7 +134,7 @@ export function SubscriptionDetail({
         <View style={{ marginTop: 20 }}>
           {subscription.timeline.map((event, index) => (
             <View
-              key={`${event.label}-${event.time}`}
+              key={`${event.label}-${event.time}-${index}`}
               style={{ flexDirection: "row", minHeight: 62 }}
             >
               <View style={{ width: 28, alignItems: "center" }}>
@@ -176,6 +181,6 @@ const metricValue = {
   marginTop: 4,
   fontSize: 22,
   fontWeight: "800" as const,
-  letterSpacing: -1,
+  letterSpacing: -1.1,
   color: hp.ink,
 };
