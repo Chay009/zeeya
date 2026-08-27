@@ -109,6 +109,41 @@ export const syncCheckpoint = sqliteTable("sync_checkpoint", {
   updatedAt: integer("updated_at").notNull(),
 });
 
+// User-controlled, device-local capability preferences. These flags are
+// intentionally separate from authentication/profile data: they configure
+// what this installation may do in the background or while displaying
+// sensitive financial information. Biometric results and encryption keys
+// are never persisted here.
+export const localSettings = sqliteTable(
+  "local_settings",
+  {
+    id: text("id").primaryKey(),
+    backgroundSyncEnabled: integer("background_sync_enabled", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    transactionNotificationsEnabled: integer("transaction_notifications_enabled", {
+      mode: "boolean",
+    })
+      .notNull()
+      .default(false),
+    biometricLockEnabled: integer("biometric_lock_enabled", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    screenCaptureProtectionEnabled: integer("screen_capture_protection_enabled", {
+      mode: "boolean",
+    })
+      .notNull()
+      .default(false),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [
+    check(
+      "local_settings_boolean_values",
+      sql`${table.backgroundSyncEnabled} IN (0, 1) AND ${table.transactionNotificationsEnabled} IN (0, 1) AND ${table.biometricLockEnabled} IN (0, 1) AND ${table.screenCaptureProtectionEnabled} IN (0, 1)`,
+    ),
+  ],
+);
+
 // ── Normalized layer ─────────────────────────────────────────────────────────
 // Derived from the ledger on ingest. Shaped close to what apps/native's
 // existing dashboard.ts (deriveDashboard) already computes in-memory, and

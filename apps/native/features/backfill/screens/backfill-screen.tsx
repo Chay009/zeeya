@@ -1,25 +1,32 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, PermissionsAndroid, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { Calendar, type DateData } from "react-native-calendars";
 
 import { Container } from "@/components/container";
 import { dashboardTheme as t } from "@/constants/dashboard-theme";
 import { backfillSms } from "@/db/backfill";
-import { isSmsReadSupported, readSmsInbox, requestSmsReadPermission } from "@/lib/sms";
+import {
+  hasSmsReadPermission,
+  isSmsReadSupported,
+  readSmsInbox,
+  requestSmsReadPermission,
+} from "@/lib/sms";
+import {
+  calendarSelectionToEpochRange,
+  selectCalendarDay,
+  type CalendarRangeSelection,
+} from "../date-range";
 
 type BackfillStatus = "idle" | "running" | "done" | "error";
 type PermissionStatus = "checking" | "needs-permission" | "granted" | "error";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-// Fixed presets rather than a free-form calendar picker: no date-picker
-// dependency is installed yet, and a handful of named ranges covers the
-// realistic backfill need (catching up an inbox this app hasn't seen
-// before) without pulling in and native-linking a new library for this
-// alone. `from: 0` for "All time" reads from the epoch — readSmsInbox
-// already treats an out-of-range `since` as "no earlier match," so this
-// needs no special-casing.
+// Presets provide fast paths for common imports; the custom-range calendar
+// below covers exact dates. `from: 0` for "All time" reads from the epoch —
+// readSmsInbox treats an out-of-range `since` as "no earlier match."
 const PRESETS: { label: string; days: number | null }[] = [
   { label: "Last 30 days", days: 30 },
   { label: "Last 3 months", days: 90 },
@@ -33,8 +40,10 @@ export function BackfillScreen() {
   const [error, setError] = useState<string | null>(null);
   const [ingestedCount, setIngestedCount] = useState<number | null>(null);
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
+  const [showCustomRange, setShowCustomRange] = useState(false);
+  const [customRange, setCustomRange] = useState<CalendarRangeSelection | null>(null);
   // Reaching this screen (via the dashboard's header icon) doesn't itself
-  // prove SMS read permission was granted — the dashboard's own status
+  // prove SMS capture permissions were granted — the dashboard's own status
   // gates only its own load(), not navigation to other routes. Checked
   // independently here rather than assumed, so tapping a preset without
   // permission shows a real "grant access" prompt instead of readSmsInbox
@@ -43,7 +52,7 @@ export function BackfillScreen() {
 
   useEffect(() => {
     if (!isSmsReadSupported()) return;
-    PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_SMS)
+    hasSmsReadPermission()
       .then((granted) => {
         setPermission(granted ? "granted" : "needs-permission");
       })
@@ -85,6 +94,42 @@ export function BackfillScreen() {
     }
   }, []);
 
+  const runCustomBackfill = useCallback(async () => {
+    if (!customRange?.to) return;
+    setStatus("running");
+    setSelectedLabel("Custom range");
+    setError(null);
+    try {
+      const result = await backfillSms(calendarSelectionToEpochRange(customRange), readSmsInbox);
+      setIngestedCount(result.insertedCount);
+      setStatus("done");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      setStatus("error");
+    }
+  }, [customRange]);
+
+  const markedDates = customRange
+    ? {
+        [customRange.from]: {
+          startingDay: true,
+          endingDay: customRange.to === customRange.from,
+          color: t.accent,
+          textColor: t.background,
+        },
+        ...(customRange.to
+          ? {
+              [customRange.to]: {
+                startingDay: customRange.to === customRange.from,
+                endingDay: true,
+                color: t.accent,
+                textColor: t.background,
+              },
+            }
+          : {}),
+      }
+    : {};
+
   return (
     <Container>
       <View style={{ flex: 1, padding: 20, backgroundColor: t.background }}>
@@ -105,9 +150,16 @@ export function BackfillScreen() {
         </View>
 
         {!isSmsReadSupported() ? (
-          <Text style={{ color: t.textMuted, fontSize: 13 }}>
-            Reading the SMS inbox isn't possible on iOS.
-          </Text>
+          <View style={{ gap: 10 }}>
+            <Text style={{ color: t.textPrimary, fontSize: 15, fontWeight: "700" }}>
+              Historical Messages are unavailable on iOS
+            </Text>
+            <Text style={{ color: t.textMuted, fontSize: 13, lineHeight: 20 }}>
+              Apple does not provide apps access to your existing Messages history. Zeeya can
+              capture new financial messages after you configure its Personal Automation in
+              Shortcuts from Privacy & automation settings.
+            </Text>
+          </View>
         ) : permission === "checking" ? (
           <Text style={{ color: t.textMuted, fontSize: 13 }}>Checking permissions…</Text>
         ) : permission === "error" ? (
@@ -180,7 +232,61 @@ export function BackfillScreen() {
                   </Pressable>
                 );
               })}
+              <Pressable
+                disabled={status === "running"}
+                onPress={() => setShowCustomRange((visible) => !visible)}
+                style={{
+                  backgroundColor: t.surface,
+                  borderRadius: 14,
+                  borderWidth: 1,
+                  borderColor: t.accent,
+                  paddingVertical: 14,
+                  paddingHorizontal: 16,
+                }}
+              >
+                <Text style={{ color: t.textPrimary, fontWeight: "600", fontSize: 14 }}>
+                  Choose custom dates
+                </Text>
+              </Pressable>
             </View>
+
+            {showCustomRange ? (
+              <View style={{ marginTop: 16, borderRadius: 16, overflow: "hidden" }}>
+                <Calendar
+                  markingType="period"
+                  markedDates={markedDates}
+                  maxDate={new Date().toISOString().slice(0, 10)}
+                  enableSwipeMonths
+                  onDayPress={(day: DateData) =>
+                    setCustomRange((current) => selectCalendarDay(current, day.dateString))
+                  }
+                  theme={{
+                    calendarBackground: t.surface,
+                    dayTextColor: t.textPrimary,
+                    monthTextColor: t.textPrimary,
+                    textDisabledColor: t.textMuted,
+                    arrowColor: t.accent,
+                    todayTextColor: t.accent,
+                  }}
+                />
+                <Pressable
+                  disabled={!customRange?.to || status === "running"}
+                  onPress={() => void runCustomBackfill()}
+                  style={{
+                    alignItems: "center",
+                    backgroundColor: t.accent,
+                    paddingVertical: 13,
+                    opacity: customRange?.to && status !== "running" ? 1 : 0.45,
+                  }}
+                >
+                  <Text style={{ color: t.background, fontWeight: "800" }}>
+                    {customRange?.to
+                      ? `Import ${customRange.from} to ${customRange.to}`
+                      : "Choose a start and end date"}
+                  </Text>
+                </Pressable>
+              </View>
+            ) : null}
 
             {status === "done" && (
               <Text style={{ color: t.positive, fontSize: 13, marginTop: 18 }}>

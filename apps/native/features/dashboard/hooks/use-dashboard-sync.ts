@@ -1,14 +1,15 @@
 import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AppState, PermissionsAndroid } from "react-native";
+import { AppState } from "react-native";
 
-import { syncInbox } from "@/db/sync";
 import { deriveDashboard, type Dashboard } from "@/lib/dashboard";
 import {
-  isSmsReadSupported,
-  readSmsInbox,
-  requestSmsReadPermission,
-} from "@/lib/sms";
+  deviceMessageCaptureRequiresReadPermission,
+  isDeviceMessageCaptureSupported,
+  syncDeviceMessages,
+} from "@/lib/device-message-sync";
+import { hasSmsReadPermission, requestSmsReadPermission } from "@/lib/sms";
+import { subscribeToMessageSync } from "@/features/capabilities/message-sync-events";
 
 export type Status =
   | "checking"
@@ -31,19 +32,17 @@ export function useDashboardSync() {
   // previous one finished.
   const loadIdRef = useRef(0);
 
-  // The checkpoint/read/ingest/reload sequence itself lives in
-  // db/sync.ts's syncInbox() — unit-tested there directly (this file, a
-  // React Native hook, can't be imported under Vitest at all — see
-  // lib/sms.ts's own comment on why). readSmsInbox is passed in as the
-  // real inbox reader.
+  // Platform capture lives behind syncDeviceMessages(): Android drains the
+  // permitted SMS inbox, while iOS drains the App Group queue populated by
+  // Zeeya's Apple Shortcuts action. Both paths return the same Dashboard.
   const load = useCallback(async () => {
-    if (!isSmsReadSupported()) {
+    if (!isDeviceMessageCaptureSupported()) {
       setStatus("unsupported");
       return;
     }
     const id = ++loadIdRef.current;
     try {
-      const nextDashboard = await syncInbox(readSmsInbox);
+      const nextDashboard = await syncDeviceMessages();
       if (id !== loadIdRef.current) return;
       setDashboard(nextDashboard);
       setStatus("ready");
@@ -54,14 +53,15 @@ export function useDashboardSync() {
     }
   }, []);
 
-  // Shared by mount and app-foreground-resume below so both go through the
-  // same permission check before ever calling load() — load() itself
-  // assumes permission is already granted, so skipping this check on
-  // foreground resume (calling load() unconditionally) would turn a
-  // legitimate "needs-permission" state into a spurious "error" the first
-  // time the app resumes without SMS access granted.
+  // Android requires READ_SMS before the shared inbox load; RECEIVE_SMS is
+  // only needed for opt-in arrival monitoring. iOS has no inbox permission
+  // and can immediately drain its Shortcuts queue.
   const checkPermissionThenLoad = useCallback(() => {
-    PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_SMS)
+    if (!deviceMessageCaptureRequiresReadPermission()) {
+      void load();
+      return;
+    }
+    hasSmsReadPermission()
       .then((granted) => {
         if (granted) void load();
         else setStatus("needs-permission");
@@ -79,7 +79,7 @@ export function useDashboardSync() {
   // the first time it renders), so nothing here needs to run twice.
   useFocusEffect(
     useCallback(() => {
-      if (!isSmsReadSupported()) {
+      if (!isDeviceMessageCaptureSupported()) {
         setStatus("unsupported");
         return;
       }
@@ -87,18 +87,29 @@ export function useDashboardSync() {
     }, [checkPermissionThenLoad]),
   );
 
-  // Resyncs whenever the app returns to the foreground (e.g. backgrounded
-  // during a bank OTP/SMS arrival, then reopened) — not just on initial
-  // mount and explicit pull-to-refresh, so newly-arrived SMS actually get
-  // picked up on the ordinary "switch back to the app" path, not only when
-  // the app was freshly launched or the user manually refreshed.
+  // The app-root provider drains messages on every route, but this focused
+  // screen must also consume the returned Dashboard after foreground resume;
+  // otherwise the ledger updates while the visible totals remain stale.
   useEffect(() => {
-    if (!isSmsReadSupported()) return;
+    if (!isDeviceMessageCaptureSupported()) return;
     const subscription = AppState.addEventListener("change", (nextState) => {
       if (nextState === "active") checkPermissionThenLoad();
     });
     return () => subscription.remove();
   }, [checkPermissionThenLoad]);
+
+  // The app-root CapabilityProvider also syncs the inbox so messages are not
+  // stranded while another route is visible. Reuse its already-derived
+  // dashboard here when that sync completes instead of parsing the inbox a
+  // second time just to refresh this screen.
+  useEffect(() => {
+    return subscribeToMessageSync((nextDashboard) => {
+      loadIdRef.current += 1;
+      setDashboard(nextDashboard);
+      setError(null);
+      setStatus("ready");
+    });
+  }, []);
 
   const connect = useCallback(async () => {
     setStatus("loading");

@@ -15,9 +15,7 @@ export function StatusCards({
 }) {
   return (
     <>
-      {status === "checking" && (
-        <Text style={{ color: t.textMuted }}>Checking permissions…</Text>
-      )}
+      {status === "checking" && <Text style={{ color: t.textMuted }}>Checking permissions…</Text>}
 
       {status === "unsupported" && (
         <Card>
@@ -37,8 +35,8 @@ export function StatusCards({
             Connect your SMS inbox
           </Text>
           <Text style={{ color: t.textMuted, fontSize: 13, marginBottom: 14 }}>
-            zeeya reads your bank and transaction messages on-device to build this dashboard.
-            Your SMS content never leaves your phone.
+            zeeya reads your bank and transaction messages on-device and listens for newly received
+            messages so this dashboard stays current. Your SMS content never leaves your phone.
           </Text>
           <Pressable
             onPress={onConnect}

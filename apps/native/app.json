@@ -8,13 +8,16 @@
     },
     "name": "zeeya",
     "slug": "zeeya",
-    "plugins": ["expo-font", "./plugins/withReadSmsPermission.js"],
+    "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/eda40d60-d791-4e4a-bbf4-3f58d941a4eb"
+    },
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    },
-    "android": {
-      "package": "com.anonymous.zeeya"
     },
     "extra": {
       "eas": {

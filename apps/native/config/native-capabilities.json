@@ -1,0 +1,14 @@
+{
+  "androidPackage": "com.anonymous.zeeya",
+  "iosBundleIdentifier": "com.anonymous.zeeya",
+  "iosAppGroup": "group.com.anonymous.zeeya",
+  "iosDeploymentTarget": "17.0",
+  "messageQueueRoot": "message-queue",
+  "messageQueueVersion": "v1",
+  "appIntent": {
+    "name": "ZeeyaMessageImport",
+    "displayName": "Import Financial Message",
+    "bundleIdentifierSuffix": ".shortcuts",
+    "extensionPointIdentifier": "com.apple.appintents-extension"
+  }
+}
