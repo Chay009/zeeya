@@ -7,7 +7,8 @@ describe("deviceMessagePolicy", () => {
     expect(deviceMessagePolicy("android")).toEqual({
       capture: "direct-inbox",
       supported: true,
-      requiresSmsPermission: true,
+      requiresSmsReadPermission: true,
+      requiresSmsReceivePermission: true,
       showsBackgroundSync: true,
       showsShortcutsSetup: false,
       supportsHistoricalBackfill: true,
@@ -18,7 +19,8 @@ describe("deviceMessagePolicy", () => {
     expect(deviceMessagePolicy("ios")).toEqual({
       capture: "apple-shortcuts",
       supported: true,
-      requiresSmsPermission: false,
+      requiresSmsReadPermission: false,
+      requiresSmsReceivePermission: false,
       showsBackgroundSync: true,
       showsShortcutsSetup: true,
       supportsHistoricalBackfill: false,

@@ -4,11 +4,11 @@ import { AppState } from "react-native";
 
 import { deriveDashboard, type Dashboard } from "@/lib/dashboard";
 import {
-  deviceMessageCaptureRequiresPermission,
+  deviceMessageCaptureRequiresReadPermission,
   isDeviceMessageCaptureSupported,
   syncDeviceMessages,
 } from "@/lib/device-message-sync";
-import { hasSmsCapturePermissions, requestSmsReadPermission } from "@/lib/sms";
+import { hasSmsReadPermission, requestSmsReadPermission } from "@/lib/sms";
 import { subscribeToMessageSync } from "@/features/capabilities/message-sync-events";
 
 export type Status =
@@ -53,14 +53,15 @@ export function useDashboardSync() {
     }
   }, []);
 
-  // Android requires READ_SMS and RECEIVE_SMS before the shared load; iOS
-  // has no inbox permission and can immediately drain its Shortcuts queue.
+  // Android requires READ_SMS before the shared inbox load; RECEIVE_SMS is
+  // only needed for opt-in arrival monitoring. iOS has no inbox permission
+  // and can immediately drain its Shortcuts queue.
   const checkPermissionThenLoad = useCallback(() => {
-    if (!deviceMessageCaptureRequiresPermission()) {
+    if (!deviceMessageCaptureRequiresReadPermission()) {
       void load();
       return;
     }
-    hasSmsCapturePermissions()
+    hasSmsReadPermission()
       .then((granted) => {
         if (granted) void load();
         else setStatus("needs-permission");

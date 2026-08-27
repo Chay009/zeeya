@@ -8,3 +8,13 @@ export const DEVICE_LOCK_AUTHENTICATION_OPTIONS = {
   biometricsSecurityLevel: "strong",
   disableDeviceFallback: false,
 } as const;
+
+/**
+ * `SecurityLevel.SECRET` represents an enrolled device PIN, pattern, password,
+ * or passcode. The app lock therefore does not require biometric hardware or
+ * biometric enrollment; the operating system can provide the fallback.
+ */
+export function hasEnrolledDeviceAuthentication(level: SecurityLevel): boolean {
+  return level > 0;
+}
+import type { SecurityLevel } from "expo-local-authentication";

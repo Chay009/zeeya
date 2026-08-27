@@ -1,8 +1,7 @@
 import { Platform } from "react-native";
 
-import ZeeyaMessageQueueModule, {
-  type PendingSmsSignal,
-} from "../../modules/zeeya-message-queue/src/ZeeyaMessageQueueModule";
+import ZeeyaMessageQueueModule from "../../modules/zeeya-message-queue/src/ZeeyaMessageQueueModule.android";
+import type { PendingSmsSignal } from "../../modules/zeeya-message-queue/src/types";
 import { startRealtimeSmsMonitoring, type RealtimeSmsSignalSource } from "./realtime-sms-monitor";
 
 export function subscribeToRealtimeSms(
@@ -13,7 +12,9 @@ export function subscribeToRealtimeSms(
   const nativeModule = ZeeyaMessageQueueModule;
 
   const source: RealtimeSmsSignalSource = {
-    consumePendingSmsSignal: () => nativeModule.consumePendingSmsSignal(),
+    peekPendingSmsSignal: () => nativeModule.peekPendingSmsSignal(),
+    acknowledgePendingSmsSignal: (signal) =>
+      nativeModule.acknowledgePendingSmsSignal(signal.generation),
     addSmsReceivedListener(listener) {
       return nativeModule.addListener("onSmsReceived", (signal: PendingSmsSignal) =>
         listener(signal),

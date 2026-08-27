@@ -43,6 +43,7 @@ describe("periodic financial sync policy", () => {
   });
 
   it("does no inbox or notification work while background sync is disabled", async () => {
+    const canSync = vi.fn();
     const sync = vi.fn();
     const notify = vi.fn();
 
@@ -51,12 +52,36 @@ describe("periodic financial sync policy", () => {
         backgroundSyncEnabled: false,
         transactionNotificationsEnabled: true,
       }),
+      canSync,
       loadDashboard: async () => dashboard([]),
       sync,
       notify,
     });
 
     expect(result).toEqual({ status: "disabled", newFinancialTransactions: 0 });
+    expect(sync).not.toHaveBeenCalled();
+    expect(canSync).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it("does no inbox or notification work after capture permission is revoked", async () => {
+    const loadDashboard = vi.fn();
+    const sync = vi.fn();
+    const notify = vi.fn();
+
+    const result = await runPeriodicSync({
+      getSettings: async () => ({
+        backgroundSyncEnabled: true,
+        transactionNotificationsEnabled: true,
+      }),
+      canSync: async () => false,
+      loadDashboard,
+      sync,
+      notify,
+    });
+
+    expect(result).toEqual({ status: "permissions-missing", newFinancialTransactions: 0 });
+    expect(loadDashboard).not.toHaveBeenCalled();
     expect(sync).not.toHaveBeenCalled();
     expect(notify).not.toHaveBeenCalled();
   });
@@ -71,6 +96,7 @@ describe("periodic financial sync policy", () => {
         backgroundSyncEnabled: true,
         transactionNotificationsEnabled: true,
       }),
+      canSync: async () => true,
       loadDashboard: async () => dashboard([old]),
       sync: async () => dashboard([added, old]),
       notify,
@@ -89,6 +115,7 @@ describe("periodic financial sync policy", () => {
         backgroundSyncEnabled: true,
         transactionNotificationsEnabled: true,
       }),
+      canSync: async () => true,
       loadDashboard: async () => same,
       sync: async () => same,
       notify,

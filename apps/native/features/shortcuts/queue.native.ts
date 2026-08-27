@@ -1,4 +1,4 @@
-import ZeeyaMessageQueueModule from "../../modules/zeeya-message-queue/src/ZeeyaMessageQueueModule";
+import ZeeyaMessageQueueModule from "../../modules/zeeya-message-queue/src/ZeeyaMessageQueueModule.ios";
 import type { ShortcutMessageQueue } from "../../db/shortcut-sync";
 
 export function getShortcutMessageQueue(): ShortcutMessageQueue {

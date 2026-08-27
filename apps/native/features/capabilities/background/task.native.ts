@@ -8,6 +8,9 @@ import { loadDashboard } from "@/db/ingestion";
 import migrations from "@/db/migrations/migrations";
 import { getLocalSettings } from "@/db/settings";
 import { syncDeviceMessages } from "@/lib/device-message-sync";
+import { hasSmsCapturePermissions } from "@/lib/sms";
+import AndroidMessageQueueModule from "@/modules/zeeya-message-queue/src/ZeeyaMessageQueueModule.android";
+import type { PendingSmsSignal } from "@/modules/zeeya-message-queue/src/types";
 import { notifyNewFinancialTransactions } from "../notifications/notifications";
 import { runPeriodicSync } from "./periodic-sync";
 
@@ -22,12 +25,26 @@ if (!TaskManager.isTaskDefined(BACKGROUND_SYNC_TASK)) {
       // ledger. This also covers the first background run after an OTA update.
       await migrate(db, migrations);
       migrateLegacyDatabaseIfNeeded();
-      await runPeriodicSync({
+      const syncState: { pendingSignal: PendingSmsSignal | null } = { pendingSignal: null };
+      const result = await runPeriodicSync({
         getSettings: getLocalSettings,
+        canSync: () =>
+          Platform.OS === "android" ? hasSmsCapturePermissions() : Promise.resolve(true),
         loadDashboard,
-        sync: syncDeviceMessages,
+        sync: async () => {
+          syncState.pendingSignal =
+            Platform.OS === "android" && AndroidMessageQueueModule
+              ? await AndroidMessageQueueModule.peekPendingSmsSignal()
+              : null;
+          return syncDeviceMessages();
+        },
         notify: notifyNewFinancialTransactions,
       });
+      if (result.status === "completed" && syncState.pendingSignal && AndroidMessageQueueModule) {
+        await AndroidMessageQueueModule.acknowledgePendingSmsSignal(
+          syncState.pendingSignal.generation,
+        );
+      }
       return BackgroundTask.BackgroundTaskResult.Success;
     } catch (error) {
       console.error("Zeeya background message sync failed", error);

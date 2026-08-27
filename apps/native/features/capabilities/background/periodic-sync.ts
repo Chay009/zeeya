@@ -8,13 +8,14 @@ interface PeriodicSyncSettings {
 
 interface PeriodicSyncDependencies {
   getSettings(): Promise<PeriodicSyncSettings>;
+  canSync(): Promise<boolean>;
   loadDashboard(): Promise<Dashboard>;
   sync(): Promise<Dashboard>;
   notify(transactions: ParsedSms[]): Promise<void>;
 }
 
 export interface PeriodicSyncResult {
-  status: "disabled" | "completed";
+  status: "disabled" | "permissions-missing" | "completed";
   newFinancialTransactions: number;
 }
 
@@ -33,6 +34,10 @@ export async function runPeriodicSync(
   const settings = await dependencies.getSettings();
   if (!settings.backgroundSyncEnabled) {
     return { status: "disabled", newFinancialTransactions: 0 };
+  }
+
+  if (!(await dependencies.canSync())) {
+    return { status: "permissions-missing", newFinancialTransactions: 0 };
   }
 
   const before = await dependencies.loadDashboard();

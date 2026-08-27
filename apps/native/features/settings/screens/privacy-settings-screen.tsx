@@ -92,7 +92,11 @@ export function PrivacySettingsScreen() {
         {policy.showsBackgroundSync ? (
           <PreferenceRow
             title="Periodic background sync"
-            description="Let Android WorkManager or iOS BGTaskScheduler periodically process newly captured messages. The OS chooses the exact time; no battery-exemption permission is requested."
+            description={
+              Platform.OS === "android"
+                ? "Let Android WorkManager periodically process newly captured messages. SMS read and receive access are required; the OS chooses the exact time and no battery-exemption permission is requested."
+                : "Let iOS BGTaskScheduler periodically process newly captured messages. The OS chooses the exact time; no battery-exemption permission is requested."
+            }
             value={settings.backgroundSyncEnabled}
             disabled={pending !== null}
             onChange={(value) => void change("backgroundSyncEnabled", value)}
@@ -107,7 +111,7 @@ export function PrivacySettingsScreen() {
         />
         <PreferenceRow
           title="Biometric app lock"
-          description="Require a strong fingerprint or supported face unlock when opening or returning to Zeeya."
+          description="Require your device PIN, passcode, pattern, password, or biometric unlock when opening or returning to Zeeya."
           value={settings.biometricLockEnabled}
           disabled={pending !== null}
           onChange={(value) => void change("biometricLockEnabled", value)}

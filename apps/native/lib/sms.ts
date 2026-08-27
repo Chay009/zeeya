@@ -21,16 +21,35 @@ export function isSmsReadSupported(): boolean {
   return Platform.OS === "android";
 }
 
-export async function hasSmsCapturePermissions(): Promise<boolean> {
+export async function hasSmsReadPermission(): Promise<boolean> {
   if (!isSmsReadSupported()) return false;
+  return PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_SMS);
+}
+
+export async function hasSmsReceivePermission(): Promise<boolean> {
+  if (!isSmsReadSupported()) return false;
+  return PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.RECEIVE_SMS);
+}
+
+export async function hasSmsCapturePermissions(): Promise<boolean> {
   const [canRead, canReceive] = await Promise.all([
-    PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_SMS),
-    PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.RECEIVE_SMS),
+    hasSmsReadPermission(),
+    hasSmsReceivePermission(),
   ]);
   return canRead && canReceive;
 }
 
 export async function requestSmsReadPermission(): Promise<boolean> {
+  if (!isSmsReadSupported()) return false;
+  const result = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.READ_SMS, {
+    title: "Allow Zeeya to read messages",
+    message: "Zeeya reads financial SMS on this device to build your budget dashboard.",
+    buttonPositive: "Allow",
+  });
+  return result === PermissionsAndroid.RESULTS.GRANTED;
+}
+
+export async function requestSmsCapturePermissions(): Promise<boolean> {
   if (!isSmsReadSupported()) return false;
   const results = await PermissionsAndroid.requestMultiple([
     PermissionsAndroid.PERMISSIONS.READ_SMS,

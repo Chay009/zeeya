@@ -13,10 +13,16 @@ class ZeeyaMessageQueueModule : Module() {
 
     Events("onSmsReceived")
 
-    AsyncFunction("consumePendingSmsSignal") {
+    AsyncFunction("peekPendingSmsSignal") {
       val context = appContext.reactContext
         ?: throw MessageQueueContextUnavailableException()
-      ZeeyaSmsSignalStore.consume(context)?.toBundle()
+      ZeeyaSmsSignalStore.peek(context)?.toBundle()
+    }
+
+    AsyncFunction("acknowledgePendingSmsSignal") { generation: Long ->
+      val context = appContext.reactContext
+        ?: throw MessageQueueContextUnavailableException()
+      ZeeyaSmsSignalStore.acknowledge(context, generation)
     }
 
     OnStartObserving("onSmsReceived") {
@@ -35,6 +41,7 @@ class ZeeyaMessageQueueModule : Module() {
   }
 
   private fun PendingSmsSignal.toBundle() = bundleOf(
+    "generation" to generation,
     "count" to count,
     "lastReceivedAt" to lastReceivedAt,
   )

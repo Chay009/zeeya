@@ -19,8 +19,8 @@ export function isDeviceMessageCaptureSupported(): boolean {
   return currentPolicy().supported;
 }
 
-export function deviceMessageCaptureRequiresPermission(): boolean {
-  return currentPolicy().requiresSmsPermission;
+export function deviceMessageCaptureRequiresReadPermission(): boolean {
+  return currentPolicy().requiresSmsReadPermission;
 }
 
 export async function syncDeviceMessages(): Promise<Dashboard> {

@@ -9,11 +9,15 @@ import {
   updateLocalSettings,
 } from "@/db/settings";
 import {
-  deviceMessageCaptureRequiresPermission,
+  deviceMessageCaptureRequiresReadPermission,
   isDeviceMessageCaptureSupported,
   syncDeviceMessages,
 } from "@/lib/device-message-sync";
-import { hasSmsCapturePermissions } from "@/lib/sms";
+import {
+  hasSmsCapturePermissions,
+  hasSmsReadPermission,
+  requestSmsCapturePermissions,
+} from "@/lib/sms";
 import { setBackgroundSyncRegistration } from "./background/task";
 import { publishMessageSync } from "./message-sync-events";
 import { requestTransactionNotificationPermission } from "./notifications/notifications";
@@ -23,6 +27,7 @@ import {
   setScreenCaptureProtection,
 } from "./native-capabilities";
 import { subscribeToRealtimeSms } from "./realtime-sms";
+import { shouldSubscribeToRealtimeSms } from "./realtime-sms-policy";
 
 export type CapabilityPreference = keyof LocalSettings;
 
@@ -49,21 +54,29 @@ export function CapabilityProvider({ children }: PropsWithChildren) {
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
 
-  const syncCapturedMessages = useCallback(async () => {
-    if (!isDeviceMessageCaptureSupported()) return;
-    if (deviceMessageCaptureRequiresPermission() && !(await hasSmsCapturePermissions())) {
-      return;
-    }
-    try {
+  const syncCapturedMessages = useCallback(
+    async (options: { failOnMissingReadPermission?: boolean } = {}) => {
+      if (!isDeviceMessageCaptureSupported()) return;
+      if (deviceMessageCaptureRequiresReadPermission() && !(await hasSmsReadPermission())) {
+        if (options.failOnMissingReadPermission) {
+          throw new Error("READ_SMS permission is required to process newly received SMS.");
+        }
+        return;
+      }
       const dashboard = await syncDeviceMessages();
       publishMessageSync(dashboard);
-    } catch (cause) {
+    },
+    [],
+  );
+
+  const syncCapturedMessagesSafely = useCallback(() => {
+    void syncCapturedMessages().catch((cause) => {
       // Capture is opportunistic at the app root. The dashboard still owns
       // user-visible retry/error state, while this path ensures queued iOS
       // Shortcut messages are not stranded on non-dashboard routes.
       console.warn("Zeeya could not synchronize captured messages", cause);
-    }
-  }, []);
+    });
+  }, [syncCapturedMessages]);
 
   const unlock = useCallback(async () => {
     if (authenticating.current) return;
@@ -117,15 +130,40 @@ export function CapabilityProvider({ children }: PropsWithChildren) {
   }, [unlock]);
 
   useEffect(() => {
-    if (loaded) void syncCapturedMessages();
-  }, [loaded, syncCapturedMessages]);
+    if (loaded) syncCapturedMessagesSafely();
+  }, [loaded, syncCapturedMessagesSafely]);
 
   useEffect(() => {
-    if (!loaded) return;
-    return subscribeToRealtimeSms(syncCapturedMessages, (cause) => {
-      console.warn("Zeeya could not process a newly received SMS", cause);
-    });
-  }, [loaded, syncCapturedMessages]);
+    if (!loaded || !settings.backgroundSyncEnabled || Platform.OS !== "android") return;
+
+    let cancelled = false;
+    let stop: () => void = () => undefined;
+    void hasSmsCapturePermissions()
+      .then((granted) => {
+        if (
+          cancelled ||
+          !shouldSubscribeToRealtimeSms("android", settings.backgroundSyncEnabled, granted)
+        ) {
+          return;
+        }
+        stop = subscribeToRealtimeSms(
+          () => syncCapturedMessages({ failOnMissingReadPermission: true }),
+          (cause) => {
+            console.warn("Zeeya could not process a newly received SMS", cause);
+          },
+        );
+      })
+      .catch((cause) => {
+        if (!cancelled) {
+          console.warn("Zeeya could not check SMS receive permission", cause);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      stop();
+    };
+  }, [loaded, settings.backgroundSyncEnabled, syncCapturedMessages]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
@@ -133,20 +171,25 @@ export function CapabilityProvider({ children }: PropsWithChildren) {
         if (settingsRef.current.biometricLockEnabled) setUnlocked(false);
         return;
       }
-      if (loaded) void syncCapturedMessages();
+      if (loaded) syncCapturedMessagesSafely();
       if (loaded && settingsRef.current.biometricLockEnabled) void unlock();
     });
     return () => subscription.remove();
-  }, [loaded, syncCapturedMessages, unlock]);
+  }, [loaded, syncCapturedMessagesSafely, unlock]);
 
   const setPreference = useCallback(
     async (key: CapabilityPreference, enabled: boolean): Promise<boolean> => {
       setError(null);
       try {
         if (key === "backgroundSyncEnabled") {
-          if (Platform.OS === "android" && enabled && !(await hasSmsCapturePermissions())) {
-            setError("Grant SMS access from the dashboard before enabling background sync.");
-            return false;
+          if (Platform.OS === "android" && enabled) {
+            const granted = (await hasSmsCapturePermissions())
+              ? true
+              : await requestSmsCapturePermissions();
+            if (!granted) {
+              setError("Grant SMS read and receive access to enable background sync.");
+              return false;
+            }
           }
           await setBackgroundSyncRegistration(enabled);
         } else if (key === "transactionNotificationsEnabled" && enabled) {
@@ -156,11 +199,11 @@ export function CapabilityProvider({ children }: PropsWithChildren) {
           }
         } else if (key === "biometricLockEnabled" && enabled) {
           if (!(await canEnableBiometricLock())) {
-            setError("Set up a strong fingerprint or face unlock on this device first.");
+            setError("Set up a device PIN, passcode, or biometric unlock on this device first.");
             return false;
           }
           if (!(await authenticateForAppAccess())) {
-            setError("Biometric authentication was cancelled or failed.");
+            setError("Device authentication was cancelled or failed.");
             return false;
           }
         } else if (key === "screenCaptureProtectionEnabled") {

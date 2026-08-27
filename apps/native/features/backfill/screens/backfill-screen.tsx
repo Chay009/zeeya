@@ -8,7 +8,7 @@ import { Container } from "@/components/container";
 import { dashboardTheme as t } from "@/constants/dashboard-theme";
 import { backfillSms } from "@/db/backfill";
 import {
-  hasSmsCapturePermissions,
+  hasSmsReadPermission,
   isSmsReadSupported,
   readSmsInbox,
   requestSmsReadPermission,
@@ -52,7 +52,7 @@ export function BackfillScreen() {
 
   useEffect(() => {
     if (!isSmsReadSupported()) return;
-    hasSmsCapturePermissions()
+    hasSmsReadPermission()
       .then((granted) => {
         setPermission(granted ? "granted" : "needs-permission");
       })

@@ -7,12 +7,13 @@ This document records the product and operational boundaries of Zeeya's native c
 - Uses `expo-background-task` / Android WorkManager, with a 15-minute minimum interval.
 - Android chooses the actual execution time. It is periodic catch-up, not instant SMS delivery.
 - Android's `SMS_RECEIVED` receiver records a durable, privacy-safe arrival signal and wakes the
-  existing inbox/ledger sync while the app process is active. If the process is stopped, the signal
-  is consumed on the next app/background sync; the receiver never parses or stores raw SMS text.
+  existing inbox/ledger sync while the app process is active. The signal is peeked and acknowledged
+  only after a successful enabled sync; failures leave it pending for a later retry. The receiver
+  never parses or stores raw SMS text.
 - Zeeya does not request battery-optimization exemption or an unrestricted background-service permission.
 - The task reuses the same checkpointed, idempotent `syncInbox()` path as foreground refresh.
-- It is opt-in under **Privacy & automation** and requires existing `READ_SMS` and `RECEIVE_SMS`
-  permissions.
+- It is opt-in under **Privacy & automation**. Foreground reading requires `READ_SMS`; Android
+  arrival monitoring and periodic automation require both `READ_SMS` and `RECEIVE_SMS`.
 
 ## Notifications
 
