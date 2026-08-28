@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { getConfig, getConfigFilePaths, type ConfigContext } from "expo/config";
@@ -10,6 +11,11 @@ import appConfig from "../app.config";
 const projectRoot = path.join(__dirname, "..");
 const require = createRequire(import.meta.url);
 const expoCli = require.resolve("expo/bin/cli");
+
+const SplashPluginSchema = z.tuple([
+  z.literal("expo-splash-screen"),
+  z.object({ image: z.string().min(1) }).passthrough(),
+]);
 
 const IntrospectionSchema = z.object({
   extra: z.object({
@@ -133,7 +139,13 @@ describe("Zeeya native capability configuration", () => {
       },
     });
     expect(exp.plugins).not.toContain("./plugins/withReadSmsPermission.js");
-  });
+
+    const splashPlugin = SplashPluginSchema.parse(
+      exp.plugins?.find((plugin) => Array.isArray(plugin) && plugin[0] === "expo-splash-screen"),
+    );
+    expect(splashPlugin[1].image).toBe("./assets/images/android-icon-foreground.png");
+    expect(existsSync(path.join(projectRoot, splashPlugin[1].image))).toBe(true);
+  }, 15_000);
 
   it("rejects a second plugin owner outside the dynamic config", () => {
     const context = {
