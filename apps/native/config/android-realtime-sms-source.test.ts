@@ -16,11 +16,19 @@ const moduleRoot = path.join(
   "zeeyamessagequeue",
 );
 
+const moduleAndroidRoot = path.join(__dirname, "..", "modules", "zeeya-message-queue", "android");
+
 function source(fileName: string): string {
   return readFileSync(path.join(moduleRoot, fileName), "utf8");
 }
 
 describe("Android realtime SMS native source contract", () => {
+  it("declares the Android library version required by Expo autolinking", () => {
+    const buildGradle = readFileSync(path.join(moduleAndroidRoot, "build.gradle"), "utf8");
+
+    expect(buildGradle).toMatch(/defaultConfig\s*\{[\s\S]*versionName\s+["']1\.0\.0["']/);
+  });
+
   it("records only an arrival signal and never reads the SMS payload", () => {
     const receiver = source("ZeeyaSmsReceiver.kt");
 
