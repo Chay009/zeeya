@@ -4,6 +4,7 @@ import { Pressable, Text, View } from "react-native";
 
 import { dashboardTheme as t } from "@/constants/dashboard-theme";
 import { Card } from "@/features/dashboard/components/card";
+import { presentAccount } from "@/features/dashboard/utils/account-presentation";
 import { formatDateTimeFull, formatMoney } from "@/features/dashboard/utils/format";
 import type { AccountBalance, BalanceReading, BankGroup } from "@/lib/dashboard";
 
@@ -94,8 +95,8 @@ function AccountSection({
   newerSuggestedReading?: BalanceReading;
 }) {
   const [showBalanceReadings, setShowBalanceReadings] = useState(false);
-  const hasEstimate = account.capturedTransactionCount > 0;
-  const displayedBalance = hasEstimate ? account.estimatedBalance : account.balance;
+  const presentation = presentAccount(account);
+  const hasEstimate = presentation.status === "CALCULATED";
   const reconciliation = account.reconciliationDelta;
   return (
     <View style={{ marginTop: 14, borderTopWidth: 1, borderTopColor: t.border, paddingTop: 12 }}>
@@ -103,33 +104,43 @@ function AccountSection({
         ACCOUNT ••{account.last4}
       </Text>
       <Text style={{ color: t.textPrimary, fontSize: 32, fontWeight: "800" }}>
-        {formatMoney(displayedBalance, account.currency)}
+        {presentation.balance}
       </Text>
       <Text style={{ color: t.textMuted, fontSize: 12, marginTop: 2 }}>
-        {hasEstimate ? "Calculated estimate" : "Bank reported"} as of{" "}
-        {formatDateTimeFull(hasEstimate ? account.estimatedAsOf : account.asOf)}
+        {presentation.status === "TRACKING"
+          ? "Tracking"
+          : hasEstimate
+            ? "Calculated estimate"
+            : "Bank reported"}{" "}
+        as of {formatDateTimeFull(presentation.asOf)}
         {!hasEstimate ? ` · ${account.sender}` : ""}
       </Text>
-      {hasEstimate && (
+      {account.capturedTransactionCount > 0 && (
         <View style={{ marginTop: 12, gap: 8 }}>
-          <View>
-            <Text style={{ color: t.textMuted, fontSize: 11 }}>Last bank-reported balance</Text>
-            <Text style={{ color: t.textPrimary, fontSize: 17, fontWeight: "700" }}>
-              {formatMoney(account.balance, account.currency)}
-            </Text>
-            <Text style={{ color: t.textMuted, fontSize: 11 }}>
-              {formatDateTimeFull(account.asOf)} · {account.sender}
-            </Text>
-          </View>
+          {account.anchorStatus === "reported" && (
+            <View>
+              <Text style={{ color: t.textMuted, fontSize: 11 }}>Last bank-reported balance</Text>
+              <Text style={{ color: t.textPrimary, fontSize: 17, fontWeight: "700" }}>
+                {formatMoney(account.balance, account.currency)}
+              </Text>
+              <Text style={{ color: t.textMuted, fontSize: 11 }}>
+                {formatDateTimeFull(account.asOf)} · {account.sender}
+              </Text>
+            </View>
+          )}
           <View style={{ flexDirection: "row", gap: 16 }}>
             <View>
-              <Text style={{ color: t.textMuted, fontSize: 11 }}>Added since then</Text>
+              <Text style={{ color: t.textMuted, fontSize: 11 }}>
+                {presentation.capturedIncomeLabel}
+              </Text>
               <Text style={{ color: t.positive, fontSize: 14, fontWeight: "700" }}>
                 +{formatMoney(account.capturedIncome, account.currency)}
               </Text>
             </View>
             <View>
-              <Text style={{ color: t.textMuted, fontSize: 11 }}>Spent since then</Text>
+              <Text style={{ color: t.textMuted, fontSize: 11 }}>
+                {presentation.capturedExpenseLabel}
+              </Text>
               <Text style={{ color: t.negative, fontSize: 14, fontWeight: "700" }}>
                 −{formatMoney(account.capturedExpense, account.currency)}
               </Text>

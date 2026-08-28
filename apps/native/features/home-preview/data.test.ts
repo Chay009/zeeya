@@ -5,7 +5,7 @@ import type { ParsedSms } from "../../lib/sms";
 import { createHomePreviewData } from "./data";
 
 describe("createHomePreviewData — detected accounts", () => {
-  it("shows SBI account identity when transaction messages have no balance", () => {
+  it("tracks SBI transactions before the first reported balance", () => {
     const engine = createMalanaEngine();
     const bodies = [
       "Dear UPI user A/C X1234 debited by 50.00 on date 21Aug26 trf to SAMPLE PERSON Refno 123456789012 If not u? call-1800111109 for other services-18001234-SBI",
@@ -25,11 +25,111 @@ describe("createHomePreviewData — detected accounts", () => {
       new Date(Date.UTC(2026, 7, 24)),
     );
 
-    expect(home.accounts).toHaveLength(0);
-    expect(home.detectedAccounts[0]).toMatchObject({
+    expect(home.detectedAccounts).toHaveLength(0);
+    expect(home.accounts[0]).toMatchObject({
       bankName: "State Bank of India",
-      status: "DETECTED",
+      status: "TRACKING",
       last4: "1234",
+      balance: "—",
+      reportedBalance: null,
+      capturedExpense: "−₹225",
+      capturedChange: "−₹225",
+      capturedTransactionCount: 2,
+    });
+  });
+
+  it("anchors at the first reported balance without replaying older transactions", () => {
+    const engine = createMalanaEngine();
+    const debit = (id: string, amount: number, date: number, ref: string): ParsedSms => {
+      const body = `Dear UPI user A/C X1234 debited by ${amount.toFixed(2)} on date 21Aug26 trf to SAMPLE MERCHANT Refno ${ref} If not u? call-1800111109 for other services-18001234-SBI`;
+      return {
+        id,
+        sender: "JD-SBIUPI-S",
+        body,
+        date,
+        result: engine.parse(body, "JD-SBIUPI-S"),
+      };
+    };
+    const balanceBody = "Available balance in A/c XX1234 is Rs. 1000.00 -SBI";
+    const balanceResult = engine.parse(balanceBody, "JD-SBIUPI-S");
+    const messages: ParsedSms[] = [
+      debit("before-1", 50, 1_000, "123456789010"),
+      debit("before-2", 175, 2_000, "123456789011"),
+      {
+        id: "first-balance",
+        sender: "JD-SBIUPI-S",
+        body: balanceBody,
+        date: 3_000,
+        result: {
+          ...balanceResult,
+          category: "GRM_BANK",
+          bankName: "State Bank of India",
+          acc: "1234",
+          bal: "1000.00",
+          currency: "INR",
+        },
+      },
+      debit("after", 100, 4_000, "123456789012"),
+    ];
+
+    const home = createHomePreviewData(
+      deriveDashboard(messages, new Date(5_000)),
+      true,
+      new Date(5_000),
+    );
+
+    expect(home.accounts[0]).toMatchObject({
+      status: "CALCULATED",
+      balance: "₹900",
+      reportedBalance: "₹1,000",
+      capturedExpense: "−₹100",
+      capturedTransactionCount: 1,
+    });
+  });
+
+  it("does not attach an account-less transaction to an unanchored account", () => {
+    const engine = createMalanaEngine();
+    const identifiedBody =
+      "Dear UPI user A/C X1234 debited by 50.00 on date 21Aug26 trf to SAMPLE PERSON Refno 123456789020 If not u? call-1800111109 for other services-18001234-SBI";
+    const unidentifiedBody =
+      "Rs.100.00 debited via UPI Refno 123456789021. If not u? call-1800111109 -SBI";
+    const unidentifiedResult = engine.parse(unidentifiedBody, "JD-SBIUPI-S");
+    const messages: ParsedSms[] = [
+      {
+        id: "identified",
+        sender: "JD-SBIUPI-S",
+        body: identifiedBody,
+        date: 1_000,
+        result: engine.parse(identifiedBody, "JD-SBIUPI-S"),
+      },
+      {
+        id: "unidentified",
+        sender: "JD-SBIUPI-S",
+        body: unidentifiedBody,
+        date: 2_000,
+        result: {
+          ...unidentifiedResult,
+          category: "GRM_BANK",
+          bankName: "State Bank of India",
+          acc: null,
+          trx: "100.00",
+          trxTypeRich: "EXPENSE",
+          currency: "INR",
+          ref: "123456789021",
+        },
+      },
+    ];
+
+    const home = createHomePreviewData(
+      deriveDashboard(messages, new Date(3_000)),
+      true,
+      new Date(3_000),
+    );
+
+    expect(home.accounts[0]).toMatchObject({
+      balance: "—",
+      capturedExpense: "−₹50",
+      capturedTransactionCount: 1,
     });
   });
 });

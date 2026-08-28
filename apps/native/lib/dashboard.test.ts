@@ -323,9 +323,9 @@ describe("deriveDashboard — account identity", () => {
 
     const { accounts } = deriveDashboard(messages);
 
-    expect(accounts.map((account) => account.estimatedBalance).sort((a, b) => a - b)).toEqual([
-      1000, 2000,
-    ]);
+    expect(
+      accounts.map((account) => account.estimatedBalance).sort((a, b) => (a ?? 0) - (b ?? 0)),
+    ).toEqual([1000, 2000]);
     expect(accounts.every((account) => account.capturedTransactionCount === 0)).toBe(true);
   });
 
@@ -937,11 +937,17 @@ describe("deriveDashboard — detected bank visibility", () => {
       "State Bank of India",
     ]);
     expect(dashboard.recent).toHaveLength(2);
-    expect(dashboard.detectedAccounts).toEqual([
+    expect(dashboard.detectedAccounts).toEqual([]);
+    expect(dashboard.accounts).toEqual([
       expect.objectContaining({
         bankName: "State Bank of India",
         last4: "1234",
         currency: "INR",
+        balance: null,
+        estimatedBalance: null,
+        capturedExpense: 225,
+        capturedChange: -225,
+        capturedTransactionCount: 2,
       }),
     ]);
   });

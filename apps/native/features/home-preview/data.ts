@@ -7,6 +7,7 @@ import {
   type MandateEvent,
 } from "../../lib/dashboard";
 import { formatDate, formatDateTimeFull, formatMoney } from "../dashboard/utils/format";
+import { presentAccount } from "../dashboard/utils/account-presentation";
 import { ACTIVITY_CATEGORY_FILTERS, type ActivityCategoryFilter } from "../../lib/activity-filters";
 import type { ParsedSms } from "../../lib/sms";
 import { subscriptionMonthlyTotals, type Subscription } from "../../lib/subscriptions";
@@ -465,16 +466,14 @@ function accountPreview(
   visible: boolean,
   unassignedNote: string | null,
 ): HomeAccount {
-  const hasEstimate = account.capturedTransactionCount > 0;
-  const displayedBalance = hasEstimate ? account.estimatedBalance : account.balance;
-  const displayedAsOf = hasEstimate ? account.estimatedAsOf : account.asOf;
+  const presentation = presentAccount(account);
 
   return {
     key: `account:${accountPreviewKey(account)}`,
     bankName: account.bankName,
     bankIcon: bankVisualFor(account.bankName).img,
-    status: hasEstimate ? "CALCULATED" : "REPORTED",
-    balance: visible ? formatMoney(displayedBalance, account.currency) : "—",
+    status: presentation.status,
+    balance: visible ? presentation.balance : "—",
     last4: account.last4,
     currency: account.currency,
     netAcross:
@@ -482,17 +481,28 @@ function accountPreview(
         ? formatMoney(netByCurrency.get(account.currency)!, account.currency)
         : "—",
     balanceMeta: visible
-      ? `${hasEstimate ? "Calculated estimate" : "Bank reported"} as of ${formatDateTimeFull(displayedAsOf)}${hasEstimate ? "" : ` · ${account.sender}`}`
+      ? presentation.hasReportedBalance
+        ? `${presentation.hasCapturedTransactions ? "Calculated estimate" : "Bank reported"} as of ${formatDateTimeFull(presentation.asOf)}${presentation.hasCapturedTransactions ? "" : ` · ${account.sender}`}`
+        : `Captured change through ${formatDateTimeFull(presentation.asOf)} · awaiting first bank-reported balance`
       : null,
-    reportedBalance: visible && hasEstimate ? formatMoney(account.balance, account.currency) : null,
+    reportedBalance:
+      visible && account.anchorStatus === "reported" && presentation.hasCapturedTransactions
+        ? formatMoney(account.balance, account.currency)
+        : null,
     reportedMeta:
-      visible && hasEstimate ? `${formatDateTimeFull(account.asOf)} · ${account.sender}` : null,
+      visible && account.anchorStatus === "reported" && presentation.hasCapturedTransactions
+        ? `${formatDateTimeFull(account.asOf)} · ${account.sender}`
+        : null,
     capturedIncome:
-      visible && hasEstimate ? `+${formatMoney(account.capturedIncome, account.currency)}` : null,
+      visible && presentation.hasCapturedTransactions
+        ? `+${formatMoney(account.capturedIncome, account.currency)}`
+        : null,
     capturedExpense:
-      visible && hasEstimate ? `−${formatMoney(account.capturedExpense, account.currency)}` : null,
+      visible && presentation.hasCapturedTransactions
+        ? `−${formatMoney(account.capturedExpense, account.currency)}`
+        : null,
     capturedChange:
-      visible && hasEstimate
+      visible && presentation.hasCapturedTransactions
         ? formatCapturedChange(account.capturedChange, account.currency)
         : null,
     capturedTransactionCount: visible ? account.capturedTransactionCount : 0,
@@ -583,6 +593,7 @@ function buildAccountPreviews(
 
   const netByCurrency = new Map<string, number>();
   for (const account of confirmed.values()) {
+    if (account.anchorStatus === "unreported") continue;
     netByCurrency.set(
       account.currency,
       (netByCurrency.get(account.currency) ?? 0) + account.estimatedBalance,

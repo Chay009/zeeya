@@ -42,18 +42,14 @@ export type BalanceAssociation =
   | { kind: "suggested"; accountLast4: string; reason: "sole-account" }
   | { kind: "unassigned" };
 
-export interface AccountBalance {
+interface AccountBalanceBase {
   bankName: string;
   last4: string;
-  // Latest balance explicitly reported by the bank. This remains the
-  // reconciliation anchor and is never overwritten by our estimate.
-  balance: number;
   currency: string;
+  // Latest captured identity evidence while unreported; latest bank-reported
+  // balance timestamp once anchored. `anchorStatus` makes that meaning explicit.
   asOf: number;
   sender: string;
-  // Best local estimate after applying captured transactions newer than
-  // `asOf`. It is explicitly labelled as estimated in the UI.
-  estimatedBalance: number;
   capturedIncome: number;
   capturedExpense: number;
   capturedChange: number;
@@ -69,10 +65,28 @@ export interface AccountBalance {
   history: BalanceReading[];
 }
 
-// A bank account identified from a message that carries bank + account
-// digits but no balance. It is real account-identity evidence, but it must
-// remain separate from AccountBalance so callers never mistake an unknown
-// balance for zero or run reconciliation math against an invented value.
+export interface UnanchoredAccountBalance extends AccountBalanceBase {
+  anchorStatus: "unreported";
+  balance: null;
+  estimatedBalance: null;
+}
+
+export interface AnchoredAccountBalance extends AccountBalanceBase {
+  anchorStatus: "reported";
+  // Latest balance explicitly reported by the bank. This remains the
+  // reconciliation anchor and is never overwritten by our estimate.
+  balance: number;
+  // Best local estimate after applying captured transactions newer than the
+  // reported balance anchor.
+  estimatedBalance: number;
+}
+
+export type AccountBalance = UnanchoredAccountBalance | AnchoredAccountBalance;
+
+// Weaker account-identity evidence that has not yet carried either a real
+// transaction or a bank-reported balance (for example, a mandate notice).
+// Transaction-bearing identities are normal accounts with a nullable balance
+// anchor, so their captured cash flow remains visible without inventing zero.
 export interface DetectedAccount {
   bankName: string;
   last4: string;
@@ -202,10 +216,12 @@ function resolveTransactionAccountKey(
     // attribution. Preserve the previously validated estimate behaviour by
     // requiring the transaction's parsed bank name to exactly match the latest
     // confirmed balance anchor's parsed bank name.
-    const latestReading = exactAccount.history.reduce((latest, reading) =>
-      reading.asOf > latest.asOf ? reading : latest,
-    );
-    return latestReading.detectedBankName === bankName ? exactKey : null;
+    const latestReading = exactAccount.history[0]
+      ? exactAccount.history.reduce((latest, reading) =>
+          reading.asOf > latest.asOf ? reading : latest,
+        )
+      : null;
+    return !latestReading || latestReading.detectedBankName === bankName ? exactKey : null;
   }
 
   // A large share of real bank transaction SMS omit account digits. Retain
@@ -213,7 +229,10 @@ function resolveTransactionAccountKey(
   // single possible confirmed account. Sender IDs never participate, and an
   // ambiguous multi-account transaction remains unapplied.
   const candidates = [...accountsByKey.entries()].filter(
-    ([, account]) => account.bankName === bankName && account.currency === currency,
+    ([, account]) =>
+      account.anchorStatus === "reported" &&
+      account.bankName === bankName &&
+      account.currency === currency,
   );
   return candidates.length === 1 ? candidates[0]![0] : null;
 }
@@ -268,11 +287,36 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
 
     const detectedAccountKey = result.bankName ? accountKey(result.bankName, result.acc) : null;
     const detectedLast4 = normalizeAcc(result.acc);
+    const transactionAmount = parseAmount(result.trx);
+    const hasTransactionEvidence = result.trxTypeRich !== null && transactionAmount !== null;
     const hasAccountEvidence =
-      parseAmount(result.bal) !== null ||
-      (result.trxTypeRich !== null && parseAmount(result.trx) !== null) ||
-      result.mandateId !== null;
-    if (detectedAccountKey && detectedLast4 && result.bankName && hasAccountEvidence) {
+      parseAmount(result.bal) !== null || hasTransactionEvidence || result.mandateId !== null;
+    if (detectedAccountKey && detectedLast4 && result.bankName && hasTransactionEvidence) {
+      const existing = accountsByKey.get(detectedAccountKey);
+      if (!existing) {
+        accountsByKey.set(detectedAccountKey, {
+          anchorStatus: "unreported",
+          bankName: result.bankName,
+          last4: detectedLast4,
+          balance: null,
+          currency: result.currency ?? "INR",
+          asOf: m.date,
+          sender: m.sender,
+          estimatedBalance: null,
+          capturedIncome: 0,
+          capturedExpense: 0,
+          capturedChange: 0,
+          capturedTransactionCount: 0,
+          estimatedAsOf: m.date,
+          reconciliationDelta: null,
+          history: [],
+        });
+      } else if (existing.anchorStatus === "unreported" && m.date > existing.asOf) {
+        existing.asOf = m.date;
+        existing.estimatedAsOf = m.date;
+        existing.sender = m.sender;
+      }
+    } else if (detectedAccountKey && detectedLast4 && result.bankName && hasAccountEvidence) {
       const existing = detectedAccountsByKey.get(detectedAccountKey);
       if (!existing || m.date > existing.asOf) {
         detectedAccountsByKey.set(detectedAccountKey, {
@@ -356,6 +400,7 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
           const existing = accountsByKey.get(key);
           if (!existing) {
             accountsByKey.set(key, {
+              anchorStatus: "reported",
               bankName: result.bankName,
               last4: normalizedAcc,
               balance,
@@ -373,17 +418,21 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
             });
           } else {
             existing.history.push(reading);
-            if (m.date > existing.asOf) {
-              existing.balance = balance;
-              existing.asOf = m.date;
-              existing.sender = m.sender;
-              existing.currency = currency;
-              existing.estimatedBalance = balance;
-              existing.capturedIncome = 0;
-              existing.capturedExpense = 0;
-              existing.capturedChange = 0;
-              existing.capturedTransactionCount = 0;
-              existing.estimatedAsOf = m.date;
+            if (existing.anchorStatus === "unreported" || m.date > existing.asOf) {
+              accountsByKey.set(key, {
+                ...existing,
+                anchorStatus: "reported",
+                balance,
+                asOf: m.date,
+                sender: m.sender,
+                currency,
+                estimatedBalance: balance,
+                capturedIncome: 0,
+                capturedExpense: 0,
+                capturedChange: 0,
+                capturedTransactionCount: 0,
+                estimatedAsOf: m.date,
+              });
             }
           }
         }
@@ -451,8 +500,8 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
 
     for (const { key: transactionKey, change, message } of ledgerEntries) {
       if (transactionKey !== key) continue;
-      if (message.date <= account.asOf) continue;
-      account.estimatedBalance += change;
+      if (account.anchorStatus === "reported" && message.date <= account.asOf) continue;
+      if (account.anchorStatus === "reported") account.estimatedBalance += change;
       if (change > 0) account.capturedIncome += change;
       else account.capturedExpense += Math.abs(change);
       account.capturedChange += change;

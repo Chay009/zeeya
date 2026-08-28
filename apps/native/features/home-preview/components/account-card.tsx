@@ -190,29 +190,31 @@ export function AccountCard({ account }: { account: HomeAccount }) {
             </Text>
           )}
 
-          {account.reportedBalance && account.reportedMeta && (
+          {account.capturedChange && (
             <View style={{ marginTop: 10, flexDirection: "row", gap: 12 }}>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={{ fontSize: 9, fontWeight: "700", color: "rgba(255,255,255,0.62)" }}>
-                  BANK REPORTED
-                </Text>
-                <Text
-                  style={{
-                    marginTop: 2,
-                    fontSize: 14,
-                    fontWeight: "800",
-                    color: "white",
-                  }}
-                >
-                  {account.reportedBalance}
-                </Text>
-                <Text
-                  numberOfLines={1}
-                  style={{ marginTop: 2, fontSize: 9, color: "rgba(255,255,255,0.62)" }}
-                >
-                  {account.reportedMeta}
-                </Text>
-              </View>
+              {account.reportedBalance && account.reportedMeta && (
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={{ fontSize: 9, fontWeight: "700", color: "rgba(255,255,255,0.62)" }}>
+                    BANK REPORTED
+                  </Text>
+                  <Text
+                    style={{
+                      marginTop: 2,
+                      fontSize: 14,
+                      fontWeight: "800",
+                      color: "white",
+                    }}
+                  >
+                    {account.reportedBalance}
+                  </Text>
+                  <Text
+                    numberOfLines={1}
+                    style={{ marginTop: 2, fontSize: 9, color: "rgba(255,255,255,0.62)" }}
+                  >
+                    {account.reportedMeta}
+                  </Text>
+                </View>
+              )}
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={{ fontSize: 9, fontWeight: "700", color: "rgba(255,255,255,0.62)" }}>
                   CAPTURED CHANGE
@@ -235,7 +237,7 @@ export function AccountCard({ account }: { account: HomeAccount }) {
             </View>
           )}
 
-          {account.reportedBalance && account.capturedIncome && account.capturedExpense && (
+          {account.capturedIncome && account.capturedExpense && (
             <View style={{ marginTop: 8, flexDirection: "row", gap: 12 }}>
               <Text style={{ flex: 1, fontSize: 10, color: "rgba(255,255,255,0.75)" }}>
                 Added {account.capturedIncome}
