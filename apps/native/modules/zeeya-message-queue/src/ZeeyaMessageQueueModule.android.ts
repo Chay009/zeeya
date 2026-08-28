@@ -1,4 +1,4 @@
-import { NativeModule, requireOptionalNativeModule } from "expo";
+import { requireOptionalNativeModule, type NativeModule } from "expo-modules-core";
 
 import type { PendingSmsSignal } from "./types";
 

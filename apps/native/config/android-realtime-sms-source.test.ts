@@ -17,12 +17,25 @@ const moduleRoot = path.join(
 );
 
 const moduleAndroidRoot = path.join(__dirname, "..", "modules", "zeeya-message-queue", "android");
+const moduleSourceRoot = path.join(__dirname, "..", "modules", "zeeya-message-queue", "src");
 
 function source(fileName: string): string {
   return readFileSync(path.join(moduleRoot, fileName), "utf8");
 }
 
 describe("Android realtime SMS native source contract", () => {
+  it("loads the local module through expo-modules-core without initializing the Expo entrypoint", () => {
+    for (const fileName of [
+      "ZeeyaMessageQueueModule.android.ts",
+      "ZeeyaMessageQueueModule.ios.ts",
+    ]) {
+      const wrapper = readFileSync(path.join(moduleSourceRoot, fileName), "utf8");
+
+      expect(wrapper).toContain('from "expo-modules-core"');
+      expect(wrapper).not.toContain('from "expo"');
+    }
+  });
+
   it("declares the Android library version required by Expo autolinking", () => {
     const buildGradle = readFileSync(path.join(moduleAndroidRoot, "build.gradle"), "utf8");
 
