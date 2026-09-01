@@ -229,8 +229,24 @@ export type ActivityCategorySuggestion = {
 export type ActivityPill = {
   key: string;
   label: string;
-  tone: "bank" | "recurring";
+  tone: "bank" | "recurring" | "type" | "subcategory" | "card" | "mandate";
 };
+
+// subcategory is the parser's raw grammar-seed token (upi/neft/imps/...) —
+// give the handful with a real-world acronym their acronym instead of
+// titleCase's "Upi"/"Neft"/"Imps", fall back to titleCase for the rest.
+const SUBCATEGORY_LABELS: Record<string, string> = {
+  upi: "UPI",
+  neft: "NEFT",
+  imps: "IMPS",
+  rtgs: "RTGS",
+  atm: "ATM",
+  emi: "EMI",
+};
+
+function subcategoryLabel(subcategory: string): string {
+  return SUBCATEGORY_LABELS[subcategory.toLowerCase()] ?? titleCase(subcategory);
+}
 
 export type HomeAccount = {
   key: string;
@@ -1003,6 +1019,33 @@ function buildActivity(dashboard: Dashboard): {
     const categorySuggestions = entry ? activityCategorySuggestions(message) : [];
     const recurring = entry ? isRecurringTransaction(message, dashboard) : false;
     const pills = [
+      // Transaction category (trxTypeRich — EXPENSE/INCOME/TRANSFER/...)
+      // and the UPI/NEFT/IMPS/mandate subcategory both surfaced directly in
+      // the row, not just the detail screen — these are the fields that
+      // tell you *what kind* of entry this is at a glance.
+      ...(message.result.trxTypeRich
+        ? [{ key: "type", label: titleCase(message.result.trxTypeRich), tone: "type" as const }]
+        : []),
+      ...(message.result.subcategory
+        ? [
+            {
+              key: "subcategory",
+              label: subcategoryLabel(message.result.subcategory),
+              tone: "subcategory" as const,
+            },
+          ]
+        : []),
+      ...(message.result.mandateEvent
+        ? [
+            {
+              key: "mandate",
+              label:
+                message.result.mandateEvent === "active" ? "Mandate active" : "Mandate cancelled",
+              tone: "mandate" as const,
+            },
+          ]
+        : []),
+      ...(message.result.isFromCard ? [{ key: "card", label: "Card", tone: "card" as const }] : []),
       ...(message.result.bankName
         ? [{ key: "bank", label: message.result.bankName, tone: "bank" as const }]
         : []),

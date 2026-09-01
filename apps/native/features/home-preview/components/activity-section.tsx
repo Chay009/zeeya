@@ -3,9 +3,18 @@ import { useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 
 import type { ActivityCategoryFilter } from "@/lib/activity-filters";
-import type { ActivityItem, HomePreviewData } from "../data";
+import type { ActivityItem, ActivityPill, HomePreviewData } from "../data";
 import { hp } from "../theme";
 import { BrandLogo } from "./brand-logo";
+
+const PILL_COLORS: Record<ActivityPill["tone"], { background: string; text: string }> = {
+  recurring: { background: "#eee4fb", text: "#8e61bf" },
+  type: { background: hp.chipBg, text: hp.emeraldDeep },
+  subcategory: { background: "#e4eefb", text: "#4a7bc9" },
+  mandate: { background: "#fdeee0", text: "#c07a2a" },
+  card: { background: "#12251f", text: "#ffffff" },
+  bank: { background: "#f1f5ef", text: hp.inkSoft },
+};
 
 export function ActivityFilterPills({
   activity,
@@ -136,10 +145,7 @@ export function ActivityItemRow({
             </View>
           ))}
           {item.pills.map((pill) => {
-            const colors =
-              pill.tone === "recurring"
-                ? { background: "#eee4fb", text: "#8e61bf" }
-                : { background: "#f1f5ef", text: hp.inkSoft };
+            const colors = PILL_COLORS[pill.tone];
             return (
               <View
                 key={`${item.key}:${pill.key}`}
