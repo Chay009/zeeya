@@ -10,6 +10,7 @@ import { formatDate, formatDateTimeFull, formatMoney } from "../dashboard/utils/
 import { presentAccount } from "../dashboard/utils/account-presentation";
 import { ACTIVITY_CATEGORY_FILTERS, type ActivityCategoryFilter } from "../../lib/activity-filters";
 import type { ParsedSms } from "../../lib/sms";
+import type { Token } from "@zeeya/parser/malana";
 import { subscriptionMonthlyTotals, type Subscription } from "../../lib/subscriptions";
 import { trxDirection, type TrxDirection } from "../../lib/transaction-direction";
 
@@ -89,6 +90,40 @@ export type DetailSection = {
 // summary row shows. Booleans and the tag map are included too — this is
 // meant to be a complete, literal view of the parse result, not a curated
 // subset.
+// One row per evidence fact, prefixed by kind, so "why did this category
+// match" is answerable from the value alone (grammar-tag:trx vs
+// marker:PNR vs policy:inactive-status all mean different things).
+function evidenceLabel(evidence: import("@zeeya/parser/malana").MalanaCategoryEvidence): string {
+  return `${evidence.kind}:${evidence.value}`;
+}
+
+// The full parse tree, flattened depth-first with indentation preserved in
+// the label — this is the literal, lowest-level output of the tokenizer
+// (type/raw/text/matched/locked/captured values), one row per token
+// including nested children, so nothing the engine produced is hidden
+// behind a summary.
+function flattenTokens(tokens: Token[], path: number[] = []): { label: string; value: string }[] {
+  return tokens.flatMap((token, index) => {
+    const tokenPath = [...path, index];
+    const indent = "  ".repeat(path.length);
+    const flags = [token.matched ? "matched" : "unmatched", token.locked ? "locked" : null].filter(
+      Boolean,
+    );
+    const values = Object.entries(token.values)
+      .map(([k, v]) => `${k}=${v}`)
+      .join(", ");
+    const valueParts = [`"${token.text}"`, flags.join("/"), values || null].filter(Boolean);
+    const row = {
+      // Path suffix (e.g. "[0.2.1]") keeps every row's label unique even
+      // when the same token type repeats at the same depth under different
+      // parents — DetailSection rows are keyed by label.
+      label: `${indent}${token.type} [${tokenPath.join(".")}]`,
+      value: valueParts.join("  ·  "),
+    };
+    return [row, ...flattenTokens(token.children, tokenPath)];
+  });
+}
+
 export function transactionDetailSections(message: ParsedSms): DetailSection[] {
   const r = message.result;
   const row = (label: string, value: string | null | undefined) =>
@@ -104,8 +139,16 @@ export function transactionDetailSections(message: ParsedSms): DetailSection[] {
         row("Bank", r.bankName),
         row("Merchant category", r.merchantCategory),
         row("Subcategory", r.subcategory),
-        row("Transaction type", r.trxTypeRich ?? r.trxType),
+        row("Transaction type (rich)", r.trxTypeRich),
+        row("Transaction type (raw)", r.trxType),
       ].filter((x): x is { label: string; value: string } => x !== null),
+    },
+    {
+      title: "Category evidence",
+      rows: (r.categoryMatches ?? []).map((match) => ({
+        label: `${match.category} (${match.role})`,
+        value: match.evidence.map(evidenceLabel).join(", ") || "no evidence recorded",
+      })),
     },
     {
       title: "Bank details",
@@ -207,6 +250,10 @@ export function transactionDetailSections(message: ParsedSms): DetailSection[] {
     {
       title: "Raw grammar tags",
       rows: Object.entries(r.tags).map(([label, value]) => ({ label, value })),
+    },
+    {
+      title: "Parse tree",
+      rows: flattenTokens(r.tokens),
     },
     {
       title: "Message",
