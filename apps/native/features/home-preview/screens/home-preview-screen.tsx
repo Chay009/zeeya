@@ -14,8 +14,9 @@ import { HomePermissionCard } from "../components/home-permission-card";
 import { SubscriptionDetail } from "../components/subscription-detail";
 import { SubscriptionsList } from "../components/subscriptions-list";
 import { SubscriptionsSummaryCard } from "../components/subscriptions-summary-card";
+import { TransactionDetail } from "../components/transaction-detail";
 import { useDashboardSync } from "@/features/dashboard/hooks/use-dashboard-sync";
-import { createHomePreviewData, type PreviewSub } from "../data";
+import { createHomePreviewData, type ActivityItem, type PreviewSub } from "../data";
 import { hp } from "../theme";
 
 type DrawerNavigation = { openDrawer: () => void };
@@ -28,8 +29,11 @@ export function HomePreviewScreen() {
     () => createHomePreviewData(dashboard, status === "ready"),
     [dashboard, status],
   );
-  const [view, setView] = useState<"home" | "subscriptions" | "activity" | "detail">("home");
+  const [view, setView] = useState<
+    "home" | "subscriptions" | "activity" | "detail" | "activity-detail"
+  >("home");
   const [selectedSubscription, setSelectedSubscription] = useState<PreviewSub | null>(null);
+  const [selectedActivity, setSelectedActivity] = useState<ActivityItem | null>(null);
   const connectedAccountCount = homeData.accounts.length;
   const detectedAccountCount = homeData.detectedAccounts.length;
   const bankNames = [
@@ -43,11 +47,22 @@ export function HomePreviewScreen() {
     setView("detail");
   };
 
+  const openActivityDetail = (item: ActivityItem) => {
+    setSelectedActivity(item);
+    setView("activity-detail");
+  };
+
   useEffect(() => {
     if (view === "home") return;
 
     const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
-      setView((current) => (current === "detail" ? "subscriptions" : "home"));
+      setView((current) =>
+        current === "detail"
+          ? "subscriptions"
+          : current === "activity-detail"
+            ? "activity"
+            : "home",
+      );
       return true;
     });
 
@@ -225,7 +240,11 @@ export function HomePreviewScreen() {
                 subscriptions={homeData.subscriptions}
                 onOpen={() => setView("subscriptions")}
               />
-              <ActivitySection activity={homeData.activity} onSeeAll={() => setView("activity")} />
+              <ActivitySection
+                activity={homeData.activity}
+                onSeeAll={() => setView("activity")}
+                onSelect={openActivityDetail}
+              />
             </>
           ) : null}
         </ScrollView>
@@ -240,6 +259,13 @@ export function HomePreviewScreen() {
         <ActivityList
           activity={homeData.activity}
           onBack={() => setView("home")}
+          onSelect={openActivityDetail}
+          topInset={insets.top}
+        />
+      ) : view === "activity-detail" && selectedActivity ? (
+        <TransactionDetail
+          item={selectedActivity}
+          onBack={() => setView("activity")}
           topInset={insets.top}
         />
       ) : selectedSubscription ? (

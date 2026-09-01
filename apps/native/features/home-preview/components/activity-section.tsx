@@ -61,9 +61,20 @@ export function ActivityFilterPills({
   );
 }
 
-export function ActivityItemRow({ item, index }: { item: ActivityItem; index: number }) {
+export function ActivityItemRow({
+  item,
+  index,
+  onPress,
+}: {
+  item: ActivityItem;
+  index: number;
+  onPress?: (item: ActivityItem) => void;
+}) {
   return (
-    <View
+    <Pressable
+      accessibilityRole={onPress ? "button" : undefined}
+      accessibilityLabel={onPress ? `View details for ${item.name}` : undefined}
+      onPress={onPress ? () => onPress(item) : undefined}
       style={{
         flexDirection: "row",
         alignItems: "center",
@@ -167,16 +178,18 @@ export function ActivityItemRow({ item, index }: { item: ActivityItem; index: nu
           </Text>
         </View>
       )}
-    </View>
+    </Pressable>
   );
 }
 
 export function ActivitySection({
   activity,
   onSeeAll,
+  onSelect,
 }: {
   activity: HomePreviewData["activity"];
   onSeeAll?: () => void;
+  onSelect?: (item: ActivityItem) => void;
 }) {
   const [selectedFilter, setSelectedFilter] = useState<ActivityCategoryFilter>("all");
   const visibleItems = activity.allItems
@@ -255,7 +268,7 @@ export function ActivitySection({
           <Text style={{ fontSize: 13, color: hp.mutedSoft }}>No recent activity</Text>
         ) : (
           visibleItems.map((item, index) => (
-            <ActivityItemRow key={item.key} item={item} index={index} />
+            <ActivityItemRow key={item.key} item={item} index={index} onPress={onSelect} />
           ))
         )}
       </View>

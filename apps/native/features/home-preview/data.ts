@@ -71,7 +71,155 @@ export type ActivityItem = {
   categoryFilters: ActivityCategoryFilter[];
   categorySuggestions: ActivityCategorySuggestion[];
   pills: ActivityPill[];
+  // The full parsed message this row summarizes — carried through so a
+  // detail screen can show every field the parser extracted (ref, bene,
+  // otp, mandateId, upiHandle, ...), not just the handful surfaced in the
+  // row itself. See TransactionDetail.
+  raw: ParsedSms;
 };
+
+export type DetailSection = {
+  title: string;
+  rows: { label: string; value: string }[];
+};
+
+// Every non-empty MalanaResult field, grouped the same way types.ts groups
+// them, so "what did the parser actually extract from this message" has one
+// real answer surfaced in the UI instead of the handful of fields the
+// summary row shows. Booleans and the tag map are included too — this is
+// meant to be a complete, literal view of the parse result, not a curated
+// subset.
+export function transactionDetailSections(message: ParsedSms): DetailSection[] {
+  const r = message.result;
+  const row = (label: string, value: string | null | undefined) =>
+    value !== null && value !== undefined && value !== "" ? { label, value } : null;
+  const bool = (label: string, value: boolean) => (value ? { label, value: "Yes" } : null);
+
+  const sections: DetailSection[] = [
+    {
+      title: "Classification",
+      rows: [
+        row("Category", r.category),
+        row("Matched categories", r.matchedCategories?.join(", ") ?? null),
+        row("Bank", r.bankName),
+        row("Merchant category", r.merchantCategory),
+        row("Subcategory", r.subcategory),
+        row("Transaction type", r.trxTypeRich ?? r.trxType),
+      ].filter((x): x is { label: string; value: string } => x !== null),
+    },
+    {
+      title: "Bank details",
+      rows: [
+        row("Amount", r.trx),
+        row("Balance", r.bal),
+        row("Account", r.acc),
+        row("Currency", r.currency),
+        bool("From card", r.isFromCard),
+        row("Credit limit", r.creditLimit),
+        row("Reference", r.ref),
+        row("Beneficiary", r.bene),
+        row("Beneficiary account", r.beneAcc),
+        row("Vendor", r.vendor),
+        row("Location", r.location),
+      ].filter((x): x is { label: string; value: string } => x !== null),
+    },
+    {
+      title: "Bills & mandates",
+      rows: [
+        row("Bill amount", r.billAmount),
+        row("EMI amount", r.emiAmount),
+        row("Due date", r.dueDate),
+        row("Policy no.", r.policyNo),
+        row("Recharge amount", r.rechargeAmount),
+        row("Mandate amount", r.mandateAmount),
+        row("Mandate ID (UMN)", r.mandateId),
+        row("Mandate status", r.mandateEvent),
+        row("Mandate merchant", r.mandateMerchant),
+      ].filter((x): x is { label: string; value: string } => x !== null),
+    },
+    {
+      title: "Travel",
+      rows: [
+        row("PNR", r.pnr),
+        row("Flight", r.flight),
+        row("Departure", r.departure),
+        row("Departure code", r.departureCode),
+        row("Arrival", r.arrival),
+        row("Arrival code", r.arrivalCode),
+        row("Fare", r.fare),
+        row("Train/bus no.", r.trainBusNo),
+        row("Boarding gate", r.boardingGate),
+      ].filter((x): x is { label: string; value: string } => x !== null),
+    },
+    {
+      title: "Delivery",
+      rows: [
+        row("Order no.", r.orderNo),
+        row("Tracking ID", r.trackingId),
+        row("Status", r.deliveryStatus),
+        row("Item", r.item),
+      ].filter((x): x is { label: string; value: string } => x !== null),
+    },
+    {
+      title: "OTP",
+      rows: [row("OTP", r.otp), row("Expires", r.otpExpiry)].filter(
+        (x): x is { label: string; value: string } => x !== null,
+      ),
+    },
+    {
+      title: "Offers",
+      rows: [
+        row("Cashback", r.cashback),
+        row("Discount", r.discount),
+        row("Offer code", r.offerCode),
+        row("Offer category", r.offerCategory),
+      ].filter((x): x is { label: string; value: string } => x !== null),
+    },
+    {
+      title: "Telecom",
+      rows: [row("Data left", r.dataLeft), row("Pack balance", r.packBalance)].filter(
+        (x): x is { label: string; value: string } => x !== null,
+      ),
+    },
+    {
+      title: "Stocks & investments",
+      rows: [
+        row("NAV", r.navValue),
+        row("Folio", r.folio),
+        row("Margin amount", r.marginAmount),
+      ].filter((x): x is { label: string; value: string } => x !== null),
+    },
+    {
+      title: "Brand & UPI",
+      rows: [
+        row("Brand", r.brandName),
+        bool("Online brand", r.isOnlineBrand),
+        row("UPI handle", r.upiHandle),
+      ].filter((x): x is { label: string; value: string } => x !== null),
+    },
+    {
+      title: "Spam detection",
+      rows: [
+        bool("Flagged as spam", r.isSpam),
+        row("Spam score", Number.isFinite(r.spamScore) ? r.spamScore.toFixed(2) : null),
+      ].filter((x): x is { label: string; value: string } => x !== null),
+    },
+    {
+      title: "Raw grammar tags",
+      rows: Object.entries(r.tags).map(([label, value]) => ({ label, value })),
+    },
+    {
+      title: "Message",
+      rows: [
+        { label: "Sender", value: message.sender },
+        { label: "Received", value: formatDateTimeFull(message.date) },
+        { label: "Body", value: message.body },
+      ],
+    },
+  ];
+
+  return sections.filter((section) => section.rows.length > 0);
+}
 
 export type ActivityCategorySuggestion = {
   key: string;
@@ -880,6 +1028,7 @@ function buildActivity(dashboard: Dashboard): {
       categoryFilters,
       categorySuggestions,
       pills,
+      raw: message,
     };
   });
 

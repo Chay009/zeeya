@@ -15,10 +15,12 @@ import {
 export function ActivityList({
   activity,
   onBack,
+  onSelect,
   topInset,
 }: {
   activity: HomePreviewData["activity"];
   onBack: () => void;
+  onSelect?: (item: ActivityItem) => void;
   topInset: number;
 }) {
   const [selectedFilter, setSelectedFilter] = useState<ActivityCategoryFilter>("all");
@@ -34,7 +36,9 @@ export function ActivityList({
     <FlatList<ActivityItem>
       data={visibleItems}
       keyExtractor={(item) => item.key}
-      renderItem={({ item, index }) => <ActivityItemRow item={item} index={index} />}
+      renderItem={({ item, index }) => (
+        <ActivityItemRow item={item} index={index} onPress={onSelect} />
+      )}
       ListHeaderComponent={
         <View style={{ paddingHorizontal: 20 }}>
           <View
