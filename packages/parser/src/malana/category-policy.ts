@@ -4,6 +4,7 @@ import type {
   MalanaCategoryMatch,
   MalanaCategoryRole,
   MalanaResult,
+  SeedData,
   Token,
 } from "./types";
 
@@ -274,22 +275,43 @@ export function routePrimaryCategory(tokens: Token[], fallback: MalanaCategory):
   );
 }
 
-/**
- * Loan advertisements can use an imperative such as "Withdraw Rs. ...", which
- * the seed normalizes to the same TRX token as a completed cash withdrawal.
- * Require four independent signals before treating that ambiguous grammar as
- * an offer: the trained classifier says promotional, the message uses the
- * imperative "withdraw", names a loan instrument, and contains a call-to-action
- * link. Completed forms such as "withdrawn" or "credited" remain transactions.
- */
-export function isPromotionalLoanSolicitation(tokens: Token[], isSpam: boolean): boolean {
-  if (!isSpam) return false;
-  const hasLoan = tokens.some((token) => token.type === "INS" && token.values["_norm"] === "loan");
-  const hasWithdrawCallToAction = tokens.some(
-    (token) => token.type === "TRX" && token.text.toLowerCase() === "withdraw",
+/** The seed separates ambiguous bare/noun forms in TRX1 from completed forms in TRX/TRX2. */
+export function deriveAmbiguousTransactionForms(seed: SeedData): ReadonlySet<string> {
+  const entry = Object.entries(seed.TOKENS).find(([key]) => /^TRX1(?:\[|$)/.test(key));
+  if (!entry) return new Set();
+  return new Set(
+    entry[1]
+      .split(",")
+      .map((value) => value.split("|", 1)[0]!.trim().toLowerCase())
+      .filter(Boolean),
   );
-  const hasLink = tokens.some((token) => token.type === "URL");
-  return hasLoan && hasWithdrawCallToAction && hasLink;
+}
+
+/**
+ * The tokenizer intentionally collapses TRX1 to the base TRX type, matching
+ * Java, and consequently inherits the seed's shared `past` annotation. A
+ * promotional message containing only one of those ambiguous forms is not a
+ * completed transaction unless transaction-reference or reported-balance
+ * evidence backs it independently. An account number identifies the subject,
+ * but does not prove that the instructed movement happened.
+ */
+export function isUnconfirmedPromotionalTransaction(
+  tokens: Token[],
+  isSpam: boolean,
+  ambiguousForms: ReadonlySet<string>,
+  balanceIndicatorTypes: ReadonlySet<string>,
+): boolean {
+  if (!isSpam) return false;
+  const hasAmbiguousTransaction = tokens.some(
+    (token) => token.type === "TRX" && ambiguousForms.has(token.text.trim().toLowerCase()),
+  );
+  if (!hasAmbiguousTransaction) return false;
+
+  const hasIndependentCompletionEvidence = tokens.some(
+    (token) =>
+      token.type === "REF" || token.type === "TRANSID" || balanceIndicatorTypes.has(token.type),
+  );
+  return !hasIndependentCompletionEvidence;
 }
 
 export function qualifyCategoryEvidence(

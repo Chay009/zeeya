@@ -1,7 +1,6 @@
 import {
   createCategoryMatch,
   hasGrammarEvidence,
-  isPromotionalLoanSolicitation,
   isProductCategory,
   qualifyCategoryEvidence,
 } from "./category-policy";
@@ -17,14 +16,14 @@ export function composeCategoryResults(
   candidates: MalanaCategory[],
   parsedByCategory: ReadonlyMap<MalanaCategory, ParsedCategory>,
   tokens: Token[],
+  suppressPromotionalTransaction: boolean,
 ): MalanaResult {
   const primary = parsedByCategory.get(primaryCategory)!;
   let result = primary.result;
   const bank = parsedByCategory.get("GRM_BANK");
   const bankEvidence = bank ? qualifyCategoryEvidence("GRM_BANK", bank.evidence, tokens) : [];
-  const promotionalLoan = isPromotionalLoanSolicitation(tokens, bank?.result.isSpam ?? false);
   const confirmedBankTransaction =
-    !promotionalLoan &&
+    !suppressPromotionalTransaction &&
     bank?.result.trx &&
     bank.result.trxTypeRich &&
     hasGrammarEvidence(bankEvidence, "trx")
@@ -76,7 +75,7 @@ export function composeCategoryResults(
   }
 
   const categoryMatches = candidates.flatMap((category) => {
-    if (promotionalLoan && category === "GRM_BANK") return [];
+    if (suppressPromotionalTransaction && category === "GRM_BANK") return [];
     if (!isProductCategory(category)) return [];
     const parsed = parsedByCategory.get(category)!;
     const routedPrimary = category === primaryCategory && parsed.result.category === category;

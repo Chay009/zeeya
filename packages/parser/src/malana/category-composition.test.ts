@@ -152,6 +152,44 @@ describe("Malana category composition", () => {
     expect(result.currency).toBeNull();
   });
 
+  it("does not require a link to reject an advertised withdrawal", () => {
+    const result = engine.parse(
+      "Withdraw Rs.50000 from your pre-approved personal loan. Apply now for instant access.",
+      "VM-IDFCFB",
+    );
+
+    expect(result.category).toBe("GRM_OFFERS");
+    expect(result.matchedCategories).toEqual(["GRM_OFFERS"]);
+    expect(result.trx).toBeNull();
+    expect(result.trxTypeRich).toBeNull();
+    expect(result.currency).toBeNull();
+  });
+
+  it("rejects promotional bare transaction forms outside loan advertising", () => {
+    const result = engine.parse(
+      "Deposit Rs.5000 today and earn attractive returns. Open now at https://bank.example/fd",
+      "VM-TESTBK",
+    );
+
+    expect(result.category).toBe("GRM_OFFERS");
+    expect(result.matchedCategories).toEqual(["GRM_OFFERS"]);
+    expect(result.trx).toBeNull();
+    expect(result.trxTypeRich).toBeNull();
+    expect(result.currency).toBeNull();
+  });
+
+  it("does not mistake an account number for transaction completion", () => {
+    const result = engine.parse(
+      "Withdraw Rs.50000 from A/c XX1234 using your pre-approved personal loan. Apply now.",
+      "VM-IDFCFB",
+    );
+
+    expect(result.category).toBe("GRM_OFFERS");
+    expect(result.matchedCategories).toEqual(["GRM_OFFERS"]);
+    expect(result.trx).toBeNull();
+    expect(result.trxTypeRich).toBeNull();
+  });
+
   it("keeps a completed loan disbursal even when the message contains a link", () => {
     const result = engine.parse(
       "Rs.299000 credited to A/c XX1234 as personal loan disbursal. Ref 258565338181. Details https://bank.example/loan",

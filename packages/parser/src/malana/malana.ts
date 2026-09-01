@@ -15,7 +15,8 @@ import { CurrencyRegistry } from "./currency-registry";
 import { extractRawMerchant } from "./merchant-extractor";
 import {
   categoryMarkerEvidence,
-  isPromotionalLoanSolicitation,
+  deriveAmbiguousTransactionForms,
+  isUnconfirmedPromotionalTransaction,
   isMalanaCategory,
   isProductCategory,
   routePrimaryCategory,
@@ -265,12 +266,14 @@ export class MalanaEngine {
   // small set of grammar categories.
   private layerCache = new Map<string, ReturnType<typeof compileSeed>>();
   private balanceIndicatorTypes: Set<string>;
+  private ambiguousTransactionForms: ReadonlySet<string>;
   private currencyRegistry: CurrencyRegistry;
 
   constructor(seed: SeedData) {
     this.seed = seed;
     this.keywordTokenizer = new KeywordTokenizer(seed.TOKENS);
     this.balanceIndicatorTypes = deriveBalanceIndicatorTypes(seed);
+    this.ambiguousTransactionForms = deriveAmbiguousTransactionForms(seed);
     this.currencyRegistry = new CurrencyRegistry(seed);
   }
 
@@ -306,8 +309,15 @@ export class MalanaEngine {
       recognizedCategory && isProductCategory(recognizedCategory) ? recognizedCategory : "GRM_BANK";
     const routedCategory = routePrimaryCategory(tokens, fallbackCategory);
     const spam = detectSpam(message);
-    const promotionalLoan = isPromotionalLoanSolicitation(tokens, spam.isSpam);
-    const primaryCategory: MalanaCategory = promotionalLoan ? "GRM_OFFERS" : routedCategory;
+    const suppressPromotionalTransaction = isUnconfirmedPromotionalTransaction(
+      tokens,
+      spam.isSpam,
+      this.ambiguousTransactionForms,
+      this.balanceIndicatorTypes,
+    );
+    const primaryCategory: MalanaCategory = suppressPromotionalTransaction
+      ? "GRM_OFFERS"
+      : routedCategory;
     const detectedByRouting =
       primaryCategory !== fallbackCategory ||
       (Boolean(senderGrammar) && fallbackCategory !== defaultCategory);
@@ -337,7 +347,13 @@ export class MalanaEngine {
       parsedByCategory.set(category, parsed);
     }
 
-    return composeCategoryResults(primaryCategory, candidates, parsedByCategory, tokens);
+    return composeCategoryResults(
+      primaryCategory,
+      candidates,
+      parsedByCategory,
+      tokens,
+      suppressPromotionalTransaction,
+    );
   }
 
   private parseCategory(
