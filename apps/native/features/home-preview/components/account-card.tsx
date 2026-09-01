@@ -4,6 +4,25 @@ import type { HomeAccount } from "../data";
 import { hp } from "../theme";
 import { BrandLogo } from "./brand-logo";
 
+// REPORTED/CALCULATED/TRACKING carry real, different trust levels (see
+// account-presentation.ts) — a bank-confirmed figure, a locally-estimated
+// one, and no real balance at all — so they get visually distinct pill
+// treatments instead of the same neutral chip, filled solid for the two
+// states that have a real number and outlined for the one that doesn't.
+const STATUS_STYLES: Record<string, { background: string; text: string; borderColor?: string }> = {
+  REPORTED: { background: hp.lime, text: hp.inkDeep },
+  CALCULATED: { background: "#ffd68f", text: "#5a3d12" },
+  TRACKING: {
+    background: "transparent",
+    text: "rgba(255,255,255,0.9)",
+    borderColor: "rgba(255,255,255,0.55)",
+  },
+};
+const DEFAULT_STATUS_STYLE = {
+  background: "rgba(255,255,255,0.15)",
+  text: "rgba(255,255,255,0.9)",
+};
+
 type BankIconPosition = {
   right?: number;
   left?: number;
@@ -111,12 +130,20 @@ export function AccountCard({ account }: { account: HomeAccount }) {
         <View
           style={{
             borderRadius: 999,
-            backgroundColor: "rgba(255,255,255,0.15)",
+            backgroundColor: (STATUS_STYLES[account.status] ?? DEFAULT_STATUS_STYLE).background,
+            borderWidth: STATUS_STYLES[account.status]?.borderColor ? 1 : 0,
+            borderColor: STATUS_STYLES[account.status]?.borderColor,
             paddingHorizontal: 8,
             paddingVertical: 4,
           }}
         >
-          <Text style={{ fontSize: 9, fontWeight: "800", color: "rgba(255,255,255,0.9)" }}>
+          <Text
+            style={{
+              fontSize: 9,
+              fontWeight: "800",
+              color: (STATUS_STYLES[account.status] ?? DEFAULT_STATUS_STYLE).text,
+            }}
+          >
             {account.status}
           </Text>
         </View>
