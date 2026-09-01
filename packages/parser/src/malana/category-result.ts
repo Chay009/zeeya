@@ -1,6 +1,7 @@
 import {
   createCategoryMatch,
   hasGrammarEvidence,
+  isPromotionalLoanSolicitation,
   isProductCategory,
   qualifyCategoryEvidence,
 } from "./category-policy";
@@ -21,8 +22,12 @@ export function composeCategoryResults(
   let result = primary.result;
   const bank = parsedByCategory.get("GRM_BANK");
   const bankEvidence = bank ? qualifyCategoryEvidence("GRM_BANK", bank.evidence, tokens) : [];
+  const promotionalLoan = isPromotionalLoanSolicitation(tokens, bank?.result.isSpam ?? false);
   const confirmedBankTransaction =
-    bank?.result.trx && bank.result.trxTypeRich && hasGrammarEvidence(bankEvidence, "trx")
+    !promotionalLoan &&
+    bank?.result.trx &&
+    bank.result.trxTypeRich &&
+    hasGrammarEvidence(bankEvidence, "trx")
       ? bank.result
       : null;
   const suppressFinancialFacts =
@@ -71,6 +76,7 @@ export function composeCategoryResults(
   }
 
   const categoryMatches = candidates.flatMap((category) => {
+    if (promotionalLoan && category === "GRM_BANK") return [];
     if (!isProductCategory(category)) return [];
     const parsed = parsedByCategory.get(category)!;
     const routedPrimary = category === primaryCategory && parsed.result.category === category;

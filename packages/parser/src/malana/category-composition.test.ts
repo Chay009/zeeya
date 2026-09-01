@@ -139,6 +139,32 @@ describe("Malana category composition", () => {
     expect(result.currency).toBeNull();
   });
 
+  it("does not treat an advertised loan withdrawal amount as a transaction", () => {
+    const result = engine.parse(
+      "Hi! Withdraw Rs.299000 at 0 foreclosure charges with FIRSTmoney Smart Personal Loan by IDFC FIRST Bank. Hurry! https://idfcfs.bank.in/IDFCFB/ZUQEFh TCA",
+      "VM-IDFCFB",
+    );
+
+    expect(result.category).toBe("GRM_OFFERS");
+    expect(result.matchedCategories).toEqual(["GRM_OFFERS"]);
+    expect(result.trx).toBeNull();
+    expect(result.trxTypeRich).toBeNull();
+    expect(result.currency).toBeNull();
+  });
+
+  it("keeps a completed loan disbursal even when the message contains a link", () => {
+    const result = engine.parse(
+      "Rs.299000 credited to A/c XX1234 as personal loan disbursal. Ref 258565338181. Details https://bank.example/loan",
+      "VM-IDFCFB",
+    );
+
+    expect(result.category).toBe("GRM_BANK");
+    expect(result.matchedCategories).toContain("GRM_BANK");
+    expect(result.trx).toBe("299000");
+    expect(result.trxTypeRich).toBe("INCOME");
+    expect(result.currency).toBe("INR");
+  });
+
   it("does not hide a grammar-proven bank debit merely because its merchant says offer", () => {
     const result = engine.parse(
       "Rs.500 debited from A/c XX1234 at Offer Store. Available balance Rs.4500.",

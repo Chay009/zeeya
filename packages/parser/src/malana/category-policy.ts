@@ -274,6 +274,24 @@ export function routePrimaryCategory(tokens: Token[], fallback: MalanaCategory):
   );
 }
 
+/**
+ * Loan advertisements can use an imperative such as "Withdraw Rs. ...", which
+ * the seed normalizes to the same TRX token as a completed cash withdrawal.
+ * Require four independent signals before treating that ambiguous grammar as
+ * an offer: the trained classifier says promotional, the message uses the
+ * imperative "withdraw", names a loan instrument, and contains a call-to-action
+ * link. Completed forms such as "withdrawn" or "credited" remain transactions.
+ */
+export function isPromotionalLoanSolicitation(tokens: Token[], isSpam: boolean): boolean {
+  if (!isSpam) return false;
+  const hasLoan = tokens.some((token) => token.type === "INS" && token.values["_norm"] === "loan");
+  const hasWithdrawCallToAction = tokens.some(
+    (token) => token.type === "TRX" && token.text.toLowerCase() === "withdraw",
+  );
+  const hasLink = tokens.some((token) => token.type === "URL");
+  return hasLoan && hasWithdrawCallToAction && hasLink;
+}
+
 export function qualifyCategoryEvidence(
   category: MalanaCategory,
   evidence: MalanaCategoryEvidence[],

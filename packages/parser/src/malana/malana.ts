@@ -15,6 +15,7 @@ import { CurrencyRegistry } from "./currency-registry";
 import { extractRawMerchant } from "./merchant-extractor";
 import {
   categoryMarkerEvidence,
+  isPromotionalLoanSolicitation,
   isMalanaCategory,
   isProductCategory,
   routePrimaryCategory,
@@ -303,7 +304,10 @@ export class MalanaEngine {
     const recognizedCategory = isMalanaCategory(requestedCategory) ? requestedCategory : null;
     const fallbackCategory: MalanaCategory =
       recognizedCategory && isProductCategory(recognizedCategory) ? recognizedCategory : "GRM_BANK";
-    const primaryCategory = routePrimaryCategory(tokens, fallbackCategory);
+    const routedCategory = routePrimaryCategory(tokens, fallbackCategory);
+    const spam = detectSpam(message);
+    const promotionalLoan = isPromotionalLoanSolicitation(tokens, spam.isSpam);
+    const primaryCategory: MalanaCategory = promotionalLoan ? "GRM_OFFERS" : routedCategory;
     const detectedByRouting =
       primaryCategory !== fallbackCategory ||
       (Boolean(senderGrammar) && fallbackCategory !== defaultCategory);
@@ -324,6 +328,7 @@ export class MalanaEngine {
         tokens,
         detectedBankName,
         resolvedVendor,
+        spam,
       );
       parsed.evidence.push(...categoryMarkerEvidence(category, tokens));
       if (category === "GRM_NOTIF" && hasInactiveTransactionStatus(message, parsed.result.tags)) {
@@ -345,6 +350,7 @@ export class MalanaEngine {
     allTokens: Token[],
     detectedBankName: string | null,
     resolvedVendor: string | null,
+    spam: { isSpam: boolean; score: number },
   ): ParsedCategory {
     // Step 3: Compile grammar layers for category (cached — see getLayersFor)
     const layers = this.getLayersFor(category);
@@ -549,7 +555,6 @@ export class MalanaEngine {
       (t) =>
         t.type === "INS" && ["card", "creditcard", "debitcard"].includes(t.values["_norm"] ?? ""),
     );
-    const spam = detectSpam(message);
     // Only run the mandate merchant/amount extractor when a mandateId is
     // already confirmed present — its "towards X for Y" anchor isn't scoped
     // to mandate messages specifically and could false-match unrelated text.
