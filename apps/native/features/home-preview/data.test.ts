@@ -329,4 +329,56 @@ describe("createHomePreviewData — dynamic logo.dev fallback (issue #15)", () =
     // Swiggy's curated tile color from knownBrandStyles, unchanged.
     expect(item!.tile).toBe("#fff0bf");
   });
+
+  it("does NOT attempt a dynamic logo lookup for a person's name (bene) even with a token configured — false-positive risk", () => {
+    process.env.EXPO_PUBLIC_LOGO_DEV_TOKEN = "pk_test_token";
+    // No brandName/vendor — a plain person-to-person transfer, so
+    // merchantName() falls through to bene. Sending a real person's name
+    // to a fuzzy company-logo search risks showing an unrelated real
+    // brand's logo next to someone's personal transfer.
+    const message: ParsedSms = {
+      id: "m1",
+      sender: "VM-TESTBK",
+      body: "",
+      date: Date.now(),
+      result: minimalResult({
+        bankName: "Test Bank",
+        bene: "RAJPUROHIT NAREN",
+        trx: "100.00",
+        trxTypeRich: "EXPENSE",
+      }),
+    };
+
+    const home = createHomePreviewData(deriveDashboard([message]), true);
+    const item = home.activity.allItems.find((entry) => entry.name === "RAJPUROHIT NAREN");
+
+    expect(item).toBeDefined();
+    expect(item!.img).toBeUndefined();
+  });
+
+  it("does not attempt a dynamic logo lookup for the raw bank name a transaction falls back to", () => {
+    process.env.EXPO_PUBLIC_LOGO_DEV_TOKEN = "pk_test_token";
+    // No brandName/vendor/bene — falls all the way to bankName. This is a
+    // real bank, but not the merchant of this transaction, so it
+    // shouldn't be treated as a confident brand match here either
+    // (account cards already show the bank's own logo separately, via
+    // bankVisualFor, which is unaffected by this restriction).
+    const message: ParsedSms = {
+      id: "m1",
+      sender: "VM-TESTBK",
+      body: "",
+      date: Date.now(),
+      result: minimalResult({
+        bankName: "Test Bank",
+        trx: "100.00",
+        trxTypeRich: "EXPENSE",
+      }),
+    };
+
+    const home = createHomePreviewData(deriveDashboard([message]), true);
+    const item = home.activity.allItems.find((entry) => entry.name === "Test Bank");
+
+    expect(item).toBeDefined();
+    expect(item!.img).toBeUndefined();
+  });
 });

@@ -32,13 +32,5 @@ export function logoUrlFor(name: string): string | null {
   // "/name/" fixed the latter. img.logo.dev/{domain} (e.g. sbi.co.in) also
   // works, but this app only has free-text bank/merchant names, not
   // domains, so the "/name/" search endpoint is the correct one here.
-  const url = `https://img.logo.dev/name/${encodeURIComponent(trimmed)}?${params.toString()}`;
-  // TEMPORARY diagnostic — only some names render on-device despite the
-  // /name/ endpoint working for those same strings when tested directly
-  // in a browser, and this can't be reproduced from a sandbox with no
-  // device. Logging the exact input string and resulting URL side by
-  // side is what lets that be compared for real instead of guessed at.
-  // Remove once the on-device cause is confirmed.
-  console.log(`[logo-dev] name=${JSON.stringify(trimmed)} url=${url}`);
-  return url;
+  return `https://img.logo.dev/name/${encodeURIComponent(trimmed)}?${params.toString()}`;
 }

@@ -564,6 +564,21 @@ function merchantName(message: ParsedSms): string {
   );
 }
 
+// The subset of merchantName()'s fallback chain the parser has actually
+// identified as a real merchant/brand — brandName and vendor only.
+// Everything past that (bene, bankName, sender) is a real value used for
+// *display* ("who did this money go to/come from"), but not a company
+// name: bene is a person's own name from a transfer, bankName/sender
+// identify the bank or SMS channel, not who was paid. Passing one of
+// those into a fuzzy company-name logo search risks a false-positive
+// match — a real, unrelated brand's logo shown next to someone's personal
+// transfer, which is worse than no logo at all (see dashboard.ts's
+// mandate-merchant fix for the same principle: don't let an unrelated
+// real value stand in for "we don't actually know").
+function confidentBrandName(message: ParsedSms): string | null {
+  return message.result.brandName?.trim() || message.result.vendor?.trim() || null;
+}
+
 function categoryName(message: ParsedSms): string {
   const category = message.result.merchantCategory ?? message.result.subcategory;
   return category ? titleCase(category) : "Transaction";
@@ -578,14 +593,24 @@ function categoryName(message: ParsedSms): string {
 // letter avatar with zero visual break when the token isn't set —
 // BrandLogo's own onError handler additionally drops the image if the
 // fetched URL doesn't resolve to a real logo.
-function visualStyleFor(name: string, category?: string | null): VisualStyle {
+// `logoQuery` is what's actually sent to the dynamic logo.dev lookup —
+// defaults to `name` for callers that already only ever pass a confident
+// brand name (subscriptions, category bars). Pass it explicitly as `null`
+// to skip the dynamic lookup entirely, e.g. when `name` is a person's
+// name or a bank/sender identifier rather than an actual merchant — see
+// confidentBrandName's own comment on why that distinction matters.
+function visualStyleFor(
+  name: string,
+  category?: string | null,
+  logoQuery: string | null = name,
+): VisualStyle {
   const value = normalized(name);
   const knownBrand = knownBrandStyles.find((entry) => value.includes(entry.match));
   const categoryStyle = categoryStyles.find((entry) =>
     normalized(category ?? "").includes(entry.match),
   );
   const base = knownBrand?.style ?? categoryStyle?.style ?? fallbackVisualStyle;
-  const dynamicImg = logoUrlFor(name);
+  const dynamicImg = logoQuery ? logoUrlFor(logoQuery) : null;
   return dynamicImg ? { ...base, img: dynamicImg } : base;
 }
 
@@ -1104,7 +1129,11 @@ function buildActivity(dashboard: Dashboard): {
 
   const allItems: ActivityItem[] = messages.map((message) => {
     const name = merchantName(message);
-    const style = visualStyleFor(name, message.result.merchantCategory);
+    const style = visualStyleFor(
+      name,
+      message.result.merchantCategory,
+      confidentBrandName(message),
+    );
     const entry = entriesById.get(message.id);
     const categoryFilters = activityCategoryFilters(message);
     const categorySuggestions = entry ? activityCategorySuggestions(message) : [];
@@ -1170,7 +1199,11 @@ function buildActivity(dashboard: Dashboard): {
 }
 
 function subscriptionVisual(name: string): VisualStyle {
-  return visualStyleFor(name, "subscriptions");
+  // dashboard.ts's mandate-merchant fallback uses this exact literal when
+  // extraction fails (see its own comment) — a placeholder, not a real
+  // name, so it must never be sent to the dynamic logo lookup either.
+  const logoQuery = name === "Unknown merchant" ? null : name;
+  return visualStyleFor(name, "subscriptions", logoQuery);
 }
 
 function timelineForMandate(history: MandateEvent[]) {
