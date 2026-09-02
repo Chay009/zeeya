@@ -58,7 +58,11 @@ export function BrandLogo({
       {!failed && img && isKnownSvgSource(img) && (
         <SvgUri
           uri={img}
-          onError={() => setFailed(true)}
+          onError={(e) => {
+            // TEMPORARY diagnostic — see lib/logo-dev.ts's own note.
+            console.log(`[BrandLogo] SvgUri failed for ${img}:`, e);
+            setFailed(true);
+          }}
           width={iconSize}
           height={iconSize}
           style={{ position: "absolute" }}
@@ -67,7 +71,12 @@ export function BrandLogo({
       {!failed && img && !isKnownSvgSource(img) && (
         <Image
           source={{ uri: img }}
-          onError={() => setFailed(true)}
+          onError={(e) => {
+            // TEMPORARY diagnostic — see lib/logo-dev.ts's own note.
+            console.log(`[BrandLogo] Image failed for ${img}:`, e.nativeEvent.error);
+            setFailed(true);
+          }}
+          onLoad={() => console.log(`[BrandLogo] Image loaded OK for ${img}`)}
           style={{ position: "absolute", width: iconSize, height: iconSize }}
           resizeMode="contain"
         />
