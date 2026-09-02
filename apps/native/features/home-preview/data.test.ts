@@ -2,7 +2,7 @@ import { createMalanaEngine } from "@zeeya/parser/malana";
 import { describe, expect, it } from "vitest";
 import { deriveDashboard } from "../../lib/dashboard";
 import type { ParsedSms } from "../../lib/sms";
-import { createHomePreviewData } from "./data";
+import { createHomePreviewData, summarizeNewTransactions } from "./data";
 
 describe("createHomePreviewData — detected accounts", () => {
   it("tracks SBI transactions before the first reported balance", () => {
@@ -163,5 +163,42 @@ describe("createHomePreviewData - transaction categories", () => {
     expect(transaction!.categorySuggestions.map((category) => category.label)).not.toContain(
       "Bank",
     );
+  });
+});
+
+describe("summarizeNewTransactions", () => {
+  it("summarizes a real debit and credit with signed amounts and direction", () => {
+    const engine = createMalanaEngine();
+    const debitBody =
+      "Rs.500.00 debited from A/c XX1234 on 20-Oct-25 to merchant@upi (UPI Ref No 123456789012)";
+    const creditBody = "Rs.1000.00 credited to A/c XX1234 on 20-Oct-25 (UPI Ref No 123456789099)";
+    const messages: ParsedSms[] = [
+      {
+        id: "1",
+        sender: "VM-HDFCBK",
+        body: debitBody,
+        date: Date.now(),
+        result: engine.parse(debitBody, "VM-HDFCBK"),
+      },
+      {
+        id: "2",
+        sender: "VM-HDFCBK",
+        body: creditBody,
+        date: Date.now(),
+        result: engine.parse(creditBody, "VM-HDFCBK"),
+      },
+    ];
+
+    const summaries = summarizeNewTransactions(messages);
+
+    expect(summaries).toHaveLength(2);
+    expect(summaries[0]).toMatchObject({ key: "1", direction: "expense" });
+    expect(summaries[0]!.amount).toMatch(/^−/);
+    expect(summaries[1]).toMatchObject({ key: "2", direction: "income" });
+    expect(summaries[1]!.amount).toMatch(/^\+/);
+  });
+
+  it("returns an empty list for an empty input, not a placeholder row", () => {
+    expect(summarizeNewTransactions([])).toEqual([]);
   });
 });

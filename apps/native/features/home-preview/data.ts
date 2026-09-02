@@ -605,6 +605,37 @@ function formatActivityDate(timestamp: number): string {
   })}`;
 }
 
+export interface NewTransactionSummary {
+  key: string;
+  name: string;
+  amount: string | null;
+  direction: "income" | "expense" | "neutral";
+}
+
+// Turns the raw ParsedSms[] the "what's new since you last looked" dialog
+// receives (see useDashboardSync's newSinceLastView) into the same
+// name/amount/direction shape ActivityItem already presents elsewhere —
+// one formatting definition for "how a transaction is summarized," not a
+// second one invented for this dialog.
+export function summarizeNewTransactions(messages: ParsedSms[]): NewTransactionSummary[] {
+  return messages.map((message) => {
+    const amount = parseAmount(message.result.trx);
+    const direction = trxDirection(message.result.trxTypeRich);
+    return {
+      key: message.id,
+      name: merchantName(message),
+      amount:
+        amount === null
+          ? null
+          : formatSignedAmount(
+              direction === "income" ? amount : -amount,
+              message.result.currency ?? "INR",
+            ),
+      direction,
+    };
+  });
+}
+
 function formatDateHeading(date: Date): string {
   return date.toLocaleDateString("en-IN", { day: "numeric", month: "short" }).toUpperCase();
 }

@@ -10,7 +10,9 @@ import {
 } from "@/lib/device-message-sync";
 import type { SyncProgress } from "@/db/sync";
 import { hasSmsReadPermission, requestSmsReadPermission } from "@/lib/sms";
+import type { ParsedSms } from "@/lib/sms";
 import { subscribeToMessageSync } from "@/features/capabilities/message-sync-events";
+import { findNewFinancialTransactions } from "@/features/capabilities/background/periodic-sync";
 
 export type Status =
   | "checking"
@@ -32,10 +34,47 @@ export function useDashboardSync() {
   // bounded initial 90-day scan) — null once nothing is actively syncing.
   // Deliberately not a percentage: the total to scan isn't known upfront.
   const [progress, setProgress] = useState<{ scanned: number; inserted: number } | null>(null);
+  // Financial messages that appeared between two dashboard snapshots this
+  // screen has actually shown — what the "you're back, here's what's new"
+  // dialog renders. Accumulates across every dashboard update (a resumed
+  // sync's own progress ticks included) until dismissed, de-duplicated by
+  // message id.
+  const [newSinceLastView, setNewSinceLastView] = useState<ParsedSms[]>([]);
   // Bumped on every load() call so a slow, stale in-flight read can't
   // overwrite a newer one's result if a refresh is triggered before the
   // previous one finished.
   const loadIdRef = useRef(0);
+  const dashboardRef = useRef(dashboard);
+  // True until the very first successful dashboard load this screen has
+  // ever shown — suppresses the diff below for that one call, since
+  // "before" would otherwise be the empty placeholder Dashboard and every
+  // real message would spuriously look "new." Never flips back to true.
+  const suppressDiffRef = useRef(true);
+
+  // Every dashboard update (load()'s own result, its intermediate
+  // progress ticks, and the app-root provider's own background sync via
+  // subscribeToMessageSync below) routes through here, so "what's new
+  // since this screen last showed something" has exactly one definition
+  // regardless of which of those triggered the update.
+  const applyDashboard = useCallback((next: Dashboard) => {
+    const previous = dashboardRef.current;
+    dashboardRef.current = next;
+    setDashboard(next);
+    if (!suppressDiffRef.current) {
+      const added = findNewFinancialTransactions(previous, next);
+      if (added.length > 0) {
+        setNewSinceLastView((current) => {
+          const existingIds = new Set(current.map((message) => message.id));
+          const deduped = added.filter((message) => !existingIds.has(message.id));
+          return deduped.length > 0 ? [...current, ...deduped] : current;
+        });
+      }
+    }
+  }, []);
+
+  const dismissNewSinceLastView = useCallback(() => {
+    setNewSinceLastView([]);
+  }, []);
 
   // Platform capture lives behind syncDeviceMessages(): Android drains the
   // permitted SMS inbox, while iOS drains the App Group queue populated by
@@ -55,21 +94,24 @@ export function useDashboardSync() {
           // final result below, just checked on every intermediate tick
           // too, not only once at the end.
           if (id !== loadIdRef.current) return;
-          setDashboard(next.dashboard);
+          applyDashboard(next.dashboard);
           setProgress({ scanned: next.scanned, inserted: next.inserted });
         },
       });
       if (id !== loadIdRef.current) return;
-      setDashboard(nextDashboard);
+      applyDashboard(nextDashboard);
       setStatus("ready");
       setProgress(null);
+      // Only ever transitions true -> false, on this screen's first
+      // successful load — see suppressDiffRef's own comment.
+      suppressDiffRef.current = false;
     } catch (e) {
       if (id !== loadIdRef.current) return;
       setStatus("error");
       setError(e instanceof Error ? e.message : String(e));
       setProgress(null);
     }
-  }, []);
+  }, [applyDashboard]);
 
   // Android requires READ_SMS before the shared inbox load; RECEIVE_SMS is
   // only needed for opt-in arrival monitoring. iOS has no inbox permission
@@ -131,11 +173,15 @@ export function useDashboardSync() {
   useEffect(() => {
     return subscribeToMessageSync((nextDashboard) => {
       loadIdRef.current += 1;
-      setDashboard(nextDashboard);
+      applyDashboard(nextDashboard);
       setError(null);
       setStatus("ready");
+      // This provider-driven sync can be this screen's very first
+      // dashboard update on some cold-start orderings — same one-time
+      // transition as load()'s own success path.
+      suppressDiffRef.current = false;
     });
-  }, []);
+  }, [applyDashboard]);
 
   const connect = useCallback(async () => {
     setStatus("loading");
@@ -158,5 +204,15 @@ export function useDashboardSync() {
     setRefreshing(false);
   }, [load]);
 
-  return { status, error, dashboard, refreshing, progress, connect, onRefresh };
+  return {
+    status,
+    error,
+    dashboard,
+    refreshing,
+    progress,
+    newSinceLastView,
+    dismissNewSinceLastView,
+    connect,
+    onRefresh,
+  };
 }

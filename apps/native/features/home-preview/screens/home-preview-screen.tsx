@@ -11,12 +11,18 @@ import { AccountEvidenceSection } from "../components/account-evidence-section";
 import { BudgetCard } from "../components/budget-card";
 import { CashflowCard } from "../components/cashflow-card";
 import { HomePermissionCard } from "../components/home-permission-card";
+import { NewTransactionsDialog } from "../components/new-transactions-dialog";
 import { SubscriptionDetail } from "../components/subscription-detail";
 import { SubscriptionsList } from "../components/subscriptions-list";
 import { SubscriptionsSummaryCard } from "../components/subscriptions-summary-card";
 import { TransactionDetail } from "../components/transaction-detail";
 import { useDashboardSync } from "@/features/dashboard/hooks/use-dashboard-sync";
-import { createHomePreviewData, type ActivityItem, type PreviewSub } from "../data";
+import {
+  createHomePreviewData,
+  summarizeNewTransactions,
+  type ActivityItem,
+  type PreviewSub,
+} from "../data";
 import { hp } from "../theme";
 
 type DrawerNavigation = { openDrawer: () => void };
@@ -25,10 +31,15 @@ export function HomePreviewScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<DrawerNavigation>();
   const router = useRouter();
-  const { dashboard, status, error, progress, connect } = useDashboardSync();
+  const { dashboard, status, error, progress, newSinceLastView, dismissNewSinceLastView, connect } =
+    useDashboardSync();
   const homeData = useMemo(
     () => createHomePreviewData(dashboard, status === "ready"),
     [dashboard, status],
+  );
+  const newTransactionSummaries = useMemo(
+    () => summarizeNewTransactions(newSinceLastView),
+    [newSinceLastView],
   );
   const [view, setView] = useState<
     "home" | "subscriptions" | "activity" | "detail" | "activity-detail"
@@ -374,6 +385,11 @@ export function HomePreviewScreen() {
           />
         </View>
       )}
+
+      <NewTransactionsDialog
+        transactions={newTransactionSummaries}
+        onDismiss={dismissNewSinceLastView}
+      />
     </View>
   );
 }
