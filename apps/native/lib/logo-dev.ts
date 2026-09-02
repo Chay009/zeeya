@@ -1,11 +1,17 @@
-// Direct client-side call to logo.dev's name-based lookup
-// (img.logo.dev/name/{name}) — a testing-only prototype for issue #15's
-// vendor/merchant logo work, using an EXPO_PUBLIC_ token for now instead
-// of the Worker+R2-cached proxy that issue describes as the real plan.
-// A client-side token here is spent per app install, not once globally
-// like the proxy would be, and ships inside the public app bundle
-// (EXPO_PUBLIC_ vars always do) — acceptable for validating the visual
-// result, not for production traffic volume.
+// Client-side call to logo.dev's exact domain endpoint
+// (img.logo.dev/{domain}) — issue #15's vendor/merchant logo work.
+//
+// This intentionally does NOT call logo.dev's fuzzy /name/ search: that
+// endpoint takes a free-text guess and returns *some* logo for it with no
+// verification, which risks showing an unrelated real brand's mark next to
+// a transaction it has nothing to do with. A verified consultation on this
+// architecture (see issue #15) confirmed that only a known, curated
+// name→domain mapping should ever resolve to a real logo; everything else
+// must fall back to the deterministic letter/category tile until a
+// server-side candidate-search + verification step exists to grow that
+// mapping safely. So this module only ever takes a domain the caller
+// already knows is correct (data.ts's knownBrandStyles/knownBankStyles),
+// never a raw merchant/vendor name.
 //
 // Read directly from process.env (Metro inlines EXPO_PUBLIC_* at bundle
 // time — the standard Expo pattern), not via @zeeya/env/native: that
@@ -15,10 +21,20 @@
 // environment this module's caller (features/home-preview/data.ts) is
 // tested under. Going through it here would break every test that
 // imports data.ts merely by adding an unrelated optional var.
-export function logoUrlFor(name: string): string | null {
+//
+// A publishable logo.dev token is meant to ship client-side (it's rate-
+// and domain-scoped on logo.dev's end, not a secret) — this is its
+// intended use, not a stand-in for a server proxy.
+
+// Domains a prior request already 404'd for, this process lifetime — skips
+// building (and BrandLogo re-fetching) a URL already known to fail instead
+// of re-attempting the same dead request on every render/message.
+const failedDomains = new Set<string>();
+
+export function logoUrlForDomain(domain: string): string | null {
   const token = process.env.EXPO_PUBLIC_LOGO_DEV_TOKEN;
-  const trimmed = name.trim();
-  if (!token || !trimmed) return null;
+  const trimmed = domain.trim();
+  if (!token || !trimmed || failedDomains.has(trimmed)) return null;
 
   // "png", not "webp" — static WebP decoding on Android has historically
   // required the Fresco webpsupport artifact to be present in the native
@@ -26,11 +42,15 @@ export function logoUrlFor(name: string): string | null {
   // this is a managed CNG workflow, prebuilt fresh each build). PNG has no
   // such dependency on either platform.
   const params = new URLSearchParams({ token, format: "png", retina: "true" });
-  // The bare img.logo.dev/{name} path (no "/name/" segment) only resolves
-  // for names that happen to already look like a domain/slug — confirmed
-  // directly: "HDFC" rendered, "State Bank of India" did not, and adding
-  // "/name/" fixed the latter. img.logo.dev/{domain} (e.g. sbi.co.in) also
-  // works, but this app only has free-text bank/merchant names, not
-  // domains, so the "/name/" search endpoint is the correct one here.
-  return `https://img.logo.dev/name/${encodeURIComponent(trimmed)}?${params.toString()}`;
+  return `https://img.logo.dev/${encodeURIComponent(trimmed)}?${params.toString()}`;
+}
+
+export function markLogoDomainFailed(domain: string): void {
+  failedDomains.add(domain.trim());
+}
+
+// Test-only: negative caching persists for the module's lifetime, which
+// would otherwise leak between unrelated test cases run in the same file.
+export function resetLogoDomainFailures(): void {
+  failedDomains.clear();
 }
