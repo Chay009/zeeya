@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useNavigation } from "expo-router";
+import { useNavigation, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { BackHandler, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -24,6 +24,7 @@ type DrawerNavigation = { openDrawer: () => void };
 export function HomePreviewScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<DrawerNavigation>();
+  const router = useRouter();
   const { dashboard, status, error, connect } = useDashboardSync();
   const homeData = useMemo(
     () => createHomePreviewData(dashboard, status === "ready"),
@@ -41,6 +42,15 @@ export function HomePreviewScreen() {
   ];
   const accountSourceLabel =
     bankNames.length > 1 ? `${bankNames.length} banks` : (bankNames[0] ?? "Detected balance");
+  // Render the dashboard shell as soon as there's anything meaningful to
+  // show structure for, rather than blocking the whole screen on a full
+  // sync — homeData already defaults to a valid empty Dashboard, and
+  // createHomePreviewData's `visible` flag (status === "ready" above)
+  // masks real numbers as "—" until the sync actually completes, so this
+  // just stops throwing that intentional loading state away. Only
+  // "needs-permission"/"unsupported"/"error" have nothing to show yet —
+  // HomePermissionCard is the whole story there.
+  const showDashboardShell = status === "checking" || status === "loading" || status === "ready";
 
   const openDetail = (subscription: PreviewSub) => {
     setSelectedSubscription(subscription);
@@ -132,7 +142,7 @@ export function HomePreviewScreen() {
 
           <HomePermissionCard status={status} error={error} onConnect={connect} />
 
-          {status === "ready" ? (
+          {showDashboardShell ? (
             <>
               <View
                 style={{
@@ -318,23 +328,33 @@ export function HomePreviewScreen() {
               <Text style={{ fontSize: 10, fontWeight: "800", color: hp.emeraldDeep }}>Home</Text>
             </View>
 
-            <View style={{ flex: 1, alignItems: "center", gap: 4, paddingVertical: 6 }}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Open insights"
+              onPress={() => router.push("/insights")}
+              style={{ flex: 1, alignItems: "center", gap: 4, paddingVertical: 6 }}
+            >
               <View
                 style={{ width: 48, height: 32, alignItems: "center", justifyContent: "center" }}
               >
                 <Ionicons name="stats-chart" size={18} color="#9aa79f" />
               </View>
               <Text style={{ fontSize: 10, fontWeight: "700", color: "#9aa79f" }}>Insights</Text>
-            </View>
+            </Pressable>
 
-            <View style={{ flex: 1, alignItems: "center", gap: 4, paddingVertical: 6 }}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Open profile and settings"
+              onPress={() => router.push("/settings")}
+              style={{ flex: 1, alignItems: "center", gap: 4, paddingVertical: 6 }}
+            >
               <View
                 style={{ width: 48, height: 32, alignItems: "center", justifyContent: "center" }}
               >
                 <Ionicons name="person-circle-outline" size={18} color="#9aa79f" />
               </View>
               <Text style={{ fontSize: 10, fontWeight: "700", color: "#9aa79f" }}>Profile</Text>
-            </View>
+            </Pressable>
           </View>
 
           <View

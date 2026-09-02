@@ -63,8 +63,16 @@ export function useDashboardSync() {
     }
     hasSmsReadPermission()
       .then((granted) => {
-        if (granted) void load();
-        else setStatus("needs-permission");
+        // Distinct from "checking" the moment permission is confirmed —
+        // otherwise the whole (often much slower) inbox sync/parse still
+        // reports itself as "checking permission," which is simply wrong
+        // once permission is already known to be granted.
+        if (granted) {
+          setStatus("loading");
+          void load();
+        } else {
+          setStatus("needs-permission");
+        }
       })
       .catch((e: unknown) => {
         setStatus("error");
