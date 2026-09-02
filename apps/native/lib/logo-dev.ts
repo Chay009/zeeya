@@ -20,6 +20,11 @@ export function logoUrlFor(name: string): string | null {
   const trimmed = name.trim();
   if (!token || !trimmed) return null;
 
-  const params = new URLSearchParams({ token, format: "webp", retina: "true" });
+  // "png", not "webp" — static WebP decoding on Android has historically
+  // required the Fresco webpsupport artifact to be present in the native
+  // build, which isn't guaranteed here (no committed android/ directory —
+  // this is a managed CNG workflow, prebuilt fresh each build). PNG has no
+  // such dependency on either platform.
+  const params = new URLSearchParams({ token, format: "png", retina: "true" });
   return `https://img.logo.dev/${encodeURIComponent(trimmed)}?${params.toString()}`;
 }

@@ -18,7 +18,7 @@ describe("logoUrlFor", () => {
     process.env.EXPO_PUBLIC_LOGO_DEV_TOKEN = "pk_test_token";
     const url = logoUrlFor("Swiggy");
 
-    expect(url).toBe("https://img.logo.dev/Swiggy?token=pk_test_token&format=webp&retina=true");
+    expect(url).toBe("https://img.logo.dev/Swiggy?token=pk_test_token&format=png&retina=true");
   });
 
   it("URL-encodes a name containing spaces or special characters", () => {
