@@ -1,5 +1,5 @@
 // Direct client-side call to logo.dev's name-based lookup
-// (img.logo.dev/{name}) — a testing-only prototype for issue #15's
+// (img.logo.dev/name/{name}) — a testing-only prototype for issue #15's
 // vendor/merchant logo work, using an EXPO_PUBLIC_ token for now instead
 // of the Worker+R2-cached proxy that issue describes as the real plan.
 // A client-side token here is spent per app install, not once globally
@@ -26,5 +26,11 @@ export function logoUrlFor(name: string): string | null {
   // this is a managed CNG workflow, prebuilt fresh each build). PNG has no
   // such dependency on either platform.
   const params = new URLSearchParams({ token, format: "png", retina: "true" });
-  return `https://img.logo.dev/${encodeURIComponent(trimmed)}?${params.toString()}`;
+  // The bare img.logo.dev/{name} path (no "/name/" segment) only resolves
+  // for names that happen to already look like a domain/slug — confirmed
+  // directly: "HDFC" rendered, "State Bank of India" did not, and adding
+  // "/name/" fixed the latter. img.logo.dev/{domain} (e.g. sbi.co.in) also
+  // works, but this app only has free-text bank/merchant names, not
+  // domains, so the "/name/" search endpoint is the correct one here.
+  return `https://img.logo.dev/name/${encodeURIComponent(trimmed)}?${params.toString()}`;
 }

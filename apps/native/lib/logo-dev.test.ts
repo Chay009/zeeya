@@ -18,7 +18,7 @@ describe("logoUrlFor", () => {
     process.env.EXPO_PUBLIC_LOGO_DEV_TOKEN = "pk_test_token";
     const url = logoUrlFor("Swiggy");
 
-    expect(url).toBe("https://img.logo.dev/Swiggy?token=pk_test_token&format=png&retina=true");
+    expect(url).toBe("https://img.logo.dev/name/Swiggy?token=pk_test_token&format=png&retina=true");
   });
 
   it("URL-encodes a name containing spaces or special characters", () => {
@@ -33,5 +33,11 @@ describe("logoUrlFor", () => {
     process.env.EXPO_PUBLIC_LOGO_DEV_TOKEN = "pk_test_token";
     expect(logoUrlFor("")).toBeNull();
     expect(logoUrlFor("   ")).toBeNull();
+  });
+
+  it("always includes the /name/ path segment — confirmed directly against the real API that the bare img.logo.dev/{name} path only resolves for names that happen to look like a domain (e.g. 'HDFC'), not free-text names like 'State Bank of India'", () => {
+    process.env.EXPO_PUBLIC_LOGO_DEV_TOKEN = "pk_test_token";
+    expect(logoUrlFor("State Bank of India")).toMatch(/^https:\/\/img\.logo\.dev\/name\//);
+    expect(logoUrlFor("HDFC Bank")).toMatch(/^https:\/\/img\.logo\.dev\/name\//);
   });
 });

@@ -307,7 +307,7 @@ describe("createHomePreviewData — dynamic logo.dev fallback (issue #15)", () =
     const item = home.activity.allItems.find((entry) => entry.name === "Zomato");
 
     expect(item!.img).toBe(
-      "https://img.logo.dev/Zomato?token=pk_test_token&format=png&retina=true",
+      "https://img.logo.dev/name/Zomato?token=pk_test_token&format=png&retina=true",
     );
   });
 
@@ -317,7 +317,7 @@ describe("createHomePreviewData — dynamic logo.dev fallback (issue #15)", () =
     const item = home.activity.allItems.find((entry) => entry.name === "Swiggy");
 
     expect(item!.img).toBe(
-      "https://img.logo.dev/Swiggy?token=pk_test_token&format=png&retina=true",
+      "https://img.logo.dev/name/Swiggy?token=pk_test_token&format=png&retina=true",
     );
   });
 
