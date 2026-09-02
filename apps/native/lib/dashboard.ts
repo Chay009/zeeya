@@ -340,7 +340,14 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
     if (!isDuplicateTransaction) deduplicatedMessages.push(m);
 
     if (result.mandateId) {
-      const merchant = result.mandateMerchant ?? result.brandName ?? result.bankName ?? m.sender;
+      // Only real merchant-identity signals — never the bank's own name or
+      // the SMS sender ID. Falling back to those (as this used to) shows a
+      // subscription card labeled "State Bank of India" or "VM-SBIINB"
+      // whenever the mandate SMS body doesn't let extractMandateMerchant
+      // (or brandName's own detection) pin down the actual service —
+      // technically non-null, but actively misleading: it looks like the
+      // subscribed merchant, not "we don't actually know."
+      const merchant = result.mandateMerchant ?? result.brandName ?? "Unknown merchant";
       const amount = parseAmount(result.mandateAmount);
       const status = result.mandateEvent ?? "active";
       const event: MandateEvent = { status, date: m.date, sender: m.sender };

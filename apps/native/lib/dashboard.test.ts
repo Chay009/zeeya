@@ -658,6 +658,33 @@ describe("deriveDashboard — mandates", () => {
     expect(mandates[0]!.history[1]!.status).toBe("active");
   });
 
+  it("labels a mandate 'Unknown merchant' rather than the processing bank when extraction fails", () => {
+    // A subscription card showing "State Bank of India" (or a raw sender
+    // ID) looks like a real merchant name, not "we don't actually know" —
+    // actively misleading, not just an uninformative fallback. Neither
+    // mandateMerchant nor brandName resolved here (the real-world case:
+    // extractMandateMerchant's own known unreliability on some mandate SMS
+    // bodies), so this must land on the explicit "Unknown merchant" label,
+    // never bankName or sender.
+    const messages: ParsedSms[] = [
+      sms("1", "VM-SBIINB", 1000, {
+        bankName: "State Bank of India",
+        mandateId: "umn-unresolved",
+        mandateMerchant: null,
+        brandName: null,
+        mandateAmount: "499.00",
+        mandateEvent: "active",
+      }),
+    ];
+
+    const { mandates } = deriveDashboard(messages);
+
+    expect(mandates).toHaveLength(1);
+    expect(mandates[0]!.merchant).toBe("Unknown merchant");
+    expect(mandates[0]!.merchant).not.toBe("State Bank of India");
+    expect(mandates[0]!.merchant).not.toBe("VM-SBIINB");
+  });
+
   it("does not merge distinct mandates (different mandateId) for the same merchant", () => {
     const messages: ParsedSms[] = [
       sms("1", "VA-SBIUPI-S", 1000, {
