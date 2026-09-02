@@ -10,9 +10,13 @@ import {
 } from "@/lib/device-message-sync";
 import type { SyncProgress } from "@/db/sync";
 import { hasSmsReadPermission, requestSmsReadPermission } from "@/lib/sms";
-import type { ParsedSms } from "@/lib/sms";
 import { subscribeToMessageSync } from "@/features/capabilities/message-sync-events";
-import { findNewFinancialTransactions } from "@/features/capabilities/background/periodic-sync";
+import {
+  applyDashboardUpdate,
+  dismissNewSinceLastView as dismissNewSinceLastViewState,
+  initialNewSinceLastViewState,
+  type NewSinceLastViewState,
+} from "./new-since-last-view";
 
 export type Status =
   | "checking"
@@ -25,10 +29,16 @@ export type Status =
 export function useDashboardSync() {
   const [status, setStatus] = useState<Status>("checking");
   const [error, setError] = useState<string | null>(null);
+  // The state machine itself lives in new-since-last-view.ts (a plain,
+  // unit-tested module) — this ref/pair-of-useState split is just the
+  // standard "hold the authoritative value in a ref so callbacks always
+  // read the latest one, mirror it into state so renders react to it"
+  // pattern, same as loadIdRef below.
+  const stateRef = useRef<NewSinceLastViewState>(initialNewSinceLastViewState(deriveDashboard([])));
   // Empty-but-valid Dashboard (deriveDashboard([])) so every render before
   // the first successful load can read dashboard.* unconditionally, same
   // as before this screen read from the ledger.
-  const [dashboard, setDashboard] = useState<Dashboard>(() => deriveDashboard([]));
+  const [dashboard, setDashboard] = useState<Dashboard>(stateRef.current.dashboard);
   const [refreshing, setRefreshing] = useState(false);
   // Scanned/inserted counts from the most recent in-progress sync (e.g. the
   // bounded initial 90-day scan) — null once nothing is actively syncing.
@@ -39,41 +49,30 @@ export function useDashboardSync() {
   // dialog renders. Accumulates across every dashboard update (a resumed
   // sync's own progress ticks included) until dismissed, de-duplicated by
   // message id.
-  const [newSinceLastView, setNewSinceLastView] = useState<ParsedSms[]>([]);
+  const [newSinceLastView, setNewSinceLastView] = useState(stateRef.current.newSinceLastView);
   // Bumped on every load() call so a slow, stale in-flight read can't
   // overwrite a newer one's result if a refresh is triggered before the
   // previous one finished.
   const loadIdRef = useRef(0);
-  const dashboardRef = useRef(dashboard);
-  // True until the very first successful dashboard load this screen has
-  // ever shown — suppresses the diff below for that one call, since
-  // "before" would otherwise be the empty placeholder Dashboard and every
-  // real message would spuriously look "new." Never flips back to true.
-  const suppressDiffRef = useRef(true);
 
   // Every dashboard update (load()'s own result, its intermediate
   // progress ticks, and the app-root provider's own background sync via
   // subscribeToMessageSync below) routes through here, so "what's new
   // since this screen last showed something" has exactly one definition
-  // regardless of which of those triggered the update.
-  const applyDashboard = useCallback((next: Dashboard) => {
-    const previous = dashboardRef.current;
-    dashboardRef.current = next;
-    setDashboard(next);
-    if (!suppressDiffRef.current) {
-      const added = findNewFinancialTransactions(previous, next);
-      if (added.length > 0) {
-        setNewSinceLastView((current) => {
-          const existingIds = new Set(current.map((message) => message.id));
-          const deduped = added.filter((message) => !existingIds.has(message.id));
-          return deduped.length > 0 ? [...current, ...deduped] : current;
-        });
-      }
-    }
-  }, []);
+  // (new-since-last-view.ts's applyDashboardUpdate) regardless of which
+  // of those triggered the update.
+  const applyDashboard = useCallback(
+    (next: Dashboard, options: { completesFirstLoad?: boolean } = {}) => {
+      stateRef.current = applyDashboardUpdate(stateRef.current, next, options);
+      setDashboard(stateRef.current.dashboard);
+      setNewSinceLastView(stateRef.current.newSinceLastView);
+    },
+    [],
+  );
 
   const dismissNewSinceLastView = useCallback(() => {
-    setNewSinceLastView([]);
+    stateRef.current = dismissNewSinceLastViewState(stateRef.current);
+    setNewSinceLastView(stateRef.current.newSinceLastView);
   }, []);
 
   // Platform capture lives behind syncDeviceMessages(): Android drains the
@@ -99,12 +98,9 @@ export function useDashboardSync() {
         },
       });
       if (id !== loadIdRef.current) return;
-      applyDashboard(nextDashboard);
+      applyDashboard(nextDashboard, { completesFirstLoad: true });
       setStatus("ready");
       setProgress(null);
-      // Only ever transitions true -> false, on this screen's first
-      // successful load — see suppressDiffRef's own comment.
-      suppressDiffRef.current = false;
     } catch (e) {
       if (id !== loadIdRef.current) return;
       setStatus("error");
@@ -173,13 +169,13 @@ export function useDashboardSync() {
   useEffect(() => {
     return subscribeToMessageSync((nextDashboard) => {
       loadIdRef.current += 1;
-      applyDashboard(nextDashboard);
-      setError(null);
-      setStatus("ready");
       // This provider-driven sync can be this screen's very first
       // dashboard update on some cold-start orderings — same one-time
-      // transition as load()'s own success path.
-      suppressDiffRef.current = false;
+      // completesFirstLoad transition as load()'s own success path (a
+      // no-op if load() already completed it first).
+      applyDashboard(nextDashboard, { completesFirstLoad: true });
+      setError(null);
+      setStatus("ready");
     });
   }, [applyDashboard]);
 
