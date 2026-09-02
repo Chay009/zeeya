@@ -24,6 +24,38 @@ export function findNewFinancialTransactions(before: Dashboard, after: Dashboard
   return after.recent.filter((message) => !existingIds.has(message.id));
 }
 
+export interface SyncAndNotifyDependencies {
+  loadDashboard(): Promise<Dashboard>;
+  sync(): Promise<Dashboard>;
+  transactionNotificationsEnabled: boolean;
+  notify(transactions: ParsedSms[]): Promise<void>;
+}
+
+export interface SyncAndNotifyResult {
+  dashboard: Dashboard;
+  newFinancialTransactions: ParsedSms[];
+}
+
+// The load-before/sync/load-after/diff/notify sequence, factored out so
+// both the 15-minute background task (via runPeriodicSync below) and the
+// real-time SMS-broadcast path (features/capabilities/provider.native.tsx)
+// share one implementation instead of two independently-maintained copies
+// that could drift — e.g. one path forgetting the notifications-enabled
+// check, or diffing dashboards differently.
+export async function syncAndNotify(
+  dependencies: SyncAndNotifyDependencies,
+): Promise<SyncAndNotifyResult> {
+  const before = await dependencies.loadDashboard();
+  const after = await dependencies.sync();
+  const added = findNewFinancialTransactions(before, after);
+
+  if (dependencies.transactionNotificationsEnabled && added.length > 0) {
+    await dependencies.notify(added);
+  }
+
+  return { dashboard: after, newFinancialTransactions: added };
+}
+
 // Platform-independent orchestration used by the Expo background-task
 // adapter. Keeping policy here means tests can prove what does (and does
 // not) trigger a notification without loading TaskManager, Notifications,
@@ -40,13 +72,12 @@ export async function runPeriodicSync(
     return { status: "permissions-missing", newFinancialTransactions: 0 };
   }
 
-  const before = await dependencies.loadDashboard();
-  const after = await dependencies.sync();
-  const added = findNewFinancialTransactions(before, after);
+  const { newFinancialTransactions } = await syncAndNotify({
+    loadDashboard: dependencies.loadDashboard,
+    sync: dependencies.sync,
+    transactionNotificationsEnabled: settings.transactionNotificationsEnabled,
+    notify: dependencies.notify,
+  });
 
-  if (settings.transactionNotificationsEnabled && added.length > 0) {
-    await dependencies.notify(added);
-  }
-
-  return { status: "completed", newFinancialTransactions: added.length };
+  return { status: "completed", newFinancialTransactions: newFinancialTransactions.length };
 }

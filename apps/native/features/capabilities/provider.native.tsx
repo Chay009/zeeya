@@ -2,12 +2,14 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import type { PropsWithChildren } from "react";
 import { ActivityIndicator, AppState, Platform, Pressable, Text, View } from "react-native";
 
+import { loadDashboard } from "@/db/ingestion";
 import {
   DEFAULT_LOCAL_SETTINGS,
   getLocalSettings,
   type LocalSettings,
   updateLocalSettings,
 } from "@/db/settings";
+import type { Dashboard } from "@/lib/dashboard";
 import {
   deviceMessageCaptureRequiresReadPermission,
   isDeviceMessageCaptureSupported,
@@ -19,8 +21,12 @@ import {
   requestSmsCapturePermissions,
 } from "@/lib/sms";
 import { setBackgroundSyncRegistration } from "./background/task";
+import { syncAndNotify } from "./background/periodic-sync";
 import { publishMessageSync } from "./message-sync-events";
-import { requestTransactionNotificationPermission } from "./notifications/notifications";
+import {
+  notifyNewFinancialTransactions,
+  requestTransactionNotificationPermission,
+} from "./notifications/notifications";
 import {
   authenticateForAppAccess,
   canEnableBiometricLock,
@@ -55,19 +61,41 @@ export function CapabilityProvider({ children }: PropsWithChildren) {
   settingsRef.current = settings;
 
   const syncCapturedMessages = useCallback(
-    async (options: { failOnMissingReadPermission?: boolean } = {}) => {
-      if (!isDeviceMessageCaptureSupported()) return;
+    async (
+      options: { failOnMissingReadPermission?: boolean } = {},
+    ): Promise<Dashboard | undefined> => {
+      if (!isDeviceMessageCaptureSupported()) return undefined;
       if (deviceMessageCaptureRequiresReadPermission() && !(await hasSmsReadPermission())) {
         if (options.failOnMissingReadPermission) {
           throw new Error("READ_SMS permission is required to process newly received SMS.");
         }
-        return;
+        return undefined;
       }
       const dashboard = await syncDeviceMessages();
       publishMessageSync(dashboard);
+      return dashboard;
     },
     [],
   );
+
+  // Wraps syncCapturedMessages with the same load-before/sync/load-after/
+  // diff/notify sequence the 15-minute background task already uses (see
+  // periodic-sync.ts's syncAndNotify) — the real-time SMS-broadcast path
+  // previously only refreshed the live dashboard, never notified, even
+  // though the notification plumbing (and the transactionNotificationsEnabled
+  // setting gating it) already existed and was already wired into the
+  // background task. settingsRef, not `settings` directly, so this reads
+  // the current preference at call time rather than whatever it was when
+  // this callback was created.
+  const notifyRealtimeSync = useCallback(async () => {
+    await syncAndNotify({
+      loadDashboard,
+      sync: async () =>
+        (await syncCapturedMessages({ failOnMissingReadPermission: true })) ?? loadDashboard(),
+      transactionNotificationsEnabled: settingsRef.current.transactionNotificationsEnabled,
+      notify: notifyNewFinancialTransactions,
+    });
+  }, [syncCapturedMessages]);
 
   const syncCapturedMessagesSafely = useCallback(() => {
     void syncCapturedMessages().catch((cause) => {
@@ -146,12 +174,9 @@ export function CapabilityProvider({ children }: PropsWithChildren) {
         ) {
           return;
         }
-        stop = subscribeToRealtimeSms(
-          () => syncCapturedMessages({ failOnMissingReadPermission: true }),
-          (cause) => {
-            console.warn("Zeeya could not process a newly received SMS", cause);
-          },
-        );
+        stop = subscribeToRealtimeSms(notifyRealtimeSync, (cause) => {
+          console.warn("Zeeya could not process a newly received SMS", cause);
+        });
       })
       .catch((cause) => {
         if (!cancelled) {
@@ -163,7 +188,7 @@ export function CapabilityProvider({ children }: PropsWithChildren) {
       cancelled = true;
       stop();
     };
-  }, [loaded, settings.backgroundSyncEnabled, syncCapturedMessages]);
+  }, [loaded, settings.backgroundSyncEnabled, notifyRealtimeSync]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {

@@ -4,7 +4,7 @@ import { createMalanaEngine } from "@zeeya/parser/malana";
 import type { Dashboard } from "@/lib/dashboard";
 import type { ParsedSms } from "@/lib/sms";
 
-import { findNewFinancialTransactions, runPeriodicSync } from "./periodic-sync";
+import { findNewFinancialTransactions, runPeriodicSync, syncAndNotify } from "./periodic-sync";
 
 function transaction(id: string, date: number): ParsedSms {
   const body = "INR 10 debited from account XX1234";
@@ -122,5 +122,82 @@ describe("periodic financial sync policy", () => {
     });
 
     expect(notify).not.toHaveBeenCalled();
+  });
+
+  // syncAndNotify is the sequence both runPeriodicSync (above) and the
+  // real-time SMS-broadcast path (provider.native.tsx's notifyRealtimeSync
+  // — untestable directly under Vitest, since it transitively imports
+  // react-native, same reason lib/sms.ts's own module can't be either)
+  // share. Tested here directly, not just through runPeriodicSync's
+  // gating, since the real-time caller invokes it without that gating at
+  // all — its own permission/subscription checks happen upstream instead.
+  describe("syncAndNotify", () => {
+    it("notifies with exactly the newly-added financial transactions when enabled", async () => {
+      const old = transaction("old", 1);
+      const added = transaction("new", 2);
+      const notify = vi.fn().mockResolvedValue(undefined);
+
+      const result = await syncAndNotify({
+        loadDashboard: async () => dashboard([old]),
+        sync: async () => dashboard([added, old]),
+        transactionNotificationsEnabled: true,
+        notify,
+      });
+
+      expect(notify).toHaveBeenCalledWith([added]);
+      expect(result.newFinancialTransactions).toEqual([added]);
+      expect(result.dashboard).toEqual(dashboard([added, old]));
+    });
+
+    it("does not notify when transactionNotificationsEnabled is false, even with new activity", async () => {
+      const old = transaction("old", 1);
+      const added = transaction("new", 2);
+      const notify = vi.fn();
+
+      const result = await syncAndNotify({
+        loadDashboard: async () => dashboard([old]),
+        sync: async () => dashboard([added, old]),
+        transactionNotificationsEnabled: false,
+        notify,
+      });
+
+      expect(notify).not.toHaveBeenCalled();
+      // The sync itself, and the diff it returns to the caller, still
+      // happen regardless of the notification preference — only the
+      // notify() call is gated, not the sync/diff work itself.
+      expect(result.newFinancialTransactions).toEqual([added]);
+    });
+
+    it("treats a message present both before and after as not new (duplicate suppression)", async () => {
+      const seen = transaction("seen", 1);
+      const notify = vi.fn();
+
+      const result = await syncAndNotify({
+        loadDashboard: async () => dashboard([seen]),
+        sync: async () => dashboard([seen]), // same id, re-synced
+        transactionNotificationsEnabled: true,
+        notify,
+      });
+
+      expect(notify).not.toHaveBeenCalled();
+      expect(result.newFinancialTransactions).toEqual([]);
+    });
+
+    it("coalesces a burst of several new messages from one sync into a single notify() call", async () => {
+      const old = transaction("old", 1);
+      const burst = [transaction("b1", 2), transaction("b2", 3), transaction("b3", 4)];
+      const notify = vi.fn().mockResolvedValue(undefined);
+
+      const result = await syncAndNotify({
+        loadDashboard: async () => dashboard([old]),
+        sync: async () => dashboard([...burst, old]),
+        transactionNotificationsEnabled: true,
+        notify,
+      });
+
+      expect(notify).toHaveBeenCalledTimes(1);
+      expect(notify).toHaveBeenCalledWith(burst);
+      expect(result.newFinancialTransactions).toEqual(burst);
+    });
   });
 });
