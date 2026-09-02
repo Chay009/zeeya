@@ -1,8 +1,74 @@
-import { createMalanaEngine } from "@zeeya/parser/malana";
-import { describe, expect, it } from "vitest";
+import { createMalanaEngine, type MalanaResult } from "@zeeya/parser/malana";
+import { afterEach, describe, expect, it } from "vitest";
 import { deriveDashboard } from "../../lib/dashboard";
 import type { ParsedSms } from "../../lib/sms";
 import { createHomePreviewData, summarizeNewTransactions } from "./data";
+
+// Minimal MalanaResult builder, same pattern as lib/dashboard.test.ts's own
+// — only sets the fields a given test actually reads, everything else
+// defaults to null/false.
+function minimalResult(overrides: Partial<MalanaResult>): MalanaResult {
+  return {
+    category: "GRM_BANK",
+    tags: {},
+    tokens: [],
+    bankName: null,
+    merchantCategory: null,
+    subcategory: null,
+    trx: null,
+    bal: null,
+    acc: null,
+    trxType: null,
+    trxTypeRich: null,
+    currency: "INR",
+    isFromCard: false,
+    creditLimit: null,
+    ref: null,
+    bene: null,
+    beneAcc: null,
+    vendor: null,
+    location: null,
+    otp: null,
+    otpExpiry: null,
+    pnr: null,
+    flight: null,
+    departure: null,
+    arrival: null,
+    fare: null,
+    trainBusNo: null,
+    boardingGate: null,
+    departureCode: null,
+    arrivalCode: null,
+    orderNo: null,
+    trackingId: null,
+    deliveryStatus: null,
+    item: null,
+    billAmount: null,
+    emiAmount: null,
+    dueDate: null,
+    policyNo: null,
+    rechargeAmount: null,
+    mandateAmount: null,
+    mandateId: null,
+    mandateEvent: null,
+    mandateMerchant: null,
+    cashback: null,
+    discount: null,
+    offerCode: null,
+    offerCategory: null,
+    dataLeft: null,
+    packBalance: null,
+    navValue: null,
+    folio: null,
+    marginAmount: null,
+    brandName: null,
+    isOnlineBrand: false,
+    upiHandle: null,
+    isSpam: false,
+    spamScore: 0,
+    ...overrides,
+  };
+}
 
 describe("createHomePreviewData — detected accounts", () => {
   it("tracks SBI transactions before the first reported balance", () => {
@@ -200,5 +266,56 @@ describe("summarizeNewTransactions", () => {
 
   it("returns an empty list for an empty input, not a placeholder row", () => {
     expect(summarizeNewTransactions([])).toEqual([]);
+  });
+});
+
+describe("createHomePreviewData — dynamic logo.dev fallback (issue #15)", () => {
+  const ORIGINAL_TOKEN = process.env.EXPO_PUBLIC_LOGO_DEV_TOKEN;
+
+  afterEach(() => {
+    if (ORIGINAL_TOKEN === undefined) delete process.env.EXPO_PUBLIC_LOGO_DEV_TOKEN;
+    else process.env.EXPO_PUBLIC_LOGO_DEV_TOKEN = ORIGINAL_TOKEN;
+  });
+
+  function messageFor(vendor: string): ParsedSms {
+    return {
+      id: "m1",
+      sender: "VM-TESTBK",
+      body: "",
+      date: Date.now(),
+      result: minimalResult({
+        bankName: "Test Bank",
+        vendor,
+        trx: "100.00",
+        trxTypeRich: "EXPENSE",
+      }),
+    };
+  }
+
+  it("has no img for an unrecognized merchant when no logo.dev token is configured", () => {
+    delete process.env.EXPO_PUBLIC_LOGO_DEV_TOKEN;
+    const home = createHomePreviewData(deriveDashboard([messageFor("Zomato")]), true);
+    const item = home.activity.allItems.find((entry) => entry.name === "Zomato");
+
+    expect(item).toBeDefined();
+    expect(item!.img).toBeUndefined();
+  });
+
+  it("uses a dynamic logo.dev img for an unrecognized merchant once a token is configured", () => {
+    process.env.EXPO_PUBLIC_LOGO_DEV_TOKEN = "pk_test_token";
+    const home = createHomePreviewData(deriveDashboard([messageFor("Zomato")]), true);
+    const item = home.activity.allItems.find((entry) => entry.name === "Zomato");
+
+    expect(item!.img).toBe(
+      "https://img.logo.dev/Zomato?token=pk_test_token&format=webp&retina=true",
+    );
+  });
+
+  it("still prefers the curated Swiggy entry over a dynamic lookup even when a token is configured", () => {
+    process.env.EXPO_PUBLIC_LOGO_DEV_TOKEN = "pk_test_token";
+    const home = createHomePreviewData(deriveDashboard([messageFor("Swiggy")]), true);
+    const item = home.activity.allItems.find((entry) => entry.name === "Swiggy");
+
+    expect(item!.img).toBe("https://cdn.simpleicons.org/swiggy/FC8019");
   });
 });

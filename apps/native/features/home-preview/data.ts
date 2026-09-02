@@ -13,6 +13,7 @@ import type { ParsedSms } from "../../lib/sms";
 import type { Token } from "@zeeya/parser/malana";
 import { subscriptionMonthlyTotals, type Subscription } from "../../lib/subscriptions";
 import { trxDirection, type TrxDirection } from "../../lib/transaction-direction";
+import { logoUrlFor } from "../../lib/logo-dev";
 
 export type PreviewSub = {
   key: string;
@@ -568,6 +569,15 @@ function categoryName(message: ParsedSms): string {
   return category ? titleCase(category) : "Transaction";
 }
 
+// Falls back to a dynamic logo.dev lookup only when no curated match
+// exists — the hand-picked entries above already have a tuned tile/ink/bar
+// palette matching the real brand, which a generically-fetched logo image
+// alone can't provide, so a curated hit always wins outright. See
+// lib/logo-dev.ts: this is a testing-only prototype (issue #15) and
+// degrades to the plain flat-color letter avatar with zero visual break
+// when EXPO_PUBLIC_LOGO_DEV_TOKEN isn't set — BrandLogo's own onError
+// handler additionally drops the image if the fetched URL doesn't resolve
+// to a real logo.
 function visualStyleFor(name: string, category?: string | null): VisualStyle {
   const value = normalized(name);
   const knownBrand = knownBrandStyles.find((entry) => value.includes(entry.match));
@@ -576,12 +586,17 @@ function visualStyleFor(name: string, category?: string | null): VisualStyle {
   const categoryStyle = categoryStyles.find((entry) =>
     normalized(category ?? "").includes(entry.match),
   );
-  return categoryStyle?.style ?? fallbackVisualStyle;
+  const base = categoryStyle?.style ?? fallbackVisualStyle;
+  const dynamicImg = logoUrlFor(name);
+  return dynamicImg ? { ...base, img: dynamicImg } : base;
 }
 
 function bankVisualFor(name: string): VisualStyle {
   const value = normalized(name);
-  return knownBankStyles.find((entry) => value.includes(entry.match))?.style ?? fallbackVisualStyle;
+  const known = knownBankStyles.find((entry) => value.includes(entry.match))?.style;
+  if (known) return known;
+  const dynamicImg = logoUrlFor(name);
+  return dynamicImg ? { ...fallbackVisualStyle, img: dynamicImg } : fallbackVisualStyle;
 }
 
 function formatCurrencyTotals(record: Record<string, number>, visible: boolean): string {
