@@ -569,24 +569,22 @@ function categoryName(message: ParsedSms): string {
   return category ? titleCase(category) : "Transaction";
 }
 
-// Falls back to a dynamic logo.dev lookup only when no curated match
-// exists — the hand-picked entries above already have a tuned tile/ink/bar
-// palette matching the real brand, which a generically-fetched logo image
-// alone can't provide, so a curated hit always wins outright. See
-// lib/logo-dev.ts: this is a testing-only prototype (issue #15) and
-// degrades to the plain flat-color letter avatar with zero visual break
-// when EXPO_PUBLIC_LOGO_DEV_TOKEN isn't set — BrandLogo's own onError
-// handler additionally drops the image if the fetched URL doesn't resolve
-// to a real logo.
+// The curated entries' tile/ink/bar colors are kept even for a known
+// brand (a generically-fetched logo image alone can't provide those), but
+// the *image* now always tries logo.dev first for every name, curated or
+// not, when EXPO_PUBLIC_LOGO_DEV_TOKEN is set — no longer only a fallback
+// for names outside the curated list. See lib/logo-dev.ts: this is a
+// testing-only prototype (issue #15) and degrades to the plain flat-color
+// letter avatar with zero visual break when the token isn't set —
+// BrandLogo's own onError handler additionally drops the image if the
+// fetched URL doesn't resolve to a real logo.
 function visualStyleFor(name: string, category?: string | null): VisualStyle {
   const value = normalized(name);
   const knownBrand = knownBrandStyles.find((entry) => value.includes(entry.match));
-  if (knownBrand) return knownBrand.style;
-
   const categoryStyle = categoryStyles.find((entry) =>
     normalized(category ?? "").includes(entry.match),
   );
-  const base = categoryStyle?.style ?? fallbackVisualStyle;
+  const base = knownBrand?.style ?? categoryStyle?.style ?? fallbackVisualStyle;
   const dynamicImg = logoUrlFor(name);
   return dynamicImg ? { ...base, img: dynamicImg } : base;
 }
@@ -594,9 +592,9 @@ function visualStyleFor(name: string, category?: string | null): VisualStyle {
 function bankVisualFor(name: string): VisualStyle {
   const value = normalized(name);
   const known = knownBankStyles.find((entry) => value.includes(entry.match))?.style;
-  if (known) return known;
+  const base = known ?? fallbackVisualStyle;
   const dynamicImg = logoUrlFor(name);
-  return dynamicImg ? { ...fallbackVisualStyle, img: dynamicImg } : fallbackVisualStyle;
+  return dynamicImg ? { ...base, img: dynamicImg } : base;
 }
 
 function formatCurrencyTotals(record: Record<string, number>, visible: boolean): string {

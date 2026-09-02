@@ -311,11 +311,22 @@ describe("createHomePreviewData — dynamic logo.dev fallback (issue #15)", () =
     );
   });
 
-  it("still prefers the curated Swiggy entry over a dynamic lookup even when a token is configured", () => {
+  it("uses the dynamic logo.dev img for a curated brand too once a token is configured — no more special-casing", () => {
     process.env.EXPO_PUBLIC_LOGO_DEV_TOKEN = "pk_test_token";
     const home = createHomePreviewData(deriveDashboard([messageFor("Swiggy")]), true);
     const item = home.activity.allItems.find((entry) => entry.name === "Swiggy");
 
-    expect(item!.img).toBe("https://cdn.simpleicons.org/swiggy/FC8019");
+    expect(item!.img).toBe(
+      "https://img.logo.dev/Swiggy?token=pk_test_token&format=webp&retina=true",
+    );
+  });
+
+  it("still keeps the curated tile color for a known brand even though the image is now dynamic", () => {
+    process.env.EXPO_PUBLIC_LOGO_DEV_TOKEN = "pk_test_token";
+    const home = createHomePreviewData(deriveDashboard([messageFor("Swiggy")]), true);
+    const item = home.activity.allItems.find((entry) => entry.name === "Swiggy");
+
+    // Swiggy's curated tile color from knownBrandStyles, unchanged.
+    expect(item!.tile).toBe("#fff0bf");
   });
 });
