@@ -91,18 +91,116 @@ describe("syncInbox", () => {
     testDb = freshDb();
   });
 
-  it("reads the whole inbox newest-first on a first-ever sync (no checkpoint yet)", async () => {
+  const NINETY_DAYS = 90 * 24 * 60 * 60 * 1000;
+
+  it("bounds a first-ever sync to the last 90 days, oldest-first, paginated", async () => {
     const messages = [rawSms({ id: "m1", date: T }), rawSms({ id: "m2", date: T + TEN_MINUTES })];
-    let seenArgs: Parameters<InboxReader>[0] | undefined;
-    const reader: InboxReader = async (args) => {
-      seenArgs = args;
-      return messages;
+    const reader = fakeInboxReader(messages);
+
+    const dashboard = await syncInbox(reader, { now: T + TEN_MINUTES, pageSize: 500 });
+
+    expect(dashboard.activity).toHaveLength(2);
+    const status = await getSyncStatus();
+    expect(status.initialScanCompletedAt).toBe(T + TEN_MINUTES);
+    expect(status.lastIngestedDate).toBe(T + TEN_MINUTES);
+  });
+
+  it("excludes messages older than the 90-day scan window on a first-ever sync", async () => {
+    const now = T + NINETY_DAYS;
+    // Distinct bodies so these are genuinely different ledger rows —
+    // smsLedger's id is a content fingerprint (sender|date|body), not the
+    // fixture's own `id` field, so dashboard.activity items must be told
+    // apart by content, not by re-checking that unrelated field.
+    const tooOld = rawSms({ id: "old", date: T - 1, body: `${HDFC_DEBIT} (too old)` });
+    const inWindow = rawSms({ id: "in", date: T + 1, body: `${HDFC_DEBIT} (in window)` });
+    const reader = fakeInboxReader([tooOld, inWindow]);
+
+    const dashboard = await syncInbox(reader, { now });
+
+    expect(dashboard.activity.map((m) => m.body)).toEqual([inWindow.body]);
+  });
+
+  it("paginates a first-ever sync across multiple pages, oldest-first with deterministic ordering", async () => {
+    const now = T + TEN_MINUTES * 20;
+    // Same timestamp, distinct bodies (see the sync.test.ts burst tests
+    // above for the same pattern) — otherwise these would all share one
+    // fingerprint and collapse to a single ledger row, which would prove
+    // nothing about pagination itself.
+    const dense = Array.from({ length: 7 }, (_, i) =>
+      rawSms({ id: `d${i}`, date: T, body: `${HDFC_DEBIT} (dense ${i})` }),
+    );
+    const reader = fakeInboxReader(dense);
+
+    await syncInbox(reader, { now, pageSize: 3 });
+
+    const rows = testDb.select().from(schema.smsLedger).all();
+    expect(rows).toHaveLength(7);
+  });
+
+  it("marks the initial scan complete even when the 90-day window has no messages, so it isn't repeated", async () => {
+    const now = T;
+    const reader: InboxReader = async () => [];
+    let calls = 0;
+    const countingReader: InboxReader = async (args) => {
+      calls++;
+      return reader(args);
     };
 
-    const dashboard = await syncInbox(reader);
+    await syncInbox(countingReader, { now });
+    const status = await getSyncStatus();
+    expect(status.initialScanCompletedAt).toBe(now);
+    expect(status.lastIngestedDate).toBeNull();
 
-    expect(seenArgs).toEqual({ order: "newest-first" });
-    expect(dashboard.activity).toHaveLength(2);
+    // A later sync must not repeat the bounded scan — it should go
+    // straight to routine catch-up (one drainInbox call, not the scan's
+    // two), proving initialScanCompletedAt — not lastIngestedDate — is
+    // what gates the first-ever-sync branch.
+    calls = 0;
+    await syncInbox(countingReader, { now: now + TEN_MINUTES });
+    expect(calls).toBe(1);
+  });
+
+  it("sweeps up messages that arrived during the initial scan itself, not just before it", async () => {
+    const now = T;
+    // Arrives after `now` (the scan's own `until`) but before the sync
+    // call resolves — simulates real activity mid-scan. The naive `T`
+    // fixture reader style can't express this since it ignores filter
+    // args, so this uses fakeInboxReader for real since/until filtering.
+    const duringScan = rawSms({ id: "during", date: now + 1, body: `${HDFC_DEBIT} (during scan)` });
+    const reader = fakeInboxReader([duringScan]);
+
+    const dashboard = await syncInbox(reader, { now });
+
+    expect(dashboard.activity.map((m) => m.body)).toEqual([duringScan.body]);
+  });
+
+  it("resuming after an interrupted first-ever sync is safe — no duplicates, nothing lost", async () => {
+    // Simulates a process killed partway through the scan: the underlying
+    // reader throws on its second page, as if the app died before
+    // finishing (so initialScanCompletedAt never gets set). A later sync
+    // — a fresh app launch — must redo the scan from scratch and reach
+    // the full, correct end state without erroring or duplicating the
+    // page that was already ingested before the crash.
+    const all = Array.from({ length: 5 }, (_, i) => rawSms({ id: `r${i}`, date: T + i }));
+    const now = T + TEN_MINUTES;
+    const real = fakeInboxReader(all);
+    let pageCount = 0;
+    const crashingReader: InboxReader = async (args) => {
+      pageCount++;
+      if (pageCount === 2) throw new Error("simulated process death mid-scan");
+      return real(args);
+    };
+
+    await expect(syncInbox(crashingReader, { now, pageSize: 2 })).rejects.toThrow(
+      "simulated process death",
+    );
+    expect((await getSyncStatus()).initialScanCompletedAt).toBeNull();
+
+    await syncInbox(real, { now: now + TEN_MINUTES, pageSize: 2 });
+
+    const rows = testDb.select().from(schema.smsLedger).all();
+    expect(rows).toHaveLength(5);
+    expect((await getSyncStatus()).initialScanCompletedAt).not.toBeNull();
   });
 
   it("reads oldest-first from checkpoint-minus-overlap, paginated, once a checkpoint exists", async () => {
@@ -214,10 +312,11 @@ describe("syncInbox", () => {
 
     await Promise.all([syncInbox(reader), syncInbox(reader), syncInbox(reader)]);
 
-    // A first-ever sync makes exactly one reader call (the no-checkpoint
-    // branch isn't paginated) — three genuinely separate executions would
-    // have made three.
-    expect(callCount).toBe(1);
+    // A first-ever sync makes exactly two reader calls (the bounded
+    // 90-day scan, then the post-scan sweep for anything that arrived
+    // during it — see syncInbox's own comments) — three genuinely
+    // separate executions would have made six.
+    expect(callCount).toBe(2);
   });
 
   it("triggers a genuinely new sync for a call that arrives after the previous one has already finished", async () => {
@@ -227,10 +326,10 @@ describe("syncInbox", () => {
       return [];
     };
 
-    await syncInbox(reader);
-    await syncInbox(reader);
+    await syncInbox(reader); // first-ever sync: scan + sweep = 2 calls
+    await syncInbox(reader); // now routine catch-up: 1 call
 
-    expect(callCount).toBe(2); // not coalesced — these never overlapped
+    expect(callCount).toBe(3); // not coalesced — these never overlapped
   });
 
   it("never runs concurrently with another syncInbox()/backfillSms() call", async () => {

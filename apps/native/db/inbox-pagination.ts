@@ -31,6 +31,15 @@ import type { InboxOrder, InboxReader } from "./sync";
 
 const DEFAULT_PAGE_SIZE = 1000;
 
+// A defensive ceiling, not a real limit on how much mail this ever drains
+// (it deliberately keeps going past any real inbox size — see the loop
+// below). It exists only to fail loudly with a clear error if a reader
+// ever violates the position-based-pagination contract this relies on
+// (e.g. a buggy/mocked reader that keeps returning full pages forever,
+// or an indexFrom the underlying query doesn't actually respect) —
+// turning a silent infinite hang into a diagnosable error instead.
+const MAX_PAGES = 10_000;
+
 export interface DrainOptions {
   since?: number;
   until?: number;
@@ -80,8 +89,14 @@ export async function drainInbox(
   // integer throughout, without a separate check needed for it directly.
   let indexFrom = 0;
   let inserted = 0;
+  let pageCount = 0;
 
   while (true) {
+    if (pageCount >= MAX_PAGES) {
+      throw new Error(
+        `drainInbox exceeded ${MAX_PAGES} pages (pageSize ${pageSize}) without reaching the end of the filtered result set — aborting instead of looping forever.`,
+      );
+    }
     const page = await readInbox({
       since: options.since,
       until: options.until,
@@ -89,6 +104,7 @@ export async function drainInbox(
       indexFrom,
       maxCount: pageSize,
     });
+    pageCount++;
     if (page.length > 0) {
       const result = await onPage(page);
       inserted += result.inserted;

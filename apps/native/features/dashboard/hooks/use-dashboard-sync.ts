@@ -8,6 +8,7 @@ import {
   isDeviceMessageCaptureSupported,
   syncDeviceMessages,
 } from "@/lib/device-message-sync";
+import type { SyncProgress } from "@/db/sync";
 import { hasSmsReadPermission, requestSmsReadPermission } from "@/lib/sms";
 import { subscribeToMessageSync } from "@/features/capabilities/message-sync-events";
 
@@ -27,6 +28,10 @@ export function useDashboardSync() {
   // as before this screen read from the ledger.
   const [dashboard, setDashboard] = useState<Dashboard>(() => deriveDashboard([]));
   const [refreshing, setRefreshing] = useState(false);
+  // Scanned/inserted counts from the most recent in-progress sync (e.g. the
+  // bounded initial 90-day scan) — null once nothing is actively syncing.
+  // Deliberately not a percentage: the total to scan isn't known upfront.
+  const [progress, setProgress] = useState<{ scanned: number; inserted: number } | null>(null);
   // Bumped on every load() call so a slow, stale in-flight read can't
   // overwrite a newer one's result if a refresh is triggered before the
   // previous one finished.
@@ -41,15 +46,28 @@ export function useDashboardSync() {
       return;
     }
     const id = ++loadIdRef.current;
+    setProgress(null);
     try {
-      const nextDashboard = await syncDeviceMessages();
+      const nextDashboard = await syncDeviceMessages({
+        onProgress: (next: SyncProgress) => {
+          // A slower, now-superseded load's progress ticks must not
+          // overwrite a newer load's state — same staleness guard as the
+          // final result below, just checked on every intermediate tick
+          // too, not only once at the end.
+          if (id !== loadIdRef.current) return;
+          setDashboard(next.dashboard);
+          setProgress({ scanned: next.scanned, inserted: next.inserted });
+        },
+      });
       if (id !== loadIdRef.current) return;
       setDashboard(nextDashboard);
       setStatus("ready");
+      setProgress(null);
     } catch (e) {
       if (id !== loadIdRef.current) return;
       setStatus("error");
       setError(e instanceof Error ? e.message : String(e));
+      setProgress(null);
     }
   }, []);
 
@@ -140,5 +158,5 @@ export function useDashboardSync() {
     setRefreshing(false);
   }, [load]);
 
-  return { status, error, dashboard, refreshing, connect, onRefresh };
+  return { status, error, dashboard, refreshing, progress, connect, onRefresh };
 }

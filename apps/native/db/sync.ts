@@ -9,7 +9,12 @@ import type { Dashboard } from "../lib/dashboard";
 import type { RawSms } from "../lib/sms";
 import type { InboxOrder } from "../lib/sms-filter";
 import { drainInbox, validatePageSize } from "./inbox-pagination";
-import { getSyncStatus, ingestSmsBatch, loadDashboard } from "./ingestion";
+import {
+  getSyncStatus,
+  ingestSmsBatch,
+  loadDashboard,
+  markInitialScanCompleted,
+} from "./ingestion";
 import { withIngestionLock } from "./single-flight";
 
 // Read from the checkpoint with a small backward overlap, not a strict
@@ -23,6 +28,25 @@ import { withIngestionLock } from "./single-flight";
 // how tightly messages are packed together.
 const SYNC_OVERLAP_MS = 60_000;
 
+// The product-defined scope of the initial historical scan (see
+// markInitialScanCompleted's own comment): the last 90 days, not the
+// user's entire SMS history. Anything older is what the separate, explicit
+// manual backfill screen (db/backfill.ts) exists for.
+const INITIAL_SCAN_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
+
+// Reported after every page ingested during a sync, not just once at the
+// end — scanned/inserted counts, not a percentage: the total size of what
+// still needs to be read isn't known upfront (the native reader has no
+// cheap COUNT), and a fabricated percentage would be more misleading than
+// no percentage at all. `dashboard` is the freshly recomputed state after
+// this page, so a caller can render real, growing numbers as a sync
+// proceeds instead of only once the whole call resolves.
+export interface SyncProgress {
+  scanned: number;
+  inserted: number;
+  dashboard: Dashboard;
+}
+
 // InboxOrder itself lives in lib/sms-filter.ts (re-exported here) — that's
 // where buildInboxFilter() also uses it to construct the real native
 // filter's sortOrder, so there is exactly one definition rather than two
@@ -33,10 +57,7 @@ export type { InboxOrder };
 // raw `sortOrder: "date ASC"` string) — this interface is what makes
 // syncInbox() and backfillSms() (db/backfill.ts, which reuses this same
 // type) testable with a plain in-memory fake, decoupled from any native
-// module or its SQL-ish filter syntax. `until`/`indexFrom`/`maxCount` are
-// unused by a first-ever sync (an open-ended "catch up to now" has no
-// upper bound and isn't paginated — see below) but are part of the shared
-// reader contract both syncInbox's own catch-up path and backfillSms need.
+// module or its SQL-ish filter syntax.
 export type InboxReader = (options: {
   since?: number;
   until?: number;
@@ -70,47 +91,78 @@ let inFlightSync: Promise<Dashboard> | null = null;
 // page size — real callers never need it (the default is sized for real
 // device usage), but tests exercising the multi-page path with a handful
 // of fixture messages need a much smaller page to actually cross a page
-// boundary without constructing thousands of rows.
+// boundary without constructing thousands of rows. `now` is likewise a
+// test-only override of Date.now(), needed because the initial-scan
+// window below is computed relative to "now."
 export function syncInbox(
   readInbox: InboxReader,
-  options: { pageSize?: number } = {},
+  options: { pageSize?: number; onProgress?: (progress: SyncProgress) => void; now?: number } = {},
 ): Promise<Dashboard> {
   if (inFlightSync) return inFlightSync;
 
   const promise = withIngestionLock(async () => {
     // Validated here, unconditionally, rather than only where drainInbox
-    // happens to be reached — a previous version validated pageSize only
-    // inside drainInbox itself, which the first-ever-sync branch below
-    // never calls at all (it reads one unpaginated page), so an invalid
-    // pageSize on that path was silently ignored instead of rejected.
+    // happens to be reached — every branch below now routes through
+    // drainInbox, but validating up front keeps the error the same
+    // regardless of which branch would have reached it first.
     if (options.pageSize !== undefined) validatePageSize(options.pageSize);
 
-    const checkpoint = await getSyncStatus();
-    const hasCheckpoint = checkpoint.lastIngestedDate !== null;
+    let scanned = 0;
+    let inserted = 0;
+    const onPage = async (page: RawSms[]) => {
+      const result = await ingestSmsBatch(page);
+      scanned += page.length;
+      inserted += result.inserted;
+      if (options.onProgress) {
+        options.onProgress({ scanned, inserted, dashboard: await loadDashboard() });
+      }
+      return result;
+    };
 
-    if (hasCheckpoint) {
-      // Real, position-based multi-page draining (see inbox-pagination.ts
-      // for why this replaced an earlier time-boundary-based approach that
-      // could silently stop early on tightly-packed messages), ingesting
-      // each page as it's fetched rather than buffering the whole catch-up
-      // in memory first — this call fully catches up to "now" in one
-      // syncInbox() invocation, not just one bounded page per call.
-      const since = checkpoint.lastIngestedDate! - SYNC_OVERLAP_MS;
+    const checkpoint = await getSyncStatus();
+
+    if (checkpoint.initialScanCompletedAt === null) {
+      // First-ever sync: bounded to the last 90 days (the product's
+      // "Historical SMS Scan" scope), paginated like any other drain
+      // instead of one unbounded blocking read — see SyncProgress's own
+      // comment for why. `until` is pinned to this scan's own start time,
+      // not left open-ended, so a message arriving *during* a long scan
+      // can't shift what position-based pagination is walking over out
+      // from under it; the sweep immediately below picks up anything that
+      // arrived in that gap.
+      const now = options.now ?? Date.now();
+      const since = now - INITIAL_SCAN_WINDOW_MS;
+      await drainInbox(
+        readInbox,
+        { since, until: now, order: "oldest-first", pageSize: options.pageSize },
+        onPage,
+      );
+      // Recorded regardless of whether the scan found anything — see
+      // markInitialScanCompleted's own comment on why this must be
+      // independent of lastIngestedDate.
+      await markInitialScanCompleted(now);
+      // Sweeps up anything that arrived between `now` (the scan's own
+      // `until`) and this instant, so it isn't stranded until the next
+      // unrelated trigger (foreground resume, a later SMS) happens to
+      // run a catch-up sync.
+      await drainInbox(
+        readInbox,
+        { since: now, order: "oldest-first", pageSize: options.pageSize },
+        onPage,
+      );
+    } else {
+      // Routine catch-up: from the last verified point forward. Falls
+      // back to when the initial scan completed if lastIngestedDate is
+      // still null (the 90-day window was genuinely empty) — there's no
+      // ingested message to anchor to yet, but there's also no need to
+      // look earlier than the scan itself already covered.
+      const anchor = checkpoint.lastIngestedDate ?? checkpoint.initialScanCompletedAt;
+      const since = anchor - SYNC_OVERLAP_MS;
       await drainInbox(
         readInbox,
         { since, order: "oldest-first", pageSize: options.pageSize },
-        (page) => ingestSmsBatch(page),
+        onPage,
       );
-    } else {
-      // A first-ever sync (no checkpoint at all) reads one bounded,
-      // newest-first page rather than draining everything: there's no
-      // "catching up without gaps" concern yet (nothing has been marked
-      // synced to fall behind), and showing the most recent activity
-      // first is the better initial experience. Reaching further back
-      // than that first page is what the separate, explicit manual
-      // backfill feature (db/backfill.ts) exists for.
-      const raw = await readInbox({ order: "newest-first" });
-      await ingestSmsBatch(raw);
     }
 
     return loadDashboard();

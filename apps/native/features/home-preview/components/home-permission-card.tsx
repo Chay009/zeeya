@@ -6,10 +6,12 @@ import { hp } from "../theme";
 export function HomePermissionCard({
   status,
   error,
+  progress,
   onConnect,
 }: {
   status: Status;
   error: string | null;
+  progress?: { scanned: number; inserted: number } | null;
   onConnect: () => Promise<void>;
 }) {
   if (status === "ready") return null;
@@ -79,7 +81,14 @@ export function HomePermissionCard({
         <View style={{ marginTop: 14, flexDirection: "row", alignItems: "center", gap: 8 }}>
           <ActivityIndicator color={hp.emeraldDeep} size="small" />
           <Text style={{ fontSize: 12, fontWeight: "700", color: hp.emeraldDeep }}>
-            {loading ? "Syncing your inbox…" : "Checking permission…"}
+            {loading
+              ? progress
+                ? // Counts, not a percentage — the total to scan isn't
+                  // known upfront, and a fabricated percentage would be
+                  // more misleading than none at all.
+                  `Scanned ${progress.scanned}, imported ${progress.inserted}…`
+                : "Syncing your inbox…"
+              : "Checking permission…"}
           </Text>
         </View>
       )}

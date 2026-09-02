@@ -1,7 +1,7 @@
 import { Platform } from "react-native";
 
 import { drainShortcutInbox } from "../db/shortcut-sync";
-import { syncInbox } from "../db/sync";
+import { syncInbox, type SyncProgress } from "../db/sync";
 import { getShortcutMessageQueue } from "../features/shortcuts/queue";
 import type { Dashboard } from "./dashboard";
 import { deviceMessagePolicy } from "./device-message-policy";
@@ -23,9 +23,16 @@ export function deviceMessageCaptureRequiresReadPermission(): boolean {
   return currentPolicy().requiresSmsReadPermission;
 }
 
-export async function syncDeviceMessages(): Promise<Dashboard> {
+export async function syncDeviceMessages(
+  options: { onProgress?: (progress: SyncProgress) => void } = {},
+): Promise<Dashboard> {
   const policy = currentPolicy();
-  if (policy.capture === "direct-inbox") return syncInbox(readSmsInbox);
+  // onProgress is only meaningful for the paginated direct-inbox path —
+  // the Apple Shortcuts queue is drained in one shot with no comparable
+  // multi-page scan, so there's nothing to report progress on there.
+  if (policy.capture === "direct-inbox") {
+    return syncInbox(readSmsInbox, { onProgress: options.onProgress });
+  }
   if (policy.capture === "apple-shortcuts") {
     const result = await drainShortcutInbox(getShortcutMessageQueue());
     if (result.rejected.length > 0) {

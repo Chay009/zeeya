@@ -1,0 +1,1 @@
+ALTER TABLE `sync_checkpoint` ADD `initial_scan_completed_at` integer;

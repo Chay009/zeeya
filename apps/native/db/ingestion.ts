@@ -649,6 +649,10 @@ export async function ingestSmsBatch(
 export interface SyncStatus {
   lastIngestedDate: number | null;
   lastIngestedProviderId: string | null;
+  // See schema.ts's own comment on this column — set once the bounded
+  // last-90-days initial scan finishes, independent of whether it found
+  // anything, so an empty window doesn't repeat the scan forever.
+  initialScanCompletedAt: number | null;
 }
 
 export async function getSyncStatus(): Promise<SyncStatus> {
@@ -661,7 +665,34 @@ export async function getSyncStatus(): Promise<SyncStatus> {
   return {
     lastIngestedDate: row?.lastIngestedDate ?? null,
     lastIngestedProviderId: row?.lastIngestedProviderId ?? null,
+    initialScanCompletedAt: row?.initialScanCompletedAt ?? null,
   };
+}
+
+// Records that the bounded initial historical scan has finished, without
+// touching lastIngestedDate/lastIngestedProviderId — those must keep
+// reflecting only what a real ingested batch has verified, never an
+// incidental side effect of marking the scan itself done. Safe to call
+// whether or not any messages were ever ingested: the INSERT branch
+// defaults the untouched checkpoint fields to null, and the UPDATE branch
+// (via the SET clause below) never mentions them, so an existing
+// lastIngestedDate is left exactly as it was.
+export async function markInitialScanCompleted(at: number): Promise<void> {
+  const database = requireDb();
+  database
+    .insert(syncCheckpoint)
+    .values({
+      id: "inbox",
+      lastIngestedDate: null,
+      lastIngestedProviderId: null,
+      initialScanCompletedAt: at,
+      updatedAt: Date.now(),
+    })
+    .onConflictDoUpdate({
+      target: syncCheckpoint.id,
+      set: { initialScanCompletedAt: at, updatedAt: Date.now() },
+    })
+    .run();
 }
 
 // Reconstructs ParsedSms[] from the ledger's cached parsedResult JSON and

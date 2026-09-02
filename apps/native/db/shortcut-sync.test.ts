@@ -95,6 +95,7 @@ describe("drainShortcutInbox", () => {
     await expect(getSyncStatus()).resolves.toEqual({
       lastIngestedDate: null,
       lastIngestedProviderId: null,
+      initialScanCompletedAt: null,
     });
   });
 

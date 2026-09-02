@@ -106,6 +106,14 @@ export const syncCheckpoint = sqliteTable("sync_checkpoint", {
   id: text("id").primaryKey(),
   lastIngestedDate: integer("last_ingested_date"),
   lastIngestedProviderId: text("last_ingested_provider_id"),
+  // When the bounded last-90-days initial historical scan finished —
+  // independent of lastIngestedDate, which only advances when a batch
+  // actually contains messages. A phone number with zero recognized SMS
+  // in that window would otherwise leave lastIngestedDate null forever,
+  // making every future app launch look like a first-ever sync again and
+  // repeat the same pointless 90-day scan indefinitely. Set once, on
+  // completion, regardless of whether anything was found.
+  initialScanCompletedAt: integer("initial_scan_completed_at"),
   updatedAt: integer("updated_at").notNull(),
 });
 

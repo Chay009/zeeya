@@ -25,7 +25,7 @@ export function HomePreviewScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<DrawerNavigation>();
   const router = useRouter();
-  const { dashboard, status, error, connect } = useDashboardSync();
+  const { dashboard, status, error, progress, connect } = useDashboardSync();
   const homeData = useMemo(
     () => createHomePreviewData(dashboard, status === "ready"),
     [dashboard, status],
@@ -140,7 +140,12 @@ export function HomePreviewScreen() {
             </Pressable>
           </View>
 
-          <HomePermissionCard status={status} error={error} onConnect={connect} />
+          <HomePermissionCard
+            status={status}
+            error={error}
+            progress={progress}
+            onConnect={connect}
+          />
 
           {showDashboardShell ? (
             <>
