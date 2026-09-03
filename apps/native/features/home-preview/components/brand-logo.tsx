@@ -1,6 +1,22 @@
 import { useState } from "react";
 import { Image, Text, View } from "react-native";
 import { SvgUri } from "react-native-svg";
+import { markLogoDomainFailed } from "../../../lib/logo-dev";
+
+// img.logo.dev/{domain}?token=...&... — pull the domain segment back out
+// so a failed fetch can be negative-cached (see lib/logo-dev.ts) instead
+// of being re-attempted on every re-render or for every other transaction
+// from the same merchant.
+function logoDevDomain(uri: string): string | null {
+  try {
+    const url = new URL(uri);
+    if (url.hostname !== "img.logo.dev") return null;
+    const domain = decodeURIComponent(url.pathname.replace(/^\//, ""));
+    return domain || null;
+  } catch {
+    return null;
+  }
+}
 
 // cdn.simpleicons.org (every curated brand/bank entry in
 // features/home-preview/data.ts's knownBrandStyles/knownBankStyles) serves
@@ -41,6 +57,13 @@ export function BrandLogo({
 }) {
   const [failed, setFailed] = useState(false);
   const iconSize = Math.round(size * iconRatio);
+  const onImageError = () => {
+    if (img) {
+      const domain = logoDevDomain(img);
+      if (domain) markLogoDomainFailed(domain);
+    }
+    setFailed(true);
+  };
   return (
     <View
       style={{
@@ -58,7 +81,7 @@ export function BrandLogo({
       {!failed && img && isKnownSvgSource(img) && (
         <SvgUri
           uri={img}
-          onError={() => setFailed(true)}
+          onError={onImageError}
           width={iconSize}
           height={iconSize}
           style={{ position: "absolute" }}
@@ -67,7 +90,7 @@ export function BrandLogo({
       {!failed && img && !isKnownSvgSource(img) && (
         <Image
           source={{ uri: img }}
-          onError={() => setFailed(true)}
+          onError={onImageError}
           style={{ position: "absolute", width: iconSize, height: iconSize }}
           resizeMode="contain"
         />

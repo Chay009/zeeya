@@ -269,7 +269,7 @@ describe("summarizeNewTransactions", () => {
   });
 });
 
-describe("createHomePreviewData — dynamic logo.dev fallback (issue #15)", () => {
+describe("createHomePreviewData — verified-domain-only logo.dev lookup (issue #15)", () => {
   const ORIGINAL_TOKEN = process.env.EXPO_PUBLIC_LOGO_DEV_TOKEN;
 
   afterEach(() => {
@@ -292,8 +292,11 @@ describe("createHomePreviewData — dynamic logo.dev fallback (issue #15)", () =
     };
   }
 
-  it("has no img for an unrecognized merchant when no logo.dev token is configured", () => {
-    delete process.env.EXPO_PUBLIC_LOGO_DEV_TOKEN;
+  // An unrecognized merchant never had a fuzzy-search fallback to lose —
+  // it always gets the deterministic tile, token configured or not, since
+  // there's no verified domain to look up.
+  it("has no img for an unrecognized merchant even when a logo.dev token is configured", () => {
+    process.env.EXPO_PUBLIC_LOGO_DEV_TOKEN = "pk_test_token";
     const home = createHomePreviewData(deriveDashboard([messageFor("Zomato")]), true);
     const item = home.activity.allItems.find((entry) => entry.name === "Zomato");
 
@@ -301,27 +304,26 @@ describe("createHomePreviewData — dynamic logo.dev fallback (issue #15)", () =
     expect(item!.img).toBeUndefined();
   });
 
-  it("uses a dynamic logo.dev img for an unrecognized merchant once a token is configured", () => {
-    process.env.EXPO_PUBLIC_LOGO_DEV_TOKEN = "pk_test_token";
-    const home = createHomePreviewData(deriveDashboard([messageFor("Zomato")]), true);
-    const item = home.activity.allItems.find((entry) => entry.name === "Zomato");
+  it("has no img for a curated brand when no logo.dev token is configured", () => {
+    delete process.env.EXPO_PUBLIC_LOGO_DEV_TOKEN;
+    const home = createHomePreviewData(deriveDashboard([messageFor("Swiggy")]), true);
+    const item = home.activity.allItems.find((entry) => entry.name === "Swiggy");
 
-    expect(item!.img).toBe(
-      "https://img.logo.dev/name/Zomato?token=pk_test_token&format=png&retina=true",
-    );
+    expect(item).toBeDefined();
+    expect(item!.img).toBeUndefined();
   });
 
-  it("uses the dynamic logo.dev img for a curated brand too once a token is configured — no more special-casing", () => {
+  it("uses the verified domain for a curated brand's logo.dev img once a token is configured", () => {
     process.env.EXPO_PUBLIC_LOGO_DEV_TOKEN = "pk_test_token";
     const home = createHomePreviewData(deriveDashboard([messageFor("Swiggy")]), true);
     const item = home.activity.allItems.find((entry) => entry.name === "Swiggy");
 
     expect(item!.img).toBe(
-      "https://img.logo.dev/name/Swiggy?token=pk_test_token&format=png&retina=true",
+      "https://img.logo.dev/swiggy.com?token=pk_test_token&format=png&retina=true",
     );
   });
 
-  it("still keeps the curated tile color for a known brand even though the image is now dynamic", () => {
+  it("still keeps the curated tile color for a known brand alongside its verified-domain image", () => {
     process.env.EXPO_PUBLIC_LOGO_DEV_TOKEN = "pk_test_token";
     const home = createHomePreviewData(deriveDashboard([messageFor("Swiggy")]), true);
     const item = home.activity.allItems.find((entry) => entry.name === "Swiggy");
@@ -330,12 +332,12 @@ describe("createHomePreviewData — dynamic logo.dev fallback (issue #15)", () =
     expect(item!.tile).toBe("#fff0bf");
   });
 
-  it("does NOT attempt a dynamic logo lookup for a person's name (bene) even with a token configured — false-positive risk", () => {
+  it("does NOT attempt any logo lookup for a person's name (bene) even with a token configured — false-positive risk", () => {
     process.env.EXPO_PUBLIC_LOGO_DEV_TOKEN = "pk_test_token";
     // No brandName/vendor — a plain person-to-person transfer, so
-    // merchantName() falls through to bene. Sending a real person's name
-    // to a fuzzy company-logo search risks showing an unrelated real
-    // brand's logo next to someone's personal transfer.
+    // merchantName() falls through to bene. A person's name can never
+    // match a curated brand entry, so this can only ever get the letter
+    // tile — no fuzzy search exists to risk a false-positive match.
     const message: ParsedSms = {
       id: "m1",
       sender: "VM-TESTBK",
@@ -356,13 +358,12 @@ describe("createHomePreviewData — dynamic logo.dev fallback (issue #15)", () =
     expect(item!.img).toBeUndefined();
   });
 
-  it("does not attempt a dynamic logo lookup for the raw bank name a transaction falls back to", () => {
+  it("does not resolve a logo for the raw bank name a transaction falls back to", () => {
     process.env.EXPO_PUBLIC_LOGO_DEV_TOKEN = "pk_test_token";
-    // No brandName/vendor/bene — falls all the way to bankName. This is a
-    // real bank, but not the merchant of this transaction, so it
-    // shouldn't be treated as a confident brand match here either
-    // (account cards already show the bank's own logo separately, via
-    // bankVisualFor, which is unaffected by this restriction).
+    // No brandName/vendor/bene — falls all the way to bankName. "Test
+    // Bank" doesn't match any curated entry, so it stays a plain tile
+    // (account cards show the bank's own logo separately, via
+    // bankVisualFor, which is unaffected by this).
     const message: ParsedSms = {
       id: "m1",
       sender: "VM-TESTBK",

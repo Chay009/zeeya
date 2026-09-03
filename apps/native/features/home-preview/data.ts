@@ -13,7 +13,7 @@ import type { ParsedSms } from "../../lib/sms";
 import type { Token } from "@zeeya/parser/malana";
 import { subscriptionMonthlyTotals, type Subscription } from "../../lib/subscriptions";
 import { trxDirection, type TrxDirection } from "../../lib/transaction-direction";
-import { logoUrlFor } from "../../lib/logo-dev";
+import { logoUrlForDomain } from "../../lib/logo-dev";
 
 export type PreviewSub = {
   key: string;
@@ -395,126 +395,80 @@ type VisualStyle = {
   img?: string;
 };
 
-const knownBrandStyles: { match: string; style: VisualStyle }[] = [
+// `domain` is a verified, hand-curated mapping — the only source of truth
+// this app has for "this name really is this company," and therefore the
+// only thing ever passed to logo.dev's exact-match domain endpoint (see
+// lib/logo-dev.ts's comment on why the fuzzy /name/ search isn't used at
+// all). Adding an entry here is a manual, reviewed action, not something
+// derived from a parsed SMS.
+const knownBrandStyles: { match: string; domain: string; style: VisualStyle }[] = [
   {
     match: "netflix",
-    style: {
-      tile: "#ffe9ea",
-      ink: "#e11",
-      bar: "#8e61bf",
-      img: "https://cdn.simpleicons.org/netflix/E50914",
-    },
+    domain: "netflix.com",
+    style: { tile: "#ffe9ea", ink: "#e11", bar: "#8e61bf" },
   },
   {
     match: "amazon",
-    style: {
-      tile: "#fff0d6",
-      ink: "#c76e00",
-      bar: "#c76e00",
-      img: "https://cdn.simpleicons.org/amazon/FF9900",
-    },
+    domain: "amazon.com",
+    style: { tile: "#fff0d6", ink: "#c76e00", bar: "#c76e00" },
   },
   {
     match: "spotify",
-    style: {
-      tile: "#e0f7e9",
-      ink: "#17994a",
-      bar: "#2f9d70",
-      img: "https://cdn.simpleicons.org/spotify/1DB954",
-    },
+    domain: "spotify.com",
+    style: { tile: "#e0f7e9", ink: "#17994a", bar: "#2f9d70" },
   },
   {
     match: "youtube",
-    style: {
-      tile: "#eee4fb",
-      ink: "#8e61bf",
-      bar: "#8e61bf",
-      img: "https://cdn.simpleicons.org/youtube/FF0000",
-    },
+    domain: "youtube.com",
+    style: { tile: "#eee4fb", ink: "#8e61bf", bar: "#8e61bf" },
   },
   {
     match: "disney",
-    style: {
-      tile: "#f0ede9",
-      ink: "#8a8378",
-      bar: "#a8a59b",
-      img: "https://cdn.simpleicons.org/disneyplus/00C7F0",
-    },
+    domain: "disneyplus.com",
+    style: { tile: "#f0ede9", ink: "#8a8378", bar: "#a8a59b" },
   },
   {
     match: "swiggy",
-    style: {
-      tile: "#fff0bf",
-      ink: "#b77f1d",
-      bar: "#c76e00",
-      img: "https://cdn.simpleicons.org/swiggy/FC8019",
-    },
+    domain: "swiggy.com",
+    style: { tile: "#fff0bf", ink: "#b77f1d", bar: "#c76e00" },
   },
   {
     match: "flipkart",
-    style: {
-      tile: "#eee4fb",
-      ink: "#2874f0",
-      bar: "#d05b51",
-      img: "https://cdn.simpleicons.org/flipkart/2874F0",
-    },
+    domain: "flipkart.com",
+    style: { tile: "#eee4fb", ink: "#2874f0", bar: "#d05b51" },
   },
 ];
 
-const knownBankStyles: { match: string; style: VisualStyle }[] = [
+const knownBankStyles: { match: string; domain: string; style: VisualStyle }[] = [
   {
     match: "state bank of india",
-    style: {
-      tile: "#e8f0ff",
-      ink: "#1e5aa8",
-      bar: "#1e5aa8",
-      img: "https://cdn.simpleicons.org/statebankofindia/1E5AA8",
-    },
+    domain: "sbi.co.in",
+    style: { tile: "#e8f0ff", ink: "#1e5aa8", bar: "#1e5aa8" },
   },
   {
     match: "kotak",
-    style: {
-      tile: "#fff0f0",
-      ink: "#ed1b2e",
-      bar: "#ed1b2e",
-      img: "https://cdn.simpleicons.org/kotakmahindrabank/ED1B2E",
-    },
+    domain: "kotak.com",
+    style: { tile: "#fff0f0", ink: "#ed1b2e", bar: "#ed1b2e" },
   },
   {
     match: "hdfc",
-    style: {
-      tile: "#e9f0ff",
-      ink: "#004c8f",
-      bar: "#004c8f",
-      img: "https://cdn.simpleicons.org/hdfcbank/004C8F",
-    },
+    domain: "hdfcbank.com",
+    style: { tile: "#e9f0ff", ink: "#004c8f", bar: "#004c8f" },
   },
   {
     match: "icici",
-    style: {
-      tile: "#fff0e4",
-      ink: "#f58220",
-      bar: "#f58220",
-      img: "https://cdn.simpleicons.org/icicibank/F58220",
-    },
+    domain: "icicibank.com",
+    style: { tile: "#fff0e4", ink: "#f58220", bar: "#f58220" },
   },
   {
     match: "axis",
-    style: {
-      tile: "#f8eaf2",
-      ink: "#97144d",
-      bar: "#97144d",
-      img: "https://cdn.simpleicons.org/axisbank/97144D",
-    },
+    domain: "axisbank.com",
+    style: { tile: "#f8eaf2", ink: "#97144d", bar: "#97144d" },
   },
   {
     match: "bank of baroda",
-    style: {
-      tile: "#fff0e4",
-      ink: "#f36f21",
-      bar: "#f36f21",
-      img: "https://cdn.simpleicons.org/bankofbaroda/F36F21",
-    },
+    domain: "bankofbaroda.in",
+    style: { tile: "#fff0e4", ink: "#f36f21", bar: "#f36f21" },
   },
 ];
 
@@ -564,61 +518,33 @@ function merchantName(message: ParsedSms): string {
   );
 }
 
-// The subset of merchantName()'s fallback chain the parser has actually
-// identified as a real merchant/brand — brandName and vendor only.
-// Everything past that (bene, bankName, sender) is a real value used for
-// *display* ("who did this money go to/come from"), but not a company
-// name: bene is a person's own name from a transfer, bankName/sender
-// identify the bank or SMS channel, not who was paid. Passing one of
-// those into a fuzzy company-name logo search risks a false-positive
-// match — a real, unrelated brand's logo shown next to someone's personal
-// transfer, which is worse than no logo at all (see dashboard.ts's
-// mandate-merchant fix for the same principle: don't let an unrelated
-// real value stand in for "we don't actually know").
-function confidentBrandName(message: ParsedSms): string | null {
-  return message.result.brandName?.trim() || message.result.vendor?.trim() || null;
-}
-
 function categoryName(message: ParsedSms): string {
   const category = message.result.merchantCategory ?? message.result.subcategory;
   return category ? titleCase(category) : "Transaction";
 }
 
-// The curated entries' tile/ink/bar colors are kept even for a known
-// brand (a generically-fetched logo image alone can't provide those), but
-// the *image* now always tries logo.dev first for every name, curated or
-// not, when EXPO_PUBLIC_LOGO_DEV_TOKEN is set — no longer only a fallback
-// for names outside the curated list. See lib/logo-dev.ts: this is a
-// testing-only prototype (issue #15) and degrades to the plain flat-color
-// letter avatar with zero visual break when the token isn't set —
-// BrandLogo's own onError handler additionally drops the image if the
-// fetched URL doesn't resolve to a real logo.
-// `logoQuery` is what's actually sent to the dynamic logo.dev lookup —
-// defaults to `name` for callers that already only ever pass a confident
-// brand name (subscriptions, category bars). Pass it explicitly as `null`
-// to skip the dynamic lookup entirely, e.g. when `name` is a person's
-// name or a bank/sender identifier rather than an actual merchant — see
-// confidentBrandName's own comment on why that distinction matters.
-function visualStyleFor(
-  name: string,
-  category?: string | null,
-  logoQuery: string | null = name,
-): VisualStyle {
+// A logo is only ever shown for a name that matches a verified curated
+// entry — its own hand-checked `domain` is what's sent to logo.dev's
+// exact-match endpoint. An unmatched name (an unrecognized merchant, a
+// person's name from a transfer, a raw bank/sender fallback) gets the
+// deterministic letter/category tile and nothing else: there is no
+// fuzzy-name lookup here to fall back to (see lib/logo-dev.ts).
+function visualStyleFor(name: string, category?: string | null): VisualStyle {
   const value = normalized(name);
   const knownBrand = knownBrandStyles.find((entry) => value.includes(entry.match));
   const categoryStyle = categoryStyles.find((entry) =>
     normalized(category ?? "").includes(entry.match),
   );
   const base = knownBrand?.style ?? categoryStyle?.style ?? fallbackVisualStyle;
-  const dynamicImg = logoQuery ? logoUrlFor(logoQuery) : null;
+  const dynamicImg = knownBrand ? logoUrlForDomain(knownBrand.domain) : null;
   return dynamicImg ? { ...base, img: dynamicImg } : base;
 }
 
 function bankVisualFor(name: string): VisualStyle {
   const value = normalized(name);
-  const known = knownBankStyles.find((entry) => value.includes(entry.match))?.style;
-  const base = known ?? fallbackVisualStyle;
-  const dynamicImg = logoUrlFor(name);
+  const knownBank = knownBankStyles.find((entry) => value.includes(entry.match));
+  const base = knownBank?.style ?? fallbackVisualStyle;
+  const dynamicImg = knownBank ? logoUrlForDomain(knownBank.domain) : null;
   return dynamicImg ? { ...base, img: dynamicImg } : base;
 }
 
@@ -1129,11 +1055,7 @@ function buildActivity(dashboard: Dashboard): {
 
   const allItems: ActivityItem[] = messages.map((message) => {
     const name = merchantName(message);
-    const style = visualStyleFor(
-      name,
-      message.result.merchantCategory,
-      confidentBrandName(message),
-    );
+    const style = visualStyleFor(name, message.result.merchantCategory);
     const entry = entriesById.get(message.id);
     const categoryFilters = activityCategoryFilters(message);
     const categorySuggestions = entry ? activityCategorySuggestions(message) : [];
@@ -1199,11 +1121,7 @@ function buildActivity(dashboard: Dashboard): {
 }
 
 function subscriptionVisual(name: string): VisualStyle {
-  // dashboard.ts's mandate-merchant fallback uses this exact literal when
-  // extraction fails (see its own comment) — a placeholder, not a real
-  // name, so it must never be sent to the dynamic logo lookup either.
-  const logoQuery = name === "Unknown merchant" ? null : name;
-  return visualStyleFor(name, "subscriptions", logoQuery);
+  return visualStyleFor(name, "subscriptions");
 }
 
 function timelineForMandate(history: MandateEvent[]) {
