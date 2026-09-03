@@ -6,6 +6,7 @@ import { parseSeedData } from "./asset-schemas";
 export { MalanaEngine } from "./malana";
 export { supportedMalanaCurrencyCodes } from "./currency-registry";
 export { parsePersistedMalanaResult } from "./result-schema";
+export { normalizeSmsForParsing } from "./sms-normalizer";
 export type {
   SeedData,
   MalanaResult,

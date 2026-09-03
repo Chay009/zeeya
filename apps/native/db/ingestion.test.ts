@@ -20,7 +20,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { and, eq, isNull } from "drizzle-orm";
-import { MalanaEngine } from "@zeeya/parser/malana";
+import { MalanaEngine, PARSER_VERSION } from "@zeeya/parser/malana";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as schema from "./schema";
 import { initializeNativeDatabase } from "./native-init";
@@ -65,6 +65,8 @@ const HDFC_DEBIT =
   "INR 5,000.00 debited from account XX1234 on 09-08-2026. Avail Bal: INR 12,500.00";
 const SBI_UPI =
   "Dear UPI user A/C X1434 debited by 999.00 on date 15Jul26 trf to ZERODHA BROKING Refno 046545973198 If not u? call-1800111109 for other services-18001234-SBI";
+const KVB_STYLED_DEBIT =
+  "𝖸𝗈𝗎𝗋 a/c XXXXXXXXXXXX4626  𝗂𝗌 𝖽𝖾𝖻𝗂𝗍𝖾𝖽  Rs. 13224.00  𝗈𝗇  09-Aug-2026  𝗍𝗈  GOPISETTY  VENKATA LAKSHMI  𝗂𝗇𝖿𝗈  :P2A/815344312335. Avl Bal INR 3061.25  𝖭𝗈𝗍 𝖸𝗈𝗎? 𝖼𝖺𝗅𝗅 18005721916- 𝖪𝖵𝖡";
 
 function rawSms(overrides: Partial<RawSms> & { id: string }): RawSms {
   return {
@@ -805,7 +807,8 @@ describe("ingestSmsBatch", () => {
     const bad = rows.find((r) => r.providerId === "bad")!;
     expect(bad.ingestionStatus).toBe("error");
     expect(bad.parsedResult).toBeNull();
-    expect(bad.ingestionError).toContain("toLowerCase");
+    expect(bad.ingestionError).toEqual(expect.any(String));
+    expect(bad.ingestionError).not.toHaveLength(0);
   });
 
   it("rolls back writes that already succeeded inside the transaction if a later step in it throws", async () => {
@@ -975,6 +978,35 @@ describe("loadDashboard", () => {
 
     await loadDashboard();
     expect(parseSpy).toHaveBeenCalledTimes(1);
+    parseSpy.mockRestore();
+  });
+
+  it("reprocesses a Unicode-styled transaction cached before NFKC normalization", async () => {
+    const parseSpy = vi.spyOn(MalanaEngine.prototype, "parse");
+    await ingestSmsBatch([
+      rawSms({ id: "kvb-styled", body: KVB_STYLED_DEBIT, sender: "+916300000000" }),
+    ]);
+    const [row] = testDb.select().from(schema.smsLedger).all();
+    const staleResult = {
+      ...JSON.parse(row!.parsedResult!),
+      trxType: null,
+      trxTypeRich: null,
+    };
+
+    testDb
+      .update(schema.smsLedger)
+      .set({ parsedResult: JSON.stringify(staleResult), parserVersion: "0.1.1" })
+      .where(eq(schema.smsLedger.id, row!.id))
+      .run();
+
+    parseSpy.mockClear();
+    const dashboard = await loadDashboard(new Date("2026-08-09T12:00:00Z"));
+
+    expect(dashboard.recent).toHaveLength(1);
+    expect(dashboard.recent[0]!.result.trx).toBe("13224.00");
+    expect(dashboard.recent[0]!.result.trxTypeRich).toBe("EXPENSE");
+    expect(parseSpy).toHaveBeenCalledTimes(1);
+    expect(testDb.select().from(schema.smsLedger).get()!.parserVersion).toBe(PARSER_VERSION);
     parseSpy.mockRestore();
   });
 

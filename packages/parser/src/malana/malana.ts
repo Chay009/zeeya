@@ -13,6 +13,7 @@ import { runGrammar } from "./grammar-runner";
 import { compilePatterns, runPatterns } from "./pattern-extractor";
 import { CurrencyRegistry } from "./currency-registry";
 import { extractRawMerchant } from "./merchant-extractor";
+import { normalizeSmsForParsing } from "./sms-normalizer";
 import {
   categoryMarkerEvidence,
   deriveAmbiguousTransactionForms,
@@ -295,20 +296,25 @@ export class MalanaEngine {
   }
 
   parse(message: string, sender = "", defaultCategory = "GRM_BANK"): MalanaResult {
+    const normalizedMessage = normalizeSmsForParsing(message);
     // Preserve the existing primary-category routing contract. Composition
     // stays behind this interface so callers never manage grammar candidates.
-    const regexTokens = regexTokenize(message, this.currencyRegistry);
-    const keywordTokens = this.keywordTokenizer.tokenize(message);
-    const tokens = mergeTokens(regexTokens, keywordTokens, message);
-    const detectedBankName = detectBank(sender, message);
-    const resolvedVendor = extractRawMerchant(message, this.currencyRegistry, detectedBankName);
+    const regexTokens = regexTokenize(normalizedMessage, this.currencyRegistry);
+    const keywordTokens = this.keywordTokenizer.tokenize(normalizedMessage);
+    const tokens = mergeTokens(regexTokens, keywordTokens, normalizedMessage);
+    const detectedBankName = detectBank(sender, normalizedMessage);
+    const resolvedVendor = extractRawMerchant(
+      normalizedMessage,
+      this.currencyRegistry,
+      detectedBankName,
+    );
     const senderGrammar = grammarForSender(sender);
     const requestedCategory = senderGrammar || defaultCategory;
     const recognizedCategory = isMalanaCategory(requestedCategory) ? requestedCategory : null;
     const fallbackCategory: MalanaCategory =
       recognizedCategory && isProductCategory(recognizedCategory) ? recognizedCategory : "GRM_BANK";
     const routedCategory = routePrimaryCategory(tokens, fallbackCategory);
-    const spam = detectSpam(message);
+    const spam = detectSpam(normalizedMessage);
     const suppressPromotionalTransaction = isUnconfirmedPromotionalTransaction(
       tokens,
       spam.isSpam,
@@ -322,14 +328,14 @@ export class MalanaEngine {
       primaryCategory !== fallbackCategory ||
       (Boolean(senderGrammar) && fallbackCategory !== defaultCategory);
     const candidates = selectCategoryCandidates(tokens, primaryCategory);
-    if (hasInactiveTransactionStatus(message, {}) && !candidates.includes("GRM_NOTIF")) {
+    if (hasInactiveTransactionStatus(normalizedMessage, {}) && !candidates.includes("GRM_NOTIF")) {
       candidates.push("GRM_NOTIF");
     }
 
     const parsedByCategory = new Map<MalanaCategory, ParsedCategory>();
     for (const category of candidates) {
       const parsed = this.parseCategory(
-        message,
+        normalizedMessage,
         sender,
         category,
         category === primaryCategory && detectedByRouting,
@@ -341,7 +347,10 @@ export class MalanaEngine {
         spam,
       );
       parsed.evidence.push(...categoryMarkerEvidence(category, tokens));
-      if (category === "GRM_NOTIF" && hasInactiveTransactionStatus(message, parsed.result.tags)) {
+      if (
+        category === "GRM_NOTIF" &&
+        hasInactiveTransactionStatus(normalizedMessage, parsed.result.tags)
+      ) {
         parsed.evidence.push({ kind: "policy", value: "inactive-status" });
       }
       parsedByCategory.set(category, parsed);

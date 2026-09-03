@@ -226,6 +226,14 @@ describe("Malana category composition", () => {
     expect(result.trxTypeRich).toBeNull();
   });
 
+  it("records compatibility-styled failed text as notification safety evidence", () => {
+    const result = engine.parse("Transaction of Rs.500 𝖿𝖺𝗂𝗅𝖾𝖽 due to insufficient funds.");
+
+    expect(
+      result.categoryMatches?.find((match) => match.category === "GRM_NOTIF")?.evidence,
+    ).toContainEqual({ kind: "policy", value: "inactive-status" });
+  });
+
   it.each(["Payment of Rs.500 is pending with the bank.", "Debit of Rs.500 failed."])(
     "does not count an inactive operation: %s",
     (message) => {
