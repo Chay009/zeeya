@@ -1,5 +1,6 @@
-import { Text, View } from "react-native";
+import { View } from "react-native";
 
+import { AppText as Text } from "@/components/app-text";
 import type { PreviewSub } from "../data";
 import { hp } from "../theme";
 
@@ -9,7 +10,7 @@ export const previewCircleButtonStyle = {
   borderRadius: 20,
   borderWidth: 1,
   borderColor: hp.border,
-  backgroundColor: "rgba(255,255,255,0.7)",
+  backgroundColor: hp.card,
   alignItems: "center" as const,
   justifyContent: "center" as const,
 };
@@ -73,8 +74,8 @@ export function SubscriptionSpendValue({ value, size = 28 }: { value: string; si
 
 const typePalette: Record<PreviewSub["type"], { backgroundColor: string; color: string }> = {
   autopay: { backgroundColor: hp.chipBg, color: hp.emeraldDeep },
-  recurring: { backgroundColor: "#eee4fb", color: "#8e61bf" },
-  manual: { backgroundColor: "#fff7e6", color: "#b1843d" },
+  recurring: { backgroundColor: hp.recurringBg, color: hp.recurringInk },
+  manual: { backgroundColor: hp.manualBg, color: hp.manualInk },
 };
 
 export function SubscriptionTypeBadge({ subscription }: { subscription: PreviewSub }) {
@@ -108,7 +109,7 @@ export function SubscriptionStatusBadge({
     <Text
       style={{
         borderRadius: 999,
-        backgroundColor: contained ? (active ? "#f1f5ef" : "#eef4ef") : "transparent",
+        backgroundColor: contained ? (active ? hp.surfaceSage : hp.surfaceSageAlt) : "transparent",
         paddingHorizontal: contained ? 8 : 0,
         paddingVertical: contained ? 3 : 0,
         fontSize: contained ? 9 : 11,
@@ -126,12 +127,12 @@ export function ReactivatedBadge() {
     <Text
       style={{
         borderRadius: 999,
-        backgroundColor: "#eee4fb",
+        backgroundColor: hp.recurringBg,
         paddingHorizontal: 8,
         paddingVertical: 3,
         fontSize: 9,
         fontWeight: "700",
-        color: "#8e61bf",
+        color: hp.recurringInk,
       }}
     >
       Reactivated

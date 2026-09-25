@@ -13,6 +13,7 @@ object ZeeyaSmsSignalStore {
   private const val pendingCountKey = "pending_count"
   private const val lastReceivedAtKey = "last_received_at"
   private const val generationKey = "generation"
+  private const val backgroundNotificationEnabledKey = "background_notification_enabled"
 
   private val observers = mutableSetOf<(PendingSmsSignal) -> Unit>()
 
@@ -64,6 +65,17 @@ object ZeeyaSmsSignalStore {
       .remove(lastReceivedAtKey)
       .commit()
   }
+
+  fun setBackgroundNotificationEnabled(context: Context, enabled: Boolean) {
+    context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+      .edit()
+      .putBoolean(backgroundNotificationEnabledKey, enabled)
+      .apply()
+  }
+
+  fun isBackgroundNotificationEnabled(context: Context): Boolean =
+    context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+      .getBoolean(backgroundNotificationEnabledKey, false)
 
   @Synchronized
   fun addObserver(observer: (PendingSmsSignal) -> Unit) {

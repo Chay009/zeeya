@@ -1,4 +1,3 @@
-import { QueryClient } from "@tanstack/react-query";
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
 import { createTRPCOptionsProxy } from "@trpc/tanstack-react-query";
 import type { AppRouter } from "@zeeya/api/routers/index";
@@ -6,8 +5,9 @@ import { env } from "@zeeya/env/native";
 import { Platform } from "react-native";
 
 import { authClient } from "@/lib/auth-client";
+import { queryClient } from "@/lib/query-client";
 
-export const queryClient = new QueryClient();
+export { queryClient };
 
 const trpcClient = createTRPCClient<AppRouter>({
   links: [

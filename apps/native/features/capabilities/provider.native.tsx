@@ -1,8 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { PropsWithChildren } from "react";
-import { ActivityIndicator, AppState, Platform, Pressable, Text, View } from "react-native";
+import { Button, Spinner } from "heroui-native";
+import { AppState, Platform, View } from "react-native";
 
-import { loadDashboard } from "@/db/ingestion";
+import { AppText as Text } from "@/components/app-text";
+
 import {
   DEFAULT_LOCAL_SETTINGS,
   getLocalSettings,
@@ -20,20 +22,26 @@ import {
   hasSmsReadPermission,
   requestSmsCapturePermissions,
 } from "@/lib/sms";
+import AndroidMessageQueueModule from "@/modules/zeeya-message-queue/src/ZeeyaMessageQueueModule.android";
 import { setBackgroundSyncRegistration } from "./background/task";
-import { syncAndNotify } from "./background/periodic-sync";
 import { publishMessageSync } from "./message-sync-events";
-import {
-  notifyNewFinancialTransactions,
-  requestTransactionNotificationPermission,
-} from "./notifications/notifications";
+import { requestTransactionNotificationPermission } from "./notifications/notifications";
 import {
   authenticateForAppAccess,
   canEnableBiometricLock,
   setScreenCaptureProtection,
 } from "./native-capabilities";
 import { subscribeToRealtimeSms } from "./realtime-sms";
-import { shouldSubscribeToRealtimeSms } from "./realtime-sms-policy";
+import { shouldNotifyBackgroundSms, shouldSubscribeToRealtimeSms } from "./realtime-sms-policy";
+
+async function mirrorNativeBackgroundNotificationPreference(
+  settings: Pick<LocalSettings, "backgroundSyncEnabled" | "transactionNotificationsEnabled">,
+): Promise<void> {
+  if (Platform.OS !== "android" || !AndroidMessageQueueModule) return;
+  await AndroidMessageQueueModule.setBackgroundNotificationEnabled(
+    shouldNotifyBackgroundSms(settings),
+  );
+}
 
 export type CapabilityPreference = keyof LocalSettings;
 
@@ -56,6 +64,7 @@ export function CapabilityProvider({ children }: PropsWithChildren) {
   const [loaded, setLoaded] = useState(false);
   const [unlocked, setUnlocked] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [appState, setAppState] = useState(AppState.currentState);
   const authenticating = useRef(false);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
@@ -78,32 +87,12 @@ export function CapabilityProvider({ children }: PropsWithChildren) {
     [],
   );
 
-  // Wraps syncCapturedMessages with the same load-before/sync/load-after/
-  // diff/notify sequence the 15-minute background task already uses (see
-  // periodic-sync.ts's syncAndNotify) — the real-time SMS-broadcast path
-  // previously only refreshed the live dashboard, never notified, even
-  // though the notification plumbing (and the transactionNotificationsEnabled
-  // setting gating it) already existed and was already wired into the
-  // background task. settingsRef, not `settings` directly, so this reads
-  // the current preference at call time rather than whatever it was when
-  // this callback was created.
+  // While the app is active, publish the synchronized dashboard so Home's
+  // in-app caught-up dialog updates immediately. The native receiver owns
+  // the privacy-safe OS notice while backgrounded; the JS observer is
+  // unmounted outside the foreground so it cannot consume that signal.
   const notifyRealtimeSync = useCallback(async () => {
-    await syncAndNotify({
-      loadDashboard,
-      sync: async () =>
-        (await syncCapturedMessages({ failOnMissingReadPermission: true })) ?? loadDashboard(),
-      transactionNotificationsEnabled: settingsRef.current.transactionNotificationsEnabled,
-      notify: notifyNewFinancialTransactions,
-    });
-  }, [syncCapturedMessages]);
-
-  const syncCapturedMessagesSafely = useCallback(() => {
-    void syncCapturedMessages().catch((cause) => {
-      // Capture is opportunistic at the app root. The dashboard still owns
-      // user-visible retry/error state, while this path ensures queued iOS
-      // Shortcut messages are not stranded on non-dashboard routes.
-      console.warn("Zeeya could not synchronize captured messages", cause);
-    });
+    await syncCapturedMessages({ failOnMissingReadPermission: true });
   }, [syncCapturedMessages]);
 
   const unlock = useCallback(async () => {
@@ -134,6 +123,7 @@ export function CapabilityProvider({ children }: PropsWithChildren) {
         const results = await Promise.allSettled([
           setBackgroundSyncRegistration(stored.backgroundSyncEnabled),
           setScreenCaptureProtection(stored.screenCaptureProtectionEnabled),
+          mirrorNativeBackgroundNotificationPreference(stored),
         ]);
         const rejected = results.find((result) => result.status === "rejected");
         if (rejected?.status === "rejected" && active) {
@@ -158,20 +148,13 @@ export function CapabilityProvider({ children }: PropsWithChildren) {
   }, [unlock]);
 
   useEffect(() => {
-    if (loaded) syncCapturedMessagesSafely();
-  }, [loaded, syncCapturedMessagesSafely]);
-
-  useEffect(() => {
-    if (!loaded || !settings.backgroundSyncEnabled || Platform.OS !== "android") return;
+    if (!loaded || !shouldSubscribeToRealtimeSms(Platform.OS, appState === "active", true)) return;
 
     let cancelled = false;
     let stop: () => void = () => undefined;
     void hasSmsCapturePermissions()
       .then((granted) => {
-        if (
-          cancelled ||
-          !shouldSubscribeToRealtimeSms("android", settings.backgroundSyncEnabled, granted)
-        ) {
+        if (cancelled || !granted) {
           return;
         }
         stop = subscribeToRealtimeSms(notifyRealtimeSync, (cause) => {
@@ -188,19 +171,19 @@ export function CapabilityProvider({ children }: PropsWithChildren) {
       cancelled = true;
       stop();
     };
-  }, [loaded, settings.backgroundSyncEnabled, notifyRealtimeSync]);
+  }, [appState, loaded, notifyRealtimeSync]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
+      setAppState(state);
       if (state !== "active") {
         if (settingsRef.current.biometricLockEnabled) setUnlocked(false);
         return;
       }
-      if (loaded) syncCapturedMessagesSafely();
       if (loaded && settingsRef.current.biometricLockEnabled) void unlock();
     });
     return () => subscription.remove();
-  }, [loaded, syncCapturedMessagesSafely, unlock]);
+  }, [loaded, unlock]);
 
   const setPreference = useCallback(
     async (key: CapabilityPreference, enabled: boolean): Promise<boolean> => {
@@ -236,6 +219,9 @@ export function CapabilityProvider({ children }: PropsWithChildren) {
         }
 
         const next = await updateLocalSettings({ [key]: enabled });
+        if (key === "backgroundSyncEnabled" || key === "transactionNotificationsEnabled") {
+          await mirrorNativeBackgroundNotificationPreference(next);
+        }
         setSettings(next);
         settingsRef.current = next;
         if (key === "biometricLockEnabled") setUnlocked(true);
@@ -250,31 +236,21 @@ export function CapabilityProvider({ children }: PropsWithChildren) {
 
   if (!loaded) {
     return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-        <ActivityIndicator />
+      <View className="flex-1 items-center justify-center bg-background">
+        <Spinner />
       </View>
     );
   }
 
   if (!unlocked) {
     return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 32 }}>
-        <Text style={{ fontSize: 24, fontWeight: "800", marginBottom: 10 }}>Zeeya is locked</Text>
-        <Text style={{ textAlign: "center", opacity: 0.7, marginBottom: 20 }}>
+      <View className="flex-1 items-center justify-center bg-background p-8">
+        <Text className="mb-3 text-screen font-extrabold text-foreground">Zeeya is locked</Text>
+        <Text className="mb-5 text-center text-body text-muted">
           Authenticate to view your financial information.
         </Text>
-        {error ? <Text style={{ color: "#b42318", marginBottom: 16 }}>{error}</Text> : null}
-        <Pressable
-          onPress={() => void unlock()}
-          style={{
-            backgroundColor: "#176b4d",
-            paddingHorizontal: 24,
-            paddingVertical: 12,
-            borderRadius: 999,
-          }}
-        >
-          <Text style={{ color: "white", fontWeight: "700" }}>Unlock</Text>
-        </Pressable>
+        {error ? <Text className="mb-4 text-caption text-danger">{error}</Text> : null}
+        <Button onPress={() => void unlock()}>Unlock</Button>
       </View>
     );
   }

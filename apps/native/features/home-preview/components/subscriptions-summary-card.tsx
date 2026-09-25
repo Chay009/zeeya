@@ -1,6 +1,8 @@
-import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Animated, PanResponder, Pressable, Text, View } from "react-native";
+import { Animated, PanResponder, Pressable, View } from "react-native";
+
+import { AppText as Text } from "@/components/app-text";
+import { AppIcon } from "@/components/icon";
 
 import type { HomePreviewData, PreviewSub } from "../data";
 import { hp } from "../theme";
@@ -249,7 +251,7 @@ export function SubscriptionsSummaryCard({
                 backgroundColor: hp.background,
               }}
             >
-              <Ionicons name="chevron-forward" size={14} color={hp.emeraldDeep} />
+              <AppIcon name="chevron-right" size={14} color={hp.emeraldDeep} />
             </Pressable>
           </View>
         )}

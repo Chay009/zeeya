@@ -1,6 +1,7 @@
 import { trxDirection } from "./transaction-direction";
 import {
-  deriveSubscriptions,
+  allQualifyingSubscriptions,
+  filterSubscriptionsByRecency,
   isInferredRecurringTransaction,
   type Subscription,
 } from "./subscriptions";
@@ -32,6 +33,14 @@ export interface BalanceReading {
   // The raw SMS sender ID this reading came from (e.g. "VM-SBIINB") — lets
   // a reading be traced back to the actual message that produced it.
   sender: string;
+  // The originating message's stable id — sms_ledger's own fingerprint
+  // (computeFingerprint), never the Android content-provider _id (see
+  // ParsedSms/RawSms — that lives separately, and is never what "id"
+  // means anywhere in this module). Lets a consumer (e.g. a normalized
+  // SQLite projection) trace a reading back to its exact source row
+  // without guessing via date/sender matching, which can misattribute
+  // when two messages share both.
+  smsId: string;
   // Insight for the interval from the immediately preceding bank balance to
   // this reading. The oldest reading (or a currency boundary) has no interval.
   reconciliation: BalanceReconciliation | null;
@@ -107,6 +116,9 @@ export interface MandateEvent {
   status: "active" | "cancelled";
   date: number;
   sender: string;
+  // The originating message's stable sms_ledger id — see BalanceReading's
+  // own smsId comment for why this is never the Android provider id.
+  smsId: string;
 }
 
 export interface Mandate {
@@ -142,6 +154,13 @@ export interface Dashboard {
   // would silently mix e.g. INR and USD into one meaningless total.
   monthIncomeByCurrency: Record<string, number>;
   monthExpenseByCurrency: Record<string, number>;
+  // Recency-filtered against `now` — what every existing UI caller reads.
+  // The complete, recency-unfiltered set this is derived from (what
+  // db/projections.ts persists) is NOT part of this public shape — it's
+  // persistence-only and would otherwise sit retained in Zustand alongside
+  // everything else Dashboard carries. See deriveDashboardProjection below,
+  // which computes both from one derivation and keeps the complete set out
+  // of the object every UI consumer holds.
   subscriptions: Subscription[];
   mandates: Mandate[];
   mandatesByMerchant: MerchantMandates[];
@@ -175,7 +194,13 @@ function normalizeAcc(acc: string | null): string {
   return digits.slice(-4);
 }
 
-function normalizeBankName(bankName: string): string {
+// Exported so db/projections.ts can persist the exact same canonical key
+// unassignedReadingsByBank groups by below, and db/queries-accounts.ts can
+// compute it from a caller-supplied bank name at query time — a bank-name
+// query that quietly used raw/display-name equality instead would return
+// an incomplete (or empty) result for any name with different casing or
+// whitespace than whatever the most recent SMS happened to use.
+export function normalizeBankName(bankName: string): string {
   return bankName.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
@@ -237,6 +262,19 @@ function resolveTransactionAccountKey(
   return candidates.length === 1 ? candidates[0]![0] : null;
 }
 
+// Public projection seam for the account association already decided by
+// this module's rules. Keeping the resolver here prevents SQLite projection
+// code from recreating a looser bank-name-only version that can attach a
+// transaction to the wrong account when one bank has multiple accounts.
+export function createTransactionAccountResolver(
+  accounts: readonly AccountBalance[],
+): (message: ParsedSms) => string | null {
+  const accountsByKey = new Map(
+    accounts.map((account) => [accountKey(account.bankName, account.last4)!, account]),
+  );
+  return (message) => resolveTransactionAccountKey(message, accountsByKey);
+}
+
 function referencedTransactionKey(message: ParsedSms): string | null {
   const { result } = message;
   const amount = parseAmount(result.trx);
@@ -247,6 +285,18 @@ function referencedTransactionKey(message: ParsedSms): string | null {
   const reference = result.ref.replace(/\s/g, "").toLowerCase();
   const currency = result.currency ?? "INR";
   return [institution, normalizeAcc(result.acc), reference, amount, currency, direction].join("|");
+}
+
+export interface DashboardProjection {
+  dashboard: Dashboard;
+  // The complete qualifying subscription runs, with NO recency filtering —
+  // persistence-only, deliberately not part of the public Dashboard shape
+  // (see Dashboard.subscriptions's own comment on why). db/projections.ts
+  // is the one consumer: it persists this so db/queries.ts's
+  // querySubscriptions can apply recency at read time against its own
+  // clock, instead of an unrelated projection rebuild permanently deleting
+  // a subscription the moment it ages past the recency window.
+  allSubscriptions: Subscription[];
 }
 
 // Orchestrates the Dashboard model: latest known balance per bank account,
@@ -262,7 +312,15 @@ function referencedTransactionKey(message: ParsedSms): string | null {
 // exact-day boundary (e.g. "included at exactly 60 days old") without
 // racing the small drift between when a test captures its own reference
 // time and when this function calls `new Date()` internally.
-export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): Dashboard {
+//
+// Returns both the public Dashboard and the persistence-only
+// allSubscriptions in one call, computed from one derivation — this is the
+// function db/ingestion.ts's replaceProjection call sites use; deriveDashboard
+// below is the thin public wrapper everything else keeps using unchanged.
+export function deriveDashboardProjection(
+  messages: ParsedSms[],
+  now: Date = new Date(),
+): DashboardProjection {
   const accountsByKey = new Map<string, AccountBalance>();
   const detectedAccountsByKey = new Map<string, DetectedAccount>();
   const unassignedReadingsByBank = new Map<string, BalanceReading[]>();
@@ -350,7 +408,7 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
       const merchant = result.mandateMerchant ?? result.brandName ?? "Unknown merchant";
       const amount = parseAmount(result.mandateAmount);
       const status = result.mandateEvent ?? "active";
-      const event: MandateEvent = { status, date: m.date, sender: m.sender };
+      const event: MandateEvent = { status, date: m.date, sender: m.sender, smsId: m.id };
       const existing = mandatesById.get(result.mandateId);
       if (!existing) {
         mandatesById.set(result.mandateId, {
@@ -396,6 +454,7 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
             ? { kind: "confirmed", accountLast4: normalizedAcc }
             : { kind: "unassigned" },
           sender: m.sender,
+          smsId: m.id,
           reconciliation: null,
         };
         if (!key) {
@@ -517,7 +576,12 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
     }
   }
 
-  const subscriptions = deriveSubscriptions(deduplicatedMessages, now);
+  // Computed exactly once: allQualifyingSubscriptions does the
+  // normalization/grouping/sorting/cadence/tolerance work a single time,
+  // and `subscriptions` (what the public Dashboard carries) is a plain
+  // array filter over that same result — not a second call that redoes it.
+  const allSubscriptions = allQualifyingSubscriptions(deduplicatedMessages);
+  const subscriptions = filterSubscriptionsByRecency(allSubscriptions, now);
 
   recognized.sort((a, b) => b.date - a.date);
   const activity = deduplicatedMessages
@@ -583,17 +647,29 @@ export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): 
     .sort((a, b) => b.mandates[0]!.lastUpdated - a.mandates[0]!.lastUpdated);
 
   return {
-    accounts,
-    detectedAccounts,
-    banks,
-    monthIncomeByCurrency,
-    monthExpenseByCurrency,
-    subscriptions,
-    mandates,
-    mandatesByMerchant,
-    activity,
-    recent: recognized,
+    dashboard: {
+      accounts,
+      detectedAccounts,
+      banks,
+      monthIncomeByCurrency,
+      monthExpenseByCurrency,
+      subscriptions,
+      mandates,
+      mandatesByMerchant,
+      activity,
+      recent: recognized,
+    },
+    allSubscriptions,
   };
+}
+
+// The public entry point every existing UI caller already uses — same
+// signature, same return shape (just `Dashboard`) as before
+// deriveDashboardProjection existed. This is a thin wrapper, not a second
+// derivation: deriveDashboardProjection does the actual work once, and this
+// simply discards the persistence-only `allSubscriptions` half of it.
+export function deriveDashboard(messages: ParsedSms[], now: Date = new Date()): Dashboard {
+  return deriveDashboardProjection(messages, now).dashboard;
 }
 
 // A transaction is recurring if it's tied to a tracked UPI mandate (the

@@ -11,6 +11,7 @@ export interface LocalSettings {
   transactionNotificationsEnabled: boolean;
   biometricLockEnabled: boolean;
   screenCaptureProtectionEnabled: boolean;
+  dailyBudgetMinorUnits: number | null;
 }
 
 export type LocalSettingsPatch = Partial<LocalSettings>;
@@ -20,6 +21,7 @@ export const DEFAULT_LOCAL_SETTINGS: Readonly<LocalSettings> = {
   transactionNotificationsEnabled: false,
   biometricLockEnabled: false,
   screenCaptureProtectionEnabled: false,
+  dailyBudgetMinorUnits: null,
 };
 
 function requireDb(): Database {
@@ -35,6 +37,7 @@ function toLocalSettings(row: typeof localSettings.$inferSelect): LocalSettings 
     transactionNotificationsEnabled: row.transactionNotificationsEnabled,
     biometricLockEnabled: row.biometricLockEnabled,
     screenCaptureProtectionEnabled: row.screenCaptureProtectionEnabled,
+    dailyBudgetMinorUnits: row.dailyBudgetMinorUnits,
   };
 }
 

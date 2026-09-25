@@ -1,6 +1,8 @@
-import { Ionicons } from "@expo/vector-icons";
 import { useMemo, useState } from "react";
-import { FlatList, Pressable, ScrollView, Text, View } from "react-native";
+import { FlatList, Pressable, ScrollView, View } from "react-native";
+
+import { AppText as Text } from "@/components/app-text";
+import { AppIcon } from "@/components/icon";
 
 import type { HomePreviewData, PreviewSub } from "../data";
 import { hp } from "../theme";
@@ -56,7 +58,7 @@ export function SubscriptionsList({
           accessibilityLabel="Back to home"
           style={previewCircleButtonStyle}
         >
-          <Ionicons name="chevron-back" size={20} color={hp.inkSoft} />
+          <AppIcon name="chevron-left" size={20} color={hp.inkSoft} />
         </Pressable>
         <View style={{ alignItems: "center" }}>
           <Text style={previewEyebrowStyle}>RECURRING PAYMENTS</Text>
@@ -116,18 +118,27 @@ export function SubscriptionsList({
                 borderRadius: 999,
                 paddingHorizontal: 14,
                 paddingVertical: 8,
-                backgroundColor: selected ? hp.inkDeep : "rgba(255,255,255,0.6)",
+                backgroundColor: selected ? hp.accent : hp.card,
                 borderWidth: selected ? 0 : 1,
                 borderColor: hp.border,
               }}
             >
               <Text
-                style={{ fontSize: 11, fontWeight: "800", color: selected ? hp.lime : "#58635a" }}
+                style={{
+                  fontSize: 11,
+                  fontWeight: "800",
+                  color: selected ? hp.onAccent : "#58635a",
+                }}
               >
                 {item.label}
               </Text>
               <Text
-                style={{ fontSize: 11, fontWeight: "700", color: selected ? "#9db8a9" : "#9aa79f" }}
+                style={{
+                  fontSize: 11,
+                  fontWeight: "700",
+                  color: selected ? hp.onAccent : "#9aa79f",
+                  opacity: selected ? 0.72 : 1,
+                }}
               >
                 {count(item.key)}
               </Text>
@@ -171,7 +182,7 @@ export function SubscriptionsList({
               gap: 12,
               paddingHorizontal: 16,
               paddingVertical: 12,
-              backgroundColor: "rgba(255,255,255,0.75)",
+              backgroundColor: hp.card,
               borderLeftWidth: 1,
               borderRightWidth: 1,
               borderColor: hp.border,
@@ -224,7 +235,7 @@ export function SubscriptionsList({
               style={{
                 fontSize: 14,
                 fontWeight: "800",
-                color: item.status === "Cancelled" ? "#7d8980" : hp.ink,
+                color: item.status === "Cancelled" ? hp.sageFaint : hp.ink,
                 textDecorationLine: item.status === "Cancelled" ? "line-through" : "none",
                 textDecorationColor: "#b8b5ab",
               }}
@@ -242,7 +253,7 @@ export function SubscriptionsList({
             borderWidth: 1,
             borderColor: hp.border,
             borderRadius: 24,
-            backgroundColor: "rgba(255,255,255,0.75)",
+            backgroundColor: hp.card,
             alignItems: "center",
             paddingVertical: 32,
             paddingHorizontal: 20,

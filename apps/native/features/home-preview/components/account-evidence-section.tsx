@@ -1,75 +1,49 @@
-import { Ionicons } from "@expo/vector-icons";
-import { Text, View } from "react-native";
+import { View } from "react-native";
+
+import { AppText as Text } from "@/components/app-text";
+import { AppIcon } from "@/components/icon";
 
 import type { HomeDetectedAccount, HomeUnassignedReading } from "../data";
 import { hp } from "../theme";
-import { BankIconPattern } from "./account-card";
+import { BankIconPattern } from "./bank-icon-pattern";
 import { BrandLogo } from "./brand-logo";
 
 function DetectedAccountRow({ account }: { account: HomeDetectedAccount }) {
   return (
-    <View
-      style={{
-        borderRadius: 18,
-        borderWidth: 1,
-        borderColor: hp.border,
-        backgroundColor: "rgba(255,255,255,0.72)",
-        padding: 14,
-        position: "relative",
-        overflow: "hidden",
-      }}
-    >
+    <View className="relative overflow-hidden rounded-tile border border-border bg-card p-3.5">
       <BankIconPattern uri={account.bankIcon} />
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+      <View className="flex-row items-center gap-2.5">
         <BrandLogo
           letter={account.bankName.charAt(0).toUpperCase() || "?"}
-          tile="#e2f4e8"
-          ink={hp.emeraldDeep}
+          tile={hp.accentSoft}
+          ink={hp.accentDeep}
           img={account.bankIcon}
           size={34}
           radius={17}
           iconRatio={0.68}
         />
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: "800", color: hp.ink }}>
+        <View className="min-w-0 flex-1">
+          <Text numberOfLines={1} className="text-body font-extrabold text-ink">
             {account.bankName}
           </Text>
-          <Text style={{ marginTop: 2, fontSize: 12, color: hp.muted }}>
+          <Text className="mt-0.5 text-caption text-muted">
             •••• {account.last4} · {account.currency}
           </Text>
         </View>
-        <View
-          style={{
-            borderRadius: 999,
-            backgroundColor: "#e2f4e8",
-            paddingHorizontal: 8,
-            paddingVertical: 5,
-          }}
-        >
-          <Text style={{ fontSize: 9, fontWeight: "800", color: hp.emeraldDeep }}>DETECTED</Text>
+        <View className="rounded-pill bg-accent-soft px-2 py-1">
+          <Text className="text-label font-extrabold text-accent-deep">DETECTED</Text>
         </View>
       </View>
 
-      <View
-        style={{
-          marginTop: 12,
-          borderTopWidth: 1,
-          borderTopColor: hp.borderSoft,
-          paddingTop: 10,
-        }}
-      >
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-          <Ionicons name="document-text-outline" size={14} color={hp.emeraldDeep} />
-          <Text style={{ fontSize: 11, fontWeight: "800", color: hp.inkSoft }}>
-            {account.evidenceType}
-          </Text>
+      <View className="mt-3 border-t border-border-soft pt-2.5">
+        <View className="flex-row items-center gap-1.5">
+          <AppIcon name="file" size={14} color={hp.accentDeep} />
+          <Text className="text-meta font-extrabold text-ink-soft">{account.evidenceType}</Text>
         </View>
-        <Text style={{ marginTop: 4, fontSize: 10, color: hp.muted }}>
+        <Text className="mt-1 text-label text-muted">
           {account.evidenceDate} · {account.evidenceSource}
         </Text>
-        <Text style={{ marginTop: 8, fontSize: 11, lineHeight: 16, color: hp.muted }}>
-          {account.note}
-        </Text>
+        <Text className="mt-2 text-meta leading-4 text-muted">{account.note}</Text>
       </View>
     </View>
   );
@@ -77,49 +51,26 @@ function DetectedAccountRow({ account }: { account: HomeDetectedAccount }) {
 
 function UnassignedReadingRow({ reading }: { reading: HomeUnassignedReading }) {
   return (
-    <View
-      style={{
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: hp.border,
-        backgroundColor: "rgba(255,255,255,0.72)",
-        padding: 14,
-        position: "relative",
-        overflow: "hidden",
-      }}
-    >
+    <View className="relative overflow-hidden rounded-tile border border-border bg-card p-3.5">
       <BankIconPattern uri={reading.bankIcon} />
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-        <View
-          style={{
-            width: 30,
-            height: 30,
-            borderRadius: 15,
-            backgroundColor: "#f1f4ef",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <Ionicons name="help-outline" size={16} color={hp.muted} />
+      <View className="flex-row items-center gap-2.5">
+        <View className="h-[30px] w-[30px] items-center justify-center rounded-full bg-surface-muted">
+          <AppIcon name="help" size={16} color={hp.muted} />
         </View>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text numberOfLines={1} style={{ fontSize: 13, fontWeight: "800", color: hp.ink }}>
+        <View className="min-w-0 flex-1">
+          <Text numberOfLines={1} className="text-subtitle font-extrabold text-ink">
             {reading.bankName}
           </Text>
-          <Text style={{ marginTop: 2, fontSize: 10, color: hp.muted }}>
-            Bank reading without account digits
-          </Text>
+          <Text className="mt-0.5 text-label text-muted">Bank reading without account digits</Text>
         </View>
-        <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: "800", color: hp.ink }}>
+        <Text numberOfLines={1} className="text-body font-extrabold text-ink">
           {reading.balance}
         </Text>
       </View>
-      <Text style={{ marginTop: 9, fontSize: 10, color: hp.muted }}>
+      <Text className="mt-2 text-label text-muted">
         {reading.evidenceDate} · {reading.evidenceSource}
       </Text>
-      <Text style={{ marginTop: 6, fontSize: 10, lineHeight: 15, color: hp.muted }}>
-        {reading.note}
-      </Text>
+      <Text className="mt-1.5 text-label leading-[15px] text-muted">{reading.note}</Text>
     </View>
   );
 }
@@ -141,59 +92,39 @@ export function AccountEvidenceSection({
         : `${unassignedReadings.length} reading${unassignedReadings.length === 1 ? "" : "s"}`;
 
   return (
-    <View style={{ marginTop: 24 }}>
-      <View
-        style={{ flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between" }}
-      >
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={{ fontSize: 10, fontWeight: "700", letterSpacing: 2, color: hp.muted }}>
+    <View className="mt-6">
+      <View className="flex-row items-end justify-between">
+        <View className="min-w-0 flex-1">
+          <Text className="text-label font-bold tracking-widest text-muted">
             OTHER ACCOUNT SIGNALS
           </Text>
-          <Text
-            style={{
-              marginTop: 4,
-              fontSize: 21,
-              fontWeight: "800",
-              letterSpacing: -1.25,
-              color: hp.ink,
-            }}
-          >
+          <Text className="mt-1 text-title font-extrabold tracking-tight text-ink">
             Detected accounts
           </Text>
         </View>
-        <Text style={{ fontSize: 11, fontWeight: "700", color: hp.emeraldDeep }}>{countLabel}</Text>
+        <Text className="text-meta font-bold text-accent-deep">{countLabel}</Text>
       </View>
 
-      <View
-        style={{
-          marginTop: 10,
-          flexDirection: "row",
-          alignItems: "flex-start",
-          gap: 8,
-          borderRadius: 14,
-          backgroundColor: "#e8f6ec",
-          padding: 12,
-        }}
-      >
-        <Ionicons name="information-circle-outline" size={16} color={hp.emeraldDeep} />
-        <Text style={{ flex: 1, fontSize: 11, lineHeight: 16, color: hp.emeraldDeep }}>
+      <View className="mt-2.5 flex-row items-start gap-2 rounded-tile bg-notice-bg p-3">
+        <AppIcon name="info" size={16} color={hp.noticeInk} />
+        <Text className="flex-1 text-meta leading-4 text-notice-ink">
           These are identity signals only. A bank-reported balance is required before an account
           appears in balances or net across accounts.
         </Text>
       </View>
 
-      <View style={{ marginTop: 10, gap: 8 }}>
+      <View className="mt-2.5 gap-2">
         {detectedAccounts.map((account) => (
           <DetectedAccountRow key={account.key} account={account} />
         ))}
       </View>
 
       {unassignedReadings.length > 0 && (
-        <View style={{ marginTop: 16 }}>
-          <Text style={{ fontSize: 11, fontWeight: "800", color: hp.inkSoft }}>
+        <View className="mt-4">
+          <Text className="text-meta font-extrabold text-ink-soft">
             Bank readings without an account identity
           </Text>
-          <View style={{ marginTop: 8, gap: 8 }}>
+          <View className="mt-2 gap-2">
             {unassignedReadings.map((reading) => (
               <UnassignedReadingRow key={reading.key} reading={reading} />
             ))}

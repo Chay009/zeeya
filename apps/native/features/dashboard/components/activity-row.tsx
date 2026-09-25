@@ -1,4 +1,6 @@
-import { View, Text } from "react-native";
+import { View } from "react-native";
+
+import { AppText as Text } from "@/components/app-text";
 
 import { TransactionAvatar } from "@/components/transaction-avatar";
 import { dashboardTheme as t } from "@/constants/dashboard-theme";

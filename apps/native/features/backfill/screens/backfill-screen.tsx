@@ -1,7 +1,10 @@
-import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { Spinner } from "heroui-native";
+import { Pressable, View } from "react-native";
+
+import { AppText as Text } from "@/components/app-text";
+import { AppIcon } from "@/components/icon";
 import { Calendar, type DateData } from "react-native-calendars";
 
 import { Container } from "@/components/container";
@@ -145,7 +148,7 @@ export function BackfillScreen() {
             Backfill history
           </Text>
           <Pressable onPress={handleClose} hitSlop={12}>
-            <Ionicons name="close" size={24} color={t.textMuted} />
+            <AppIcon name="close" size={24} color={t.textMuted} />
           </Pressable>
         </View>
 
@@ -228,7 +231,7 @@ export function BackfillScreen() {
                     <Text style={{ color: t.textPrimary, fontWeight: "600", fontSize: 14 }}>
                       {preset.label}
                     </Text>
-                    {isActive && <ActivityIndicator size="small" color={t.accent} />}
+                    {isActive && <Spinner size="sm" color={t.accent} />}
                   </Pressable>
                 );
               })}

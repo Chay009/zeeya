@@ -156,8 +156,8 @@ describe("new-since-last-view state machine", () => {
     expect(state.suppressDiff).toBe(false);
 
     // subscribeToMessageSync also passes completesFirstLoad: true on
-    // every one of its own updates (see use-dashboard-sync.ts) — it must
-    // never flip suppressDiff back on and hide real new activity.
+    // every one of its own updates (see stores/dashboard-store.ts) — it
+    // must never flip suppressDiff back on and hide real new activity.
     const added = transaction("added", 2);
     state = applyDashboardUpdate(state, dashboard([added, transaction("old", 1)]), {
       completesFirstLoad: true,

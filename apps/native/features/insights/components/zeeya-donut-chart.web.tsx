@@ -1,15 +1,23 @@
 import { Text, View } from "react-native";
 import type { CategorySlice } from "../insights-data";
 
-export function ZeeyaDonutChart({ data }: { data: CategorySlice[]; isLoading?: boolean }) {
+export function ZeeyaDonutChart({
+  data,
+  size = 200,
+}: {
+  data: CategorySlice[];
+  isLoading?: boolean;
+  size?: number;
+}) {
   return (
     <View
       style={{
-        height: 220,
+        width: size,
+        height: size,
         alignItems: "center",
         justifyContent: "center",
         backgroundColor: "#e5eee8",
-        borderRadius: 110,
+        borderRadius: size / 2,
       }}
     >
       <Text>

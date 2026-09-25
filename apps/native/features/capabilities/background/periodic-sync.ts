@@ -10,7 +10,7 @@ interface PeriodicSyncDependencies {
   getSettings(): Promise<PeriodicSyncSettings>;
   canSync(): Promise<boolean>;
   loadDashboard(): Promise<Dashboard>;
-  sync(): Promise<Dashboard>;
+  sync(currentDashboard: Dashboard): Promise<Dashboard>;
   notify(transactions: ParsedSms[]): Promise<void>;
 }
 
@@ -26,7 +26,7 @@ export function findNewFinancialTransactions(before: Dashboard, after: Dashboard
 
 export interface SyncAndNotifyDependencies {
   loadDashboard(): Promise<Dashboard>;
-  sync(): Promise<Dashboard>;
+  sync(currentDashboard: Dashboard): Promise<Dashboard>;
   transactionNotificationsEnabled: boolean;
   notify(transactions: ParsedSms[]): Promise<void>;
 }
@@ -46,7 +46,7 @@ export async function syncAndNotify(
   dependencies: SyncAndNotifyDependencies,
 ): Promise<SyncAndNotifyResult> {
   const before = await dependencies.loadDashboard();
-  const after = await dependencies.sync();
+  const after = await dependencies.sync(before);
   const added = findNewFinancialTransactions(before, after);
 
   if (dependencies.transactionNotificationsEnabled && added.length > 0) {

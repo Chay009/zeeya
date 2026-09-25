@@ -52,7 +52,8 @@ vi.mock("./client", () => ({
 
 const { syncInbox } = await import("./sync");
 const { backfillSms } = await import("./backfill");
-const { getSyncStatus } = await import("./ingestion");
+const { ensureDashboardProjectionCurrent, getProjectionStatus, getSyncStatus } =
+  await import("./ingestion");
 
 const T = 1_700_000_000_000;
 const TEN_MINUTES = 600_000;
@@ -135,6 +136,89 @@ describe("syncInbox", () => {
 
     const rows = testDb.select().from(schema.smsLedger).all();
     expect(rows).toHaveLength(7);
+  });
+
+  it("publishes normalized query tables only after every inbox page has been ingested", async () => {
+    const messages = Array.from({ length: 5 }, (_, i) => rawSms({ id: `p${i}`, date: T + i }));
+    const projectedCountsDuringProgress: number[] = [];
+
+    const dashboard = await syncInbox(fakeInboxReader(messages), {
+      now: T + TEN_MINUTES,
+      pageSize: 2,
+      onProgress: () => {
+        projectedCountsDuringProgress.push(testDb.select().from(schema.transactions).all().length);
+      },
+    });
+
+    expect(projectedCountsDuringProgress).toEqual([0, 0, 0]);
+    expect(testDb.select().from(schema.transactions).all()).toHaveLength(5);
+    expect(dashboard.recent).toHaveLength(5);
+  });
+
+  it("queues projection repair reads until a deferred multi-page sync has published", async () => {
+    const messages = Array.from({ length: 5 }, (_, i) =>
+      rawSms({ id: `locked-${i}`, date: T + i }),
+    );
+    let queuedRepair: Promise<void> | null = null;
+    let repairSettled = false;
+
+    await syncInbox(fakeInboxReader(messages), {
+      now: T + TEN_MINUTES,
+      pageSize: 2,
+      onProgress: ({ scanned }) => {
+        if (scanned !== 2) return;
+        queuedRepair = ensureDashboardProjectionCurrent().finally(() => {
+          repairSettled = true;
+        });
+        expect(repairSettled).toBe(false);
+        expect(testDb.select().from(schema.transactions).all()).toHaveLength(0);
+      },
+    });
+
+    expect(queuedRepair).not.toBeNull();
+    await queuedRepair;
+    expect(repairSettled).toBe(true);
+    expect(testDb.select().from(schema.transactions).all()).toHaveLength(5);
+  });
+
+  it("marks an interrupted sync dirty and repairs its query tables before they are read", async () => {
+    await syncInbox(async () => [rawSms({ id: "seed", date: T })], {
+      now: T + TEN_MINUTES,
+    });
+
+    let calls = 0;
+    const interruptedReader: InboxReader = async () => {
+      calls++;
+      if (calls === 1) return [rawSms({ id: "new", date: T + TEN_MINUTES * 2 })];
+      throw new Error("simulated interruption after a committed page");
+    };
+
+    await expect(syncInbox(interruptedReader, { pageSize: 1 })).rejects.toThrow(
+      "simulated interruption",
+    );
+
+    const dirty = await getProjectionStatus();
+    expect(dirty.sourceRevision).toBeGreaterThan(dirty.projectedRevision);
+    expect(testDb.select().from(schema.transactions).all()).toHaveLength(1);
+
+    await ensureDashboardProjectionCurrent();
+
+    expect(testDb.select().from(schema.transactions).all()).toHaveLength(2);
+    const repaired = await getProjectionStatus();
+    expect(repaired.projectedRevision).toBe(repaired.sourceRevision);
+  });
+
+  it("reuses the caller's current dashboard when a routine sync inserts nothing", async () => {
+    const current = await syncInbox(async () => [rawSms({ id: "seed", date: T })], {
+      now: T + TEN_MINUTES,
+    });
+
+    const unchanged = await syncInbox(async () => [], {
+      now: T + TEN_MINUTES * 2,
+      currentDashboard: current,
+    });
+
+    expect(unchanged).toBe(current);
   });
 
   it("marks the initial scan complete even when the 90-day window has no messages, so it isn't repeated", async () => {

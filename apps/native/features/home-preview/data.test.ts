@@ -1,8 +1,13 @@
 import { createMalanaEngine, type MalanaResult } from "@zeeya/parser/malana";
 import { afterEach, describe, expect, it } from "vitest";
 import { deriveDashboard } from "../../lib/dashboard";
+import type { TransactionSummary } from "../../lib/dashboard-data";
 import type { ParsedSms } from "../../lib/sms";
-import { createHomePreviewData, summarizeNewTransactions } from "./data";
+import {
+  createHomePreviewData,
+  summarizeCaughtUpTransactions,
+  summarizeNewTransactions,
+} from "./data";
 
 // Minimal MalanaResult builder, same pattern as lib/dashboard.test.ts's own
 // — only sets the fields a given test actually reads, everything else
@@ -201,6 +206,60 @@ describe("createHomePreviewData — detected accounts", () => {
 });
 
 describe("createHomePreviewData - transaction categories", () => {
+  it("uses verified SQL aggregates when they are available", () => {
+    const now = new Date(Date.UTC(2026, 7, 24, 6));
+    const message: ParsedSms = {
+      id: "sql-aggregate-transaction",
+      sender: "VM-TESTBK",
+      body: "",
+      date: now.getTime(),
+      result: minimalResult({
+        bankName: "Test Bank",
+        acc: "XX1234",
+        trx: "10.00",
+        trxTypeRich: "EXPENSE",
+        merchantCategory: "Food",
+      }),
+    };
+
+    const home = createHomePreviewData(deriveDashboard([message], now), true, now, undefined, {
+      monthTotals: {
+        incomeByCurrency: { INR: 999 },
+        expenseByCurrency: { INR: 123.45 },
+      },
+      categoryTotalsByCurrency: {
+        INR: [{ category: "Food", totalMinorUnits: 12345 }],
+      },
+    });
+
+    expect(home.cashflow.income).toBe("₹999");
+    expect(home.cashflow.expense).toBe("₹123.45");
+    expect(home.cashflow.categories[0]).toMatchObject({ label: "Food", amount: "₹123.45" });
+  });
+
+  it("does not substitute derived totals while the aggregate source is unavailable", () => {
+    const now = new Date(Date.UTC(2026, 7, 24, 6));
+    const message: ParsedSms = {
+      id: "aggregate-source-loading",
+      sender: "VM-TESTBK",
+      body: "",
+      date: now.getTime(),
+      result: minimalResult({
+        bankName: "Test Bank",
+        acc: "XX1234",
+        trx: "10.00",
+        trxTypeRich: "EXPENSE",
+        merchantCategory: "Food",
+      }),
+    };
+
+    const home = createHomePreviewData(deriveDashboard([message], now), true, now);
+
+    expect(home.cashflow.income).toBe("—");
+    expect(home.cashflow.expense).toBe("—");
+    expect(home.cashflow.categories).toEqual([]);
+  });
+
   it("shows only parser-returned spending categories, capped at three", () => {
     const engine = createMalanaEngine();
     const body = "INR 2,500 debited from A/c XX1234 for flight ticket. PNR AB1234.";
@@ -266,6 +325,35 @@ describe("summarizeNewTransactions", () => {
 
   it("returns an empty list for an empty input, not a placeholder row", () => {
     expect(summarizeNewTransactions([])).toEqual([]);
+  });
+});
+
+describe("summarizeCaughtUpTransactions", () => {
+  it("summarizes bounded SQL transaction rows without raw parser data", () => {
+    const row: TransactionSummary = {
+      id: "caught-up",
+      date: 1,
+      amountMinorUnits: 12345,
+      currency: "INR",
+      direction: "expense",
+      accountId: null,
+      trxTypeRich: "EXPENSE",
+      vendor: "Fallback vendor",
+      brandName: "Preferred brand",
+      category: "Shopping",
+      ref: null,
+      bankName: "Bank",
+      mandateId: null,
+    };
+
+    expect(summarizeCaughtUpTransactions([row])).toEqual([
+      {
+        key: "caught-up",
+        name: "Preferred brand",
+        amount: "−₹123.45",
+        direction: "expense",
+      },
+    ]);
   });
 });
 

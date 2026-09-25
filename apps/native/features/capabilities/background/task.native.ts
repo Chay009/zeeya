@@ -3,7 +3,7 @@ import * as TaskManager from "expo-task-manager";
 import { migrate } from "drizzle-orm/expo-sqlite/migrator";
 import { Platform } from "react-native";
 
-import { db, migrateLegacyDatabaseIfNeeded } from "@/db/client";
+import { db } from "@/db/client";
 import { loadDashboard } from "@/db/ingestion";
 import migrations from "@/db/migrations/migrations";
 import { getLocalSettings } from "@/db/settings";
@@ -24,19 +24,18 @@ if (!TaskManager.isTaskDefined(BACKGROUND_SYNC_TASK)) {
       // apply pending migrations itself before reading local settings or the
       // ledger. This also covers the first background run after an OTA update.
       await migrate(db, migrations);
-      migrateLegacyDatabaseIfNeeded();
       const syncState: { pendingSignal: PendingSmsSignal | null } = { pendingSignal: null };
       const result = await runPeriodicSync({
         getSettings: getLocalSettings,
         canSync: () =>
           Platform.OS === "android" ? hasSmsCapturePermissions() : Promise.resolve(true),
         loadDashboard,
-        sync: async () => {
+        sync: async (currentDashboard) => {
           syncState.pendingSignal =
             Platform.OS === "android" && AndroidMessageQueueModule
               ? await AndroidMessageQueueModule.peekPendingSmsSignal()
               : null;
-          return syncDeviceMessages();
+          return syncDeviceMessages({ currentDashboard });
         },
         notify: notifyNewFinancialTransactions,
       });

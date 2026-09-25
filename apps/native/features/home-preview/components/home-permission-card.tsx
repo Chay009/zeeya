@@ -1,7 +1,9 @@
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { Button, Spinner, Surface } from "heroui-native";
+import { View } from "react-native";
 
-import type { Status } from "@/features/dashboard/hooks/use-dashboard-sync";
-import { hp } from "../theme";
+import { AppText as Text } from "@/components/app-text";
+
+import type { Status } from "@/features/dashboard/hooks/dashboard-sync-provider";
 
 export function HomePermissionCard({
   status,
@@ -41,46 +43,23 @@ export function HomePermissionCard({
           : "Checking whether zeeya can read your bank and transaction messages.";
 
   return (
-    <View
-      style={{
-        marginTop: 18,
-        borderRadius: 22,
-        borderWidth: 1,
-        borderColor: needsPermission ? "#b9dfc5" : hp.border,
-        backgroundColor: hp.card,
-        padding: 16,
-      }}
-    >
-      <Text style={{ fontSize: 10, fontWeight: "800", letterSpacing: 1.6, color: hp.muted }}>
+    <Surface className="mt-4 rounded-card p-4">
+      <Text className="text-label font-extrabold tracking-wider text-muted">
         {unsupported ? "DEVICE SUPPORT" : "PRIVATE BY DESIGN"}
       </Text>
-      <Text style={{ marginTop: 5, fontSize: 17, fontWeight: "800", color: hp.ink }}>{title}</Text>
-      <Text style={{ marginTop: 6, fontSize: 13, lineHeight: 19, color: hp.mutedSoft }}>
-        {body}
-      </Text>
+      <Text className="mt-1 text-title font-extrabold text-ink">{title}</Text>
+      <Text className="mt-2 text-caption leading-5 text-muted-soft">{body}</Text>
 
       {needsPermission && (
-        <Pressable
-          accessibilityRole="button"
-          disabled={busy}
-          onPress={onConnect}
-          style={{
-            marginTop: 14,
-            alignItems: "center",
-            borderRadius: 14,
-            backgroundColor: hp.inkDeep,
-            paddingVertical: 12,
-            opacity: busy ? 0.6 : 1,
-          }}
-        >
-          <Text style={{ color: hp.lime, fontSize: 13, fontWeight: "800" }}>Allow SMS access</Text>
-        </Pressable>
+        <Button className="mt-4" isDisabled={busy} onPress={onConnect}>
+          Allow SMS access
+        </Button>
       )}
 
       {busy && (
-        <View style={{ marginTop: 14, flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <ActivityIndicator color={hp.emeraldDeep} size="small" />
-          <Text style={{ fontSize: 12, fontWeight: "700", color: hp.emeraldDeep }}>
+        <View className="mt-4 flex-row items-center gap-2">
+          <Spinner size="sm" />
+          <Text className="text-caption font-bold text-accent-deep">
             {loading
               ? progress
                 ? // Counts, not a percentage — the total to scan isn't
@@ -94,22 +73,10 @@ export function HomePermissionCard({
       )}
 
       {status === "error" && (
-        <Pressable
-          accessibilityRole="button"
-          onPress={onConnect}
-          style={{
-            marginTop: 14,
-            alignItems: "center",
-            borderRadius: 14,
-            borderWidth: 1,
-            borderColor: hp.border,
-            backgroundColor: hp.cardAlt,
-            paddingVertical: 11,
-          }}
-        >
-          <Text style={{ color: hp.emeraldDeep, fontSize: 13, fontWeight: "800" }}>Try again</Text>
-        </Pressable>
+        <Button className="mt-4" variant="secondary" onPress={onConnect}>
+          Try again
+        </Button>
       )}
-    </View>
+    </Surface>
   );
 }

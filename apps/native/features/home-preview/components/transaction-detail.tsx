@@ -1,5 +1,16 @@
-import { Ionicons } from "@expo/vector-icons";
-import { Pressable, ScrollView, Text, View } from "react-native";
+// DEVELOPMENT-ONLY: this screen renders the complete parsed MalanaResult —
+// raw grammar tags, the full token tree, and the SMS body — as a literal
+// parser-debug dump (see transactionDetailSections's own comment in
+// ../data.ts). It is not the product Transaction Detail screen and is
+// deliberately NOT wired to db/queries-transactions.ts's
+// queryTransactionDetail / FinanceDataSource.transactions.get, whose
+// TransactionDetail DTO explicitly excludes all of that. Phase 1C replaces
+// this component with the real product detail screen backed by that
+// bounded DTO, and removes or dev-gates this raw dump before release.
+import { Pressable, ScrollView, View } from "react-native";
+
+import { AppText as Text } from "@/components/app-text";
+import { AppIcon } from "@/components/icon";
 
 import type { ActivityItem } from "../data";
 import { transactionDetailSections } from "../data";
@@ -38,7 +49,7 @@ export function TransactionDetail({
           accessibilityLabel="Back to activity"
           style={previewCircleButtonStyle}
         >
-          <Ionicons name="chevron-back" size={20} color={hp.inkSoft} />
+          <AppIcon name="chevron-left" size={20} color={hp.inkSoft} />
         </Pressable>
         <View style={{ minWidth: 0, alignItems: "center", flex: 1, paddingHorizontal: 12 }}>
           <Text style={previewEyebrowStyle}>TRANSACTION</Text>
@@ -47,6 +58,23 @@ export function TransactionDetail({
           </Text>
         </View>
         <View style={{ width: 42 }} />
+      </View>
+
+      <View
+        style={{
+          marginTop: 20,
+          borderRadius: 12,
+          borderWidth: 1,
+          borderColor: "#f0b429",
+          backgroundColor: "#fef6e0",
+          paddingVertical: 8,
+          paddingHorizontal: 12,
+        }}
+      >
+        <Text style={{ fontSize: 11, fontWeight: "700", color: "#8a6116" }}>
+          DEVELOPMENT ONLY — full parser debug dump (raw tags, token tree). Not the product detail
+          screen.
+        </Text>
       </View>
 
       <View

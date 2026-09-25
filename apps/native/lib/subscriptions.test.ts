@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   deriveSubscriptions,
   isInferredRecurringTransaction,
+  subscriptionIdentityKey,
   subscriptionMonthlyTotals,
 } from "./subscriptions";
 import type { ParsedSms } from "./sms";
@@ -492,5 +493,58 @@ describe("isInferredRecurringTransaction", () => {
       vendor: "Random Store",
     });
     expect(isInferredRecurringTransaction(one, [])).toBe(false);
+  });
+});
+
+describe("subscriptionIdentityKey", () => {
+  it("returns the normalizeMerchant+currency composite for a usable merchant name", () => {
+    expect(subscriptionIdentityKey("Netflix", "INR")).toBe("netflix|INR");
+    expect(subscriptionIdentityKey("  Netflix.com  ", "INR")).toBe("netflix|INR");
+  });
+
+  it("keeps different currencies for the same merchant name distinct", () => {
+    expect(subscriptionIdentityKey("Netflix", "INR")).toBe("netflix|INR");
+    expect(subscriptionIdentityKey("Netflix", "USD")).toBe("netflix|USD");
+    expect(subscriptionIdentityKey("Netflix", "INR")).not.toBe(
+      subscriptionIdentityKey("Netflix", "USD"),
+    );
+  });
+
+  it("returns null for a null merchant", () => {
+    expect(subscriptionIdentityKey(null, "INR")).toBeNull();
+  });
+
+  it("returns null, never a degenerate '|currency' string, when normalization strips the name to nothing", () => {
+    expect(subscriptionIdentityKey("---", "INR")).toBeNull();
+    expect(subscriptionIdentityKey("...", "INR")).toBeNull();
+  });
+
+  it("is the exact key allQualifyingSubscriptions groups a matching merchant+currency's occurrences under", () => {
+    // The same identity two different real transactions for "Netflix"/INR
+    // would key subscription candidate grouping by internally — proven
+    // here via deriveSubscriptions's own output rather than reaching into
+    // allQualifyingSubscriptions's private Map, since the row-level
+    // consumer (db/projections.ts) only ever needs the two to agree on
+    // whether a given subscription is "this same identity," which the
+    // subscription's own id in the persisted projection expresses.
+    const messages = [
+      sms("1", "VM-TESTBK", now - 30 * DAY_MS, {
+        trxTypeRich: "EXPENSE",
+        trx: "499.00",
+        brandName: "Netflix",
+        currency: "INR",
+      }),
+      sms("2", "VM-TESTBK", now, {
+        trxTypeRich: "EXPENSE",
+        trx: "499.00",
+        brandName: "Netflix",
+        currency: "INR",
+      }),
+    ];
+    const subscriptions = deriveSubscriptions(messages, new Date(now));
+    expect(subscriptions).toHaveLength(1);
+    expect(subscriptionIdentityKey(subscriptions[0]!.merchant, subscriptions[0]!.currency)).toBe(
+      "netflix|INR",
+    );
   });
 });

@@ -132,6 +132,20 @@ describe("periodic financial sync policy", () => {
   // gating, since the real-time caller invokes it without that gating at
   // all — its own permission/subscription checks happen upstream instead.
   describe("syncAndNotify", () => {
+    it("passes the already-loaded dashboard into sync so a no-op sync can reuse it", async () => {
+      const before = dashboard([transaction("old", 1)]);
+      const sync = vi.fn(async (currentDashboard: Dashboard) => currentDashboard);
+
+      await syncAndNotify({
+        loadDashboard: async () => before,
+        sync,
+        transactionNotificationsEnabled: true,
+        notify: vi.fn(),
+      });
+
+      expect(sync).toHaveBeenCalledWith(before);
+    });
+
     it("notifies with exactly the newly-added financial transactions when enabled", async () => {
       const old = transaction("old", 1);
       const added = transaction("new", 2);

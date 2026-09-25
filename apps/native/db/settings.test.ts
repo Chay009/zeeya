@@ -47,6 +47,7 @@ describe("local capability settings", () => {
       transactionNotificationsEnabled: false,
       biometricLockEnabled: false,
       screenCaptureProtectionEnabled: false,
+      dailyBudgetMinorUnits: null,
     });
   });
 
@@ -59,6 +60,7 @@ describe("local capability settings", () => {
       transactionNotificationsEnabled: true,
       biometricLockEnabled: true,
       screenCaptureProtectionEnabled: false,
+      dailyBudgetMinorUnits: null,
     });
   });
 
@@ -67,5 +69,13 @@ describe("local capability settings", () => {
     await updateLocalSettings({ screenCaptureProtectionEnabled: false });
 
     expect((await getLocalSettings()).screenCaptureProtectionEnabled).toBe(false);
+  });
+
+  it("persists a configured daily budget without inferring one by default", async () => {
+    expect((await getLocalSettings()).dailyBudgetMinorUnits).toBeNull();
+
+    await updateLocalSettings({ dailyBudgetMinorUnits: 12_500 });
+
+    await expect(getLocalSettings()).resolves.toMatchObject({ dailyBudgetMinorUnits: 12_500 });
   });
 });

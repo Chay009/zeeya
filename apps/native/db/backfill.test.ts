@@ -96,6 +96,7 @@ describe("backfillSms", () => {
     expect(result.insertedCount).toBe(3);
     const rows = testDb.select().from(schema.smsLedger).all();
     expect(rows.map((r) => r.id).sort()).toEqual(inRange.map(fingerprintOf).sort());
+    expect(testDb.select().from(schema.smsArrivals).all()).toEqual([]);
   });
 
   it("paginates across a range wider than one reader page without skipping anything", async () => {

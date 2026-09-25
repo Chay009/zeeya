@@ -8,12 +8,13 @@
 // connection runs `PRAGMA foreign_keys = ON` — see db/native-init.ts.
 //
 // Every money column is an integer in minor units (paise for INR, cents for
-// USD, ...), not SQLite REAL — see db/currency.ts. Binary floating point
+// USD, ...), not SQLite REAL — see lib/currency.ts. Binary floating point
 // can't represent decimal currency amounts exactly, and this schema hasn't
 // shipped yet, so there's no reason to let that assumption spread into
 // ingestion code.
 import { sql } from "drizzle-orm";
 import { sqliteTable, text, integer, index, uniqueIndex, check } from "drizzle-orm/sqlite-core";
+import { STORED_ACTIVITY_CATEGORIES } from "../lib/activity-filters";
 
 // ── Ledger layer ────────────────────────────────────────────────────────────
 // One row per SMS ever ingested. This is the reprocessing source of truth:
@@ -61,6 +62,23 @@ export const smsLedger = sqliteTable(
       sql`(${table.ingestionStatus} = 'parsed' AND ${table.parsedResult} IS NOT NULL AND ${table.ingestionError} IS NULL) OR (${table.ingestionStatus} = 'error' AND ${table.parsedResult} IS NULL AND ${table.ingestionError} IS NOT NULL)`,
     ),
   ],
+);
+
+// Monotonic local arrival order, independent of the SMS's own timestamp.
+// A delayed or historical message can have an old `date` but still be newly
+// caught up by this installation, so transaction-date cursors cannot power
+// the "captured while you were away" UI correctly. This append-only sequence
+// survives projection rebuilds; the normalized transactions table can join
+// by smsId without reading raw ledger content.
+export const smsArrivals = sqliteTable(
+  "sms_arrivals",
+  {
+    sequence: integer("sequence").primaryKey({ autoIncrement: true }),
+    smsId: text("sms_id")
+      .notNull()
+      .references(() => smsLedger.id, { onDelete: "cascade" }),
+  },
+  (table) => [uniqueIndex("sms_arrivals_sms_id_idx").on(table.smsId)],
 );
 
 // Every time ingestion sees a provider id for some content that a
@@ -117,6 +135,28 @@ export const syncCheckpoint = sqliteTable("sync_checkpoint", {
   updatedAt: integer("updated_at").notNull(),
 });
 
+// Durable freshness marker for the normalized dashboard/query tables.
+// Ledger writes advance sourceRevision in the same transaction as the
+// source change. A successful atomic projection replacement advances
+// projectedRevision to the exact source revision it was derived from.
+// A mismatch therefore survives process death and tells the next reader
+// that the query tables must be rebuilt before use.
+export const projectionState = sqliteTable(
+  "projection_state",
+  {
+    id: text("id").primaryKey(),
+    sourceRevision: integer("source_revision").notNull().default(0),
+    projectedRevision: integer("projected_revision").notNull().default(0),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [
+    check(
+      "projection_state_revision_check",
+      sql`${table.sourceRevision} >= 0 AND ${table.projectedRevision} >= 0 AND ${table.projectedRevision} <= ${table.sourceRevision}`,
+    ),
+  ],
+);
+
 // User-controlled, device-local capability preferences. These flags are
 // intentionally separate from authentication/profile data: they configure
 // what this installation may do in the background or while displaying
@@ -142,6 +182,14 @@ export const localSettings = sqliteTable(
     })
       .notNull()
       .default(false),
+    // Optional user-configured daily target used by budget analytics. A
+    // missing value means "no budget configured"; it is never inferred from
+    // transaction spend or account balances.
+    dailyBudgetMinorUnits: integer("daily_budget_minor_units"),
+    // Durable presentation cursor, not a capability preference. Kept on
+    // this installation-scoped singleton so a background catch-up followed
+    // by process death still appears once when Home next starts.
+    lastSeenArrivalSequence: integer("last_seen_arrival_sequence").notNull().default(0),
     updatedAt: integer("updated_at").notNull(),
   },
   (table) => [
@@ -149,6 +197,11 @@ export const localSettings = sqliteTable(
       "local_settings_boolean_values",
       sql`${table.backgroundSyncEnabled} IN (0, 1) AND ${table.transactionNotificationsEnabled} IN (0, 1) AND ${table.biometricLockEnabled} IN (0, 1) AND ${table.screenCaptureProtectionEnabled} IN (0, 1)`,
     ),
+    check(
+      "local_settings_daily_budget_check",
+      sql`${table.dailyBudgetMinorUnits} IS NULL OR (typeof(${table.dailyBudgetMinorUnits}) = 'integer' AND ${table.dailyBudgetMinorUnits} > 0)`,
+    ),
+    check("local_settings_arrival_cursor_check", sql`${table.lastSeenArrivalSequence} >= 0`),
   ],
 );
 
@@ -158,18 +211,98 @@ export const localSettings = sqliteTable(
 // close enough to packages/db's server transaction schema that a future
 // sync layer can map rows mechanically without redesigning either side.
 
-export const accounts = sqliteTable("accounts", {
-  // `${normalizedBankName}|${last4}` — mirrors dashboard.ts's accountKey().
+export const accounts = sqliteTable(
+  "accounts",
+  {
+    // `${normalizedBankName}|${last4}` — mirrors dashboard.ts's accountKey().
+    id: text("id").primaryKey(),
+    bankName: text("bank_name").notNull(),
+    // dashboard.ts's normalizeBankName(bankName) — the canonical grouping
+    // key, computed once at projection time (mirrors balance_readings'
+    // detectedBankKey exactly, same reason: querying/joining on the raw
+    // bankName would silently miss/misgroup accounts whose real bank name
+    // differs only in casing or whitespace across messages). Used by
+    // Home's hasNewerSuggestedReading cross-check to match an account
+    // against balance_readings.detectedBankKey without re-normalizing in
+    // SQL or duplicating normalizeBankName's rules there.
+    bankKey: text("bank_key").notNull(),
+    last4: text("last4").notNull(),
+    currency: text("currency").notNull(),
+    // "unreported" mirrors dashboard.ts's UnanchoredAccountBalance: no bank
+    // has ever reported a balance for this account (only transaction/mandate
+    // evidence exists). balanceMinorUnits/estimatedBalanceMinorUnits are
+    // genuinely NULL in that case (enforced by the CHECK below), never a
+    // placeholder 0 — a 0 in either column is only ever a real reported
+    // zero balance.
+    anchorStatus: text("anchor_status", { enum: ["reported", "unreported"] }).notNull(),
+    balanceMinorUnits: integer("balance_minor_units"),
+    balanceAsOf: integer("balance_as_of").notNull(),
+    balanceSender: text("balance_sender").notNull(),
+    estimatedBalanceMinorUnits: integer("estimated_balance_minor_units"),
+    estimatedAsOf: integer("estimated_as_of").notNull(),
+    reconciliationDeltaMinorUnits: integer("reconciliation_delta_minor_units"),
+    // Account-level captured activity — dashboard.ts's AccountBalance already
+    // computes these (summing captured transactions against the account's
+    // own anchor, the same reconciliation dashboard.ts's own captured*
+    // fields already do), so this persists that existing result rather than
+    // independently recomputing it in SQL. Always a real integer (never
+    // null) — an account with zero captured transactions since its anchor
+    // genuinely has 0 for all four, the same "0 means 0, not unknown" rule
+    // balance/estimatedBalance's own nullability CHECK enforces elsewhere
+    // on this table.
+    capturedIncomeMinorUnits: integer("captured_income_minor_units").notNull(),
+    capturedExpenseMinorUnits: integer("captured_expense_minor_units").notNull(),
+    capturedChangeMinorUnits: integer("captured_change_minor_units").notNull(),
+    capturedTransactionCount: integer("captured_transaction_count").notNull(),
+  },
+  (table) => [
+    // Covers Home's hasNewerSuggestedReading cross-check: WHERE bank_key = ?
+    // AND currency = ? — used both to find every account sharing a
+    // candidate unassigned reading's bank+currency (the "sole candidate"
+    // rule) and to join against balance_readings.detected_bank_key.
+    index("accounts_bank_key_currency_idx").on(table.bankKey, table.currency),
+    check("accounts_anchor_status_check", sql`${table.anchorStatus} IN ('reported', 'unreported')`),
+    check(
+      "accounts_anchor_status_balance_nullability_check",
+      sql`(${table.anchorStatus} = 'reported' AND ${table.balanceMinorUnits} IS NOT NULL AND ${table.estimatedBalanceMinorUnits} IS NOT NULL)
+       OR (${table.anchorStatus} = 'unreported' AND ${table.balanceMinorUnits} IS NULL AND ${table.estimatedBalanceMinorUnits} IS NULL)`,
+    ),
+    check("accounts_captured_transaction_count_check", sql`${table.capturedTransactionCount} >= 0`),
+    // Mirrors dashboard.ts's own captured-income/expense/change arithmetic
+    // exactly (capturedIncome and capturedExpense both accumulate as
+    // non-negative sums — see AccountBalanceBase's own ledgerEntries loop
+    // — and capturedChange is defined as their difference), so these are
+    // real invariants of what projectAccount() writes, not looser rules a
+    // future write path could silently violate.
+    check(
+      "accounts_captured_income_expense_nonnegative_check",
+      sql`${table.capturedIncomeMinorUnits} >= 0 AND ${table.capturedExpenseMinorUnits} >= 0`,
+    ),
+    check(
+      "accounts_captured_change_check",
+      sql`${table.capturedChangeMinorUnits} = ${table.capturedIncomeMinorUnits} - ${table.capturedExpenseMinorUnits}`,
+    ),
+    check(
+      "accounts_captured_zero_count_check",
+      sql`${table.capturedTransactionCount} != 0 OR (${table.capturedIncomeMinorUnits} = 0 AND ${table.capturedExpenseMinorUnits} = 0 AND ${table.capturedChangeMinorUnits} = 0)`,
+    ),
+  ],
+);
+
+// Weaker account-identity evidence that has not yet carried either a real
+// transaction or a bank-reported balance (dashboard.ts's DetectedAccount) —
+// e.g. a mandate notice that named a bank+account but never a transaction
+// amount or balance. `deriveDashboardProjection` already excludes any key
+// also present in `accountsByKey` before returning `detectedAccounts` (see
+// lib/dashboard.ts), so a row here and a row in `accounts` can never share
+// an id — the same accountRowId() normalization is reused for both tables.
+export const detectedAccounts = sqliteTable("detected_accounts", {
   id: text("id").primaryKey(),
   bankName: text("bank_name").notNull(),
   last4: text("last4").notNull(),
   currency: text("currency").notNull(),
-  balanceMinorUnits: integer("balance_minor_units").notNull(),
-  balanceAsOf: integer("balance_as_of").notNull(),
-  balanceSender: text("balance_sender").notNull(),
-  estimatedBalanceMinorUnits: integer("estimated_balance_minor_units").notNull(),
-  estimatedAsOf: integer("estimated_as_of").notNull(),
-  reconciliationDeltaMinorUnits: integer("reconciliation_delta_minor_units"),
+  asOf: integer("as_of").notNull(),
+  sender: text("sender").notNull(),
 });
 
 export const balanceReadings = sqliteTable(
@@ -186,7 +319,18 @@ export const balanceReadings = sqliteTable(
     balanceMinorUnits: integer("balance_minor_units").notNull(),
     currency: text("currency").notNull(),
     asOf: integer("as_of").notNull(),
+    // The raw, as-parsed bank name — display-only. Never queried/filtered
+    // on directly: two readings can carry different casing/whitespace for
+    // the same real bank (e.g. "State Bank of India" vs "  STATE BANK OF
+    // INDIA "), and dashboard.ts's own unassignedReadingsByBank already
+    // groups by the normalized form, not this one. See detectedBankKey.
     detectedBankName: text("detected_bank_name").notNull(),
+    // dashboard.ts's normalizeBankName(detectedBankName) — the canonical
+    // grouping key, computed once at projection time and queried/indexed
+    // on directly so a bank-name lookup can never silently miss readings
+    // that differ only in casing or whitespace from whatever the most
+    // recent SMS happened to use.
+    detectedBankKey: text("detected_bank_key").notNull(),
     detectedAccount: text("detected_account"),
     associationKind: text("association_kind", {
       enum: ["confirmed", "suggested", "unassigned"],
@@ -201,11 +345,41 @@ export const balanceReadings = sqliteTable(
     capturedTransactionCount: integer("captured_transaction_count"),
   },
   (table) => [
-    index("balance_readings_account_id_idx").on(table.accountId),
-    index("balance_readings_as_of_idx").on(table.asOf),
+    // Covers queryBalanceHistory's exact access pattern: WHERE account_id = ?
+    // [AND keyset predicate on (as_of, id)] ORDER BY as_of DESC, id DESC —
+    // one index serves the filter, the keyset comparison, and the sort with
+    // no separate temp b-tree (see queries-accounts.test.ts's EXPLAIN QUERY
+    // PLAN assertions). Replaces the old single-column account_id index,
+    // which this subsumes for every current query against the table.
+    index("balance_readings_account_id_as_of_id_idx").on(table.accountId, table.asOf, table.id),
+    // Covers queryUnassignedReadings's pattern: WHERE detected_bank_key = ?
+    // AND account_id IS NULL [AND keyset predicate] ORDER BY as_of DESC, id
+    // DESC. account_id is included so SQLite can seek directly to the NULL
+    // sub-range instead of scanning every reading for the bank. Keyed on
+    // the canonical detectedBankKey, not the raw detectedBankName, so a
+    // lookup can't silently miss readings whose raw name differs only in
+    // casing/whitespace.
+    index("balance_readings_bank_key_account_as_of_id_idx").on(
+      table.detectedBankKey,
+      table.accountId,
+      table.asOf,
+      table.id,
+    ),
     check(
       "balance_readings_association_kind_check",
       sql`${table.associationKind} IN ('confirmed', 'suggested', 'unassigned')`,
+    ),
+    // A reading only ever gets a non-null account_id when projectBalanceReading
+    // is called with a real account's id — which db/projections.ts only does
+    // for readings inside a confirmed AccountBalance.history (association
+    // kind 'confirmed'). Every reading in bank.unassignedReadings — kind
+    // 'suggested' or 'unassigned' — is always projected with accountId null,
+    // even once 'suggested' picks a sole-candidate account for display; the
+    // suggestion is presentation-only and never becomes a real foreign key.
+    check(
+      "balance_readings_association_kind_account_id_check",
+      sql`(${table.associationKind} = 'confirmed' AND ${table.accountId} IS NOT NULL)
+       OR (${table.associationKind} IN ('suggested', 'unassigned') AND ${table.accountId} IS NULL)`,
     ),
   ],
 );
@@ -229,10 +403,39 @@ export const transactions = sqliteTable(
     vendor: text("vendor"),
     brandName: text("brand_name"),
     merchantCategory: text("merchant_category"),
+    // The parser's raw grammar-seed token (upi/neft/imps/mandate/...) —
+    // apps/native/features/home-preview/data.ts's categoryName() falls
+    // back to this whenever merchantCategory is null, so a category
+    // breakdown that only reads merchantCategory silently drops every
+    // transaction whose only category signal is this field.
+    subcategory: text("subcategory"),
+    // Canonical display/filter key derived once during projection. Keeping
+    // this normalized value beside the raw parser fields guarantees a category
+    // pill such as "Upi" queries the same bucket the aggregate UI displays.
+    category: text("category").notNull(),
     ref: text("ref"),
     bankName: text("bank_name"),
     date: integer("date").notNull(),
     mandateId: text("mandate_id"),
+    // lib/subscriptions.ts's subscriptionIdentityKey(brandName ?? vendor,
+    // currency) — computed once at projection time, in JS. That function is
+    // the single owner of this composite format: it's the same call
+    // subscriptions.id and allQualifyingSubscriptions's own candidate
+    // grouping both use, so there is exactly one place the
+    // normalizeMerchant+currency format is defined (SQL has no equivalent
+    // of normalizeMerchant's regex/lowercasing rules, hence precomputing
+    // this in JS at all).
+    // A query-time recurrence check (Home's isRecurring — see
+    // dashboard-data.ts's own comment) can then join this column against
+    // subscriptions.id with plain equality, never a partial/merchant-only
+    // match that a different currency's identically-named merchant could
+    // false-positive against. Null when there is no usable merchant name
+    // at all: no brandName/vendor present, or normalizeMerchant strips it
+    // down to an empty string (e.g. "---") — either way there is no real
+    // identity to key on, so this is null rather than a degenerate
+    // "|INR"-shaped value. Never falls back to bankName or another field,
+    // since that would silently create false subscription matches.
+    subscriptionIdentityKey: text("subscription_identity_key"),
   },
   (table) => [
     index("transactions_account_id_idx").on(table.accountId),
@@ -260,13 +463,108 @@ export const activity = sqliteTable(
     smsId: text("sms_id")
       .notNull()
       .references(() => smsLedger.id, { onDelete: "cascade" }),
-    category: text("category").notNull(),
+    // lib/activity-filters.ts's STORED_ACTIVITY_CATEGORIES is the single
+    // canonical tuple this set is derived from — projectActivityRows only
+    // ever writes a category PRODUCT_CATEGORIES already filtered to this
+    // exact set, so the CHECK below (also derived from the same tuple, not
+    // a separately hand-copied list) makes that guarantee a database-level
+    // fact, not just a convention two separately-maintained lists could
+    // silently drift from.
+    category: text("category", { enum: STORED_ACTIVITY_CATEGORIES }).notNull(),
     date: integer("date").notNull(),
+    // Row-presentation fields only — the small set
+    // features/home-preview/data.ts's buildActivity actually reads to build
+    // one ActivityItem row (name/date/pills). Not every activity row is a
+    // financial transaction (travel/delivery/OTP/offers messages have none),
+    // so these can't be sourced by joining `transactions` — a non-financial
+    // row would just have amountMinorUnits/currency/direction null here.
+    // Category-specific detail (PNR, tracking id, ...) still stays in
+    // smsLedger.parsedResult, read only by the single-row transaction detail
+    // join — never scanned for a list.
+    bankName: text("bank_name"),
+    brandName: text("brand_name"),
+    vendor: text("vendor"),
+    trxTypeRich: text("trx_type_rich"),
+    subcategory: text("subcategory"),
+    mandateEvent: text("mandate_event", { enum: ["active", "cancelled"] }),
+    isFromCard: integer("is_from_card", { mode: "boolean" }).notNull().default(false),
+    amountMinorUnits: integer("amount_minor_units"),
+    currency: text("currency"),
+    direction: text("direction", { enum: ["income", "expense", "neutral"] }),
+    // Added for the Home read model's one-row-per-SMS activity DTO —
+    // merchantName()'s fallback chain (brandName -> vendor -> bene ->
+    // bankName -> sender) and categorySuggestions's merchantCategory-
+    // derived chip both need these, and neither existed on this table
+    // before. `sender` is the originating SMS's sender id (e.g.
+    // "VM-HDFCBK") — the same value smsLedger.sender already carries,
+    // duplicated here so a Home activity read never needs to join back to
+    // the ledger.
+    bene: text("bene"),
+    merchantCategory: text("merchant_category"),
+    sender: text("sender").notNull(),
+    // Resolved during projection via lib/activity-account-attribution.ts —
+    // null when bank/currency/last4 evidence is missing or ambiguous.
+    accountId: text("account_id").references(() => accounts.id, { onDelete: "set null" }),
   },
   (table) => [
     uniqueIndex("activity_sms_category_idx").on(table.smsId, table.category),
-    index("activity_category_idx").on(table.category),
-    index("activity_date_idx").on(table.date),
+    // Covers the category-filtered list access pattern: WHERE category = ?
+    // [AND date range] ORDER BY date DESC, id DESC — one index serves the
+    // filter, keyset comparison, and sort with no separate temp sort.
+    index("activity_category_date_id_idx").on(table.category, table.date, table.id),
+    // Covers the unfiltered "all activity" pattern: ORDER BY date DESC, id
+    // DESC with no category predicate — the composite index above can't
+    // serve that (its category column is the leading key, so SQLite has no
+    // way to use it for a query with no category equality condition), which
+    // without this index means the default `{}` query scans the whole
+    // table and builds a temp b-tree to sort it. See
+    // queries-transactions.test.ts's EXPLAIN QUERY PLAN test against the
+    // real unfiltered production query.
+    index("activity_date_id_idx").on(table.date, table.id),
+    // Home's bounded stage-1 candidate query (db/queries-home.ts's
+    // queryHomeActivityRows) orders by (date DESC, sms_id DESC) — a
+    // different tiebreaker than activity_date_id_idx/
+    // activity_category_date_id_idx above, which key on this table's own id
+    // (`${smsId}|${category}`) for queryActivityPage's keyset pagination.
+    // Without an index whose tiebreaker actually matches sms_id, SQLite must
+    // fully sort every same-`date` group by sms_id in a temp b-tree before
+    // LIMIT can apply — unbounded work for a burst of same-timestamp rows
+    // (e.g. a bulk ingest landing in the same millisecond). These two
+    // indexes make that ORDER BY entirely index-served.
+    index("activity_date_sms_id_idx").on(table.date, table.smsId),
+    index("activity_category_date_sms_id_idx").on(table.category, table.date, table.smsId),
+    // Account-scoped activity feed: WHERE account_id = ? ORDER BY date DESC, id DESC.
+    index("activity_account_id_date_id_idx").on(table.accountId, table.date, table.id),
+    check(
+      "activity_mandate_event_check",
+      sql`${table.mandateEvent} IS NULL OR ${table.mandateEvent} IN ('active', 'cancelled')`,
+    ),
+    check(
+      "activity_direction_check",
+      sql`${table.direction} IS NULL OR ${table.direction} IN ('income', 'expense', 'neutral')`,
+    ),
+    // Built from STORED_ACTIVITY_CATEGORIES (lib/activity-filters.ts), not a
+    // second hand-copied literal list — sql.raw is required here (not a
+    // bound sql.param placeholder) because a CHECK constraint's condition
+    // is baked into the table's DDL text itself; SQLite does not accept
+    // bind parameters inside CHECK. Every one of STORED_ACTIVITY_CATEGORIES'
+    // own values is a fixed, compile-time-known identifier-safe string
+    // (never user input), so building this literal from it carries no
+    // injection risk.
+    check(
+      "activity_category_check",
+      sql`${table.category} IN (${sql.raw(STORED_ACTIVITY_CATEGORIES.map((c) => `'${c}'`).join(", "))})`,
+    ),
+    // A financial activity row (one whose message also produced a
+    // transactions row — see projectActivityRows's financialRow parameter)
+    // always has all three of amount/currency/direction; a non-financial
+    // one always has none. SQLite would otherwise permit a contradictory
+    // partial combination like an amount with no currency.
+    check(
+      "activity_financial_fields_check",
+      sql`(${table.amountMinorUnits} IS NULL AND ${table.currency} IS NULL AND ${table.direction} IS NULL)
+       OR (${table.amountMinorUnits} IS NOT NULL AND ${table.currency} IS NOT NULL AND ${table.direction} IS NOT NULL)`,
+    ),
   ],
 );
 
@@ -285,7 +583,16 @@ export const mandates = sqliteTable(
     lastUpdated: integer("last_updated").notNull(),
     sender: text("sender").notNull(),
   },
-  (table) => [check("mandates_status_check", sql`${table.status} IN ('active', 'cancelled')`)],
+  (table) => [
+    check("mandates_status_check", sql`${table.status} IN ('active', 'cancelled')`),
+    // Covers queryMandates's access pattern: [keyset predicate on
+    // (lastUpdated, mandateId)] ORDER BY lastUpdated DESC, mandateId DESC —
+    // mandates are not inherently human-bounded (a cancelled/expired
+    // mandate's row is never deleted, so the count grows over the ledger's
+    // lifetime the same way transactions/activity do), so this list is
+    // keyset-paginated like every other unbounded list in this schema.
+    index("mandates_last_updated_mandate_id_idx").on(table.lastUpdated, table.mandateId),
+  ],
 );
 
 export const mandateEvents = sqliteTable(
@@ -309,16 +616,74 @@ export const mandateEvents = sqliteTable(
   },
   (table) => [
     uniqueIndex("mandate_events_sms_id_idx").on(table.smsId),
-    index("mandate_events_mandate_id_idx").on(table.mandateId),
+    // Covers queryMandateEvents's access pattern: WHERE mandate_id = ? [AND
+    // keyset predicate on (date, id)] ORDER BY date DESC, id DESC — one
+    // index serves the filter, keyset comparison, and sort with no
+    // separate temp sort. Replaces the old single-column mandate_id index,
+    // which this subsumes.
+    index("mandate_events_mandate_id_date_id_idx").on(table.mandateId, table.date, table.id),
     check("mandate_events_status_check", sql`${table.status} IN ('active', 'cancelled')`),
   ],
 );
 
-// Subscriptions are deliberately NOT a table here. They're a heuristic
-// inference (subscriptions.ts's deriveSubscriptions) that can change as more
-// transactions arrive — persisting an inference alongside its own source
-// data means keeping the two in sync on every write. Recomputing over the
-// `transactions` table (already small and normalized, unlike raw SMS) is
-// cheap; if that stops being true at scale, revisit then, not now. (Issue
-// #17 originally listed subscriptions as persisted — this deviation is the
-// correction, tracked back on that issue.)
+// Inferred recurring payments (subscriptions.ts's deriveSubscriptions),
+// distinct from `mandates` above: a mandate is confirmed Autopay/standing-
+// instruction evidence with a real UMN; this is a same-merchant-and-amount
+// heuristic over ordinary transaction messages, so it also catches
+// subscriptions with no mandate SMS at all (e.g. a card-billed Netflix).
+// `deriveSubscriptions` excludes anything with a mandateId for exactly this
+// reason — the two tables never describe the same charge.
+//
+// This IS a rebuildable derived projection, not a second source of truth:
+// `transactions` stays authoritative, and this table is replaced atomically
+// alongside it inside the same replaceProjection() transaction, gated by
+// the same source/projected revision tracking as every other normalized
+// table. It's persisted (not recomputed from a bounded recent window on
+// every read) because `count` is a real displayed field — a subscription
+// with two years of unbroken monthly history must keep reporting its true
+// occurrence count, which a bounded window would silently truncate.
+// Recency (`lastDate` older than RECENCY_WINDOW_DAYS) is still a query-time
+// filter, not a write-time one, so an entry can expire with no new SMS.
+export const subscriptions = sqliteTable(
+  "subscriptions",
+  {
+    // `${normalizeMerchant(merchant)}|${currency}` — subscriptions.ts's own
+    // internal grouping key, and already what
+    // features/home-preview/data.ts's previewFromSubscription synthesizes
+    // as a UI key today, so this is the existing implicit identity made
+    // explicit rather than a new one.
+    id: text("id").primaryKey(),
+    merchant: text("merchant").notNull(),
+    amountMinorUnits: integer("amount_minor_units").notNull(),
+    currency: text("currency").notNull(),
+    count: integer("count").notNull(),
+    lastDate: integer("last_date").notNull(),
+    confidence: text("confidence", { enum: ["likely", "possible"] }).notNull(),
+  },
+  (table) => [
+    // Covers both db/queries.ts's querySubscriptions (WHERE last_date >= ?
+    // ORDER BY last_date DESC, no LIMIT) and Home's subscription-preview
+    // candidate query (db/queries-home.ts's querySubscriptionPreviewCandidates:
+    // WHERE last_date >= ? ORDER BY last_date DESC, id DESC LIMIT ?) — id is
+    // the tiebreaker for subscriptions sharing the exact same last_date, the
+    // same pattern every other keyset-ordered table in this schema uses.
+    // Subsumes the single-column (last_date) index a leading-column
+    // composite index would otherwise duplicate: every query that could use
+    // a last_date-only index can use this one instead, so there is no
+    // second index to keep in sync on every write.
+    index("subscriptions_last_date_id_idx").on(table.lastDate, table.id),
+    // Mirrors lib/subscriptions.ts's own rule exactly: a qualifying run
+    // shorter than 2 occurrences is rejected before a Subscription is ever
+    // built (run.length < 2 → continue), so "possible" (< 3 occurrences)
+    // can only ever be exactly 2, and "likely" only ever 3+. Enforced here
+    // too so a future write path can't silently drift from that rule.
+    check(
+      "subscriptions_confidence_check",
+      sql`typeof(${table.count}) = 'integer' AND (
+        (${table.confidence} = 'possible' AND ${table.count} = 2)
+        OR
+        (${table.confidence} = 'likely' AND ${table.count} >= 3)
+      )`,
+    ),
+  ],
+);

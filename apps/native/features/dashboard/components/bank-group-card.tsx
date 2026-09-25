@@ -1,6 +1,8 @@
-import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Pressable, View } from "react-native";
+
+import { AppText as Text } from "@/components/app-text";
+import { AppIcon } from "@/components/icon";
 
 import { dashboardTheme as t } from "@/constants/dashboard-theme";
 import { Card } from "@/features/dashboard/components/card";
@@ -56,16 +58,16 @@ export function BankGroupCard({ bank }: { bank: BankGroup }) {
             onPress={() => setShowUnassigned((visible) => !visible)}
             style={{ flexDirection: "row", alignItems: "center", gap: 7 }}
           >
-            <Ionicons
-              name={showUnassigned ? "folder-open-outline" : "folder-outline"}
+            <AppIcon
+              name={showUnassigned ? "folder-open" : "folder"}
               size={15}
               color={t.textMuted}
             />
             <Text style={{ color: t.textMuted, fontSize: 12, fontWeight: "600", flex: 1 }}>
               Unassigned balance readings ({bank.unassignedReadings.length})
             </Text>
-            <Ionicons
-              name={showUnassigned ? "chevron-down" : "chevron-forward"}
+            <AppIcon
+              name={showUnassigned ? "chevron-down" : "chevron-right"}
               size={14}
               color={t.textMuted}
             />
@@ -182,16 +184,16 @@ function AccountSection({
             onPress={() => setShowBalanceReadings((visible) => !visible)}
             style={{ flexDirection: "row", alignItems: "center", gap: 7 }}
           >
-            <Ionicons
-              name={showBalanceReadings ? "folder-open-outline" : "folder-outline"}
+            <AppIcon
+              name={showBalanceReadings ? "folder-open" : "folder"}
               size={15}
               color={t.textMuted}
             />
             <Text style={{ color: t.textMuted, fontSize: 12, fontWeight: "600", flex: 1 }}>
               Balance readings ({account.history.length})
             </Text>
-            <Ionicons
-              name={showBalanceReadings ? "chevron-down" : "chevron-forward"}
+            <AppIcon
+              name={showBalanceReadings ? "chevron-down" : "chevron-right"}
               size={14}
               color={t.textMuted}
             />
@@ -222,8 +224,8 @@ function BalanceReadingNode({ reading, latest }: { reading: BalanceReading; late
         onPress={() => setExpanded((visible) => !visible)}
         style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
       >
-        <Ionicons
-          name={expanded ? "chevron-down" : "chevron-forward"}
+        <AppIcon
+          name={expanded ? "chevron-down" : "chevron-right"}
           size={13}
           color={t.textMuted}
         />

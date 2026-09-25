@@ -34,10 +34,18 @@ const MAX_RECURRING_GAP_DAYS = 45;
 // A subscription that hasn't renewed in two billing cycles is either
 // cancelled or was never real — without this, a January 2023 pair of
 // charges would still be called a "subscription" in 2026.
-const RECENCY_WINDOW_DAYS = 60;
+//
+// Exported so db/queries.ts's read-time recency filter (applied against the
+// persisted subscriptions projection, not recomputed on every read) uses
+// this exact threshold rather than a second copy of the number that could
+// silently drift from this one.
+export const RECENCY_WINDOW_DAYS = 60;
 // Allows a price change, tax adjustment, or currency-rounding difference
 // between charges without accepting two amounts that are just unrelated.
-const AMOUNT_TOLERANCE_RATIO = 0.1;
+// Exported so db/queries-home.ts's SQL-side recurrence check (Home's
+// isRecurring) binds this exact ratio into its predicate rather than
+// re-deciding a second, possibly-drifting tolerance in SQL.
+export const AMOUNT_TOLERANCE_RATIO = 0.1;
 // Only these trxTypeRich values are eligible to be grouped as a candidate
 // recurring payment. ATM_WITHDRAWAL and TRANSFER are one-off cash movements
 // that happen to repeat, not a billed service; INVESTMENT is money going
@@ -57,14 +65,34 @@ interface SubscriptionOccurrence {
 
 // Case, whitespace, and a trailing ".com"/".in"/".co" shouldn't split one
 // real merchant into "NETFLIX", "Netflix.com", and "Netflix" as three
-// unrelated candidates.
-function normalizeMerchant(name: string): string {
+// unrelated candidates. Exported for merchant-only comparisons (e.g.
+// isInferredRecurringTransaction's own merchant equality check below); the
+// composite `${normalizeMerchant(merchant)}|${currency}` identity used for
+// cross-table joins/primary keys has its own single owner —
+// subscriptionIdentityKey, right below this function.
+export function normalizeMerchant(name: string): string {
   return name
     .trim()
     .toLowerCase()
     .replace(/\.(com|in|co)$/, "")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+}
+
+// The single owner of the `${normalizeMerchant(merchant)}|${currency}`
+// composite identity — subscriptions.id, transactions.
+// subscriptionIdentityKey, and this module's own candidate-grouping key
+// (allQualifyingSubscriptions below) all call this, rather than each
+// building the format independently, so the three can never drift the way
+// two hand-written copies of the same string template eventually would.
+// Returns null (never a degenerate "|INR"-shaped string) when
+// normalizeMerchant strips the name down to nothing — e.g. "---" — since
+// there is no real identity to key on in that case, the same way there's
+// none when `merchant` itself is null.
+export function subscriptionIdentityKey(merchant: string | null, currency: string): string | null {
+  if (!merchant) return null;
+  const normalized = normalizeMerchant(merchant);
+  return normalized ? `${normalized}|${currency}` : null;
 }
 
 // Collapses same-day repeats to one occurrence (keeping the latest). Two SMS
@@ -108,14 +136,23 @@ function amountsWithinTolerance(occurrences: SubscriptionOccurrence[]): boolean 
   return (max - min) / min <= AMOUNT_TOLERANCE_RATIO;
 }
 
-// Infers recurring payments from repeated merchant+amount+currency charges —
-// this is a heuristic over ordinary transaction messages, not confirmed
-// mandate data (see dashboard.ts's mandate aggregation for the confirmed
-// tier). `now` is injectable (defaults to the real clock) so tests can
-// assert an exact-day boundary without racing the small drift between when
-// a test captures its own reference time and when this function calls
-// `new Date()` internally.
-export function deriveSubscriptions(messages: ParsedSms[], now: Date = new Date()): Subscription[] {
+// Every merchant+currency group whose trailing run of occurrences qualifies
+// as recurring (cadence + amount tolerance), with NO recency filtering
+// applied — recency is a separate, injectable-clock concern layered on top
+// by filterSubscriptionsByRecency below, called exactly once by whichever
+// caller needs a recency-filtered view (lib/dashboard.ts's
+// deriveDashboardProjection, and read-time by db/queries.ts's
+// querySubscriptions against a persisted projection). This function itself
+// is what's called exactly once per derivation — never twice for the same
+// message set — so the normalization/grouping/sorting/cadence/tolerance
+// work it does is genuinely done once, not once per filtered view.
+//
+// This must stay the only place grouping/cadence/tolerance logic lives —
+// db/projections.ts persists this function's output verbatim (via
+// deriveDashboardProjection's allSubscriptions), and db/queries.ts's
+// querySubscriptions only ever adds a `last_date >= ?` filter on top of it,
+// never re-implementing recency or anything upstream of it.
+export function allQualifyingSubscriptions(messages: ParsedSms[]): Subscription[] {
   const candidates = new Map<string, { currency: string; occurrences: SubscriptionOccurrence[] }>();
 
   for (const m of messages) {
@@ -135,19 +172,16 @@ export function deriveSubscriptions(messages: ParsedSms[], now: Date = new Date(
       const rawMerchant = result.brandName ?? result.vendor;
       const amount = parseAmount(result.trx);
       const currency = result.currency ?? "INR";
-      if (rawMerchant && amount !== null) {
-        const normalized = normalizeMerchant(rawMerchant);
-        if (normalized) {
-          const key = `${normalized}|${currency}`;
-          const occurrence: SubscriptionOccurrence = {
-            date: m.date,
-            amount,
-            merchant: rawMerchant,
-          };
-          const existing = candidates.get(key);
-          if (existing) existing.occurrences.push(occurrence);
-          else candidates.set(key, { currency, occurrences: [occurrence] });
-        }
+      const key = rawMerchant ? subscriptionIdentityKey(rawMerchant, currency) : null;
+      if (rawMerchant && amount !== null && key) {
+        const occurrence: SubscriptionOccurrence = {
+          date: m.date,
+          amount,
+          merchant: rawMerchant,
+        };
+        const existing = candidates.get(key);
+        if (existing) existing.occurrences.push(occurrence);
+        else candidates.set(key, { currency, occurrences: [occurrence] });
       }
     }
   }
@@ -159,9 +193,6 @@ export function deriveSubscriptions(messages: ParsedSms[], now: Date = new Date(
     // gap looked like a billing cycle — not enough to call it recurring.
     if (run.length < 2) continue;
     const last = run[run.length - 1]!;
-    // A subscription that hasn't renewed recently is either cancelled or
-    // was never real — an old pair of charges shouldn't count forever.
-    if ((now.getTime() - last.date) / ONE_DAY_MS > RECENCY_WINDOW_DAYS) continue;
     // A price change is plausible; a wildly different amount means these
     // aren't really the same recurring charge.
     if (!amountsWithinTolerance(run)) continue;
@@ -182,6 +213,41 @@ export function deriveSubscriptions(messages: ParsedSms[], now: Date = new Date(
   return subscriptions;
 }
 
+// A pure filter over an already-computed result — never re-derives
+// grouping/cadence/tolerance. Exported so lib/dashboard.ts's
+// deriveDashboardProjection can call allQualifyingSubscriptions exactly
+// once and produce both its recency-filtered `dashboard.subscriptions` and
+// the persisted `allSubscriptions` from that one result, and so
+// db/queries.ts's querySubscriptions can apply the identical rule at read
+// time against a persisted (already-complete) projection.
+export function filterSubscriptionsByRecency(
+  subscriptions: readonly Subscription[],
+  now: Date,
+): Subscription[] {
+  // A subscription that hasn't renewed recently is either cancelled or was
+  // never real — an old pair of charges shouldn't count forever.
+  return subscriptions.filter(
+    (subscription) => (now.getTime() - subscription.lastDate) / ONE_DAY_MS <= RECENCY_WINDOW_DAYS,
+  );
+}
+
+// Infers recurring payments from repeated merchant+amount+currency charges —
+// this is a heuristic over ordinary transaction messages, not confirmed
+// mandate data (see dashboard.ts's mandate aggregation for the confirmed
+// tier). `now` is injectable (defaults to the real clock) so tests can
+// assert an exact-day boundary without racing the small drift between when
+// a test captures its own reference time and when this function calls
+// `new Date()` internally.
+//
+// A thin convenience wrapper (allQualifyingSubscriptions +
+// filterSubscriptionsByRecency) for any caller that only needs the
+// recency-filtered view and doesn't also need the complete one —
+// lib/dashboard.ts's deriveDashboardProjection needs both from a single
+// derivation, so it calls the two pieces directly instead of this.
+export function deriveSubscriptions(messages: ParsedSms[], now: Date = new Date()): Subscription[] {
+  return filterSubscriptionsByRecency(allQualifyingSubscriptions(messages), now);
+}
+
 // Only "likely" subscriptions ever count toward a combined monthly total —
 // a "possible" entry (a single confirmed gap) is real evidence but not
 // confident enough to be presented as money that will definitely recur.
@@ -191,10 +257,19 @@ export function deriveSubscriptions(messages: ParsedSms[], now: Date = new Date(
 export function subscriptionMonthlyTotals(subscriptions: Subscription[]): Record<string, number> {
   const totals: Record<string, number> = {};
   for (const s of subscriptions) {
-    if (s.confidence !== "likely") continue;
+    if (!isCommittedSubscription(s)) continue;
     totals[s.currency] = (totals[s.currency] ?? 0) + s.amount;
   }
   return totals;
+}
+
+// The shared confidence policy for money presented as committed recurring
+// spend. Kept structural so normalized read-model DTOs can reuse the rule
+// without depending on ParsedSms or display-unit Subscription amounts.
+export function isCommittedSubscription(subscription: {
+  confidence: "likely" | "possible";
+}): boolean {
+  return subscription.confidence === "likely";
 }
 
 // True if a message's normalized merchant+currency matches a guessed

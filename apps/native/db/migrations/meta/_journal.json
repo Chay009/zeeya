@@ -5,22 +5,8 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1787423687455,
-      "tag": "0000_massive_shadowcat",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1787644769174,
-      "tag": "0001_premium_wallow",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1788331356319,
-      "tag": "0002_slow_rictor",
+      "when": 1789314362497,
+      "tag": "0000_magenta_alex_wilder",
       "breakpoints": true
     }
   ]

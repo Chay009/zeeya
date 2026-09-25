@@ -1,8 +1,11 @@
+import { Spinner, Surface, Switch } from "heroui-native";
 import { useState } from "react";
-import { ActivityIndicator, Platform, ScrollView, Switch, Text, View } from "react-native";
+import { Platform, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { AppText as Text } from "@/components/app-text";
 import { type CapabilityPreference, useCapabilities } from "@/features/capabilities/provider";
+import { FLOATING_TAB_BAR_CLEARANCE } from "@/features/home-preview/theme";
 import { ShortcutsSetupCard } from "@/features/shortcuts/components/shortcuts-setup-card";
 import { deviceMessagePolicy } from "@/lib/device-message-policy";
 
@@ -16,28 +19,12 @@ interface PreferenceRowProps {
 
 function PreferenceRow({ title, description, value, disabled, onChange }: PreferenceRowProps) {
   return (
-    <View
-      style={{
-        flexDirection: "row",
-        gap: 16,
-        paddingVertical: 18,
-        borderBottomWidth: 1,
-        borderBottomColor: "#dfe8e2",
-      }}
-    >
-      <View style={{ flex: 1 }}>
-        <Text style={{ color: "#173d30", fontSize: 16, fontWeight: "700" }}>{title}</Text>
-        <Text style={{ color: "#65776e", fontSize: 13, lineHeight: 19, marginTop: 5 }}>
-          {description}
-        </Text>
+    <View className="flex-row gap-4 border-b border-separator py-4">
+      <View className="flex-1">
+        <Text className="text-body font-bold text-foreground">{title}</Text>
+        <Text className="mt-1 text-caption leading-5 text-muted">{description}</Text>
       </View>
-      <Switch
-        value={value}
-        disabled={disabled}
-        onValueChange={onChange}
-        trackColor={{ false: "#c8d4cd", true: "#67c7a1" }}
-        thumbColor={value ? "#176b4d" : "#f5f7f5"}
-      />
+      <Switch isSelected={value} isDisabled={disabled} onSelectedChange={onChange} />
     </View>
   );
 }
@@ -58,37 +45,26 @@ export function PrivacySettingsScreen() {
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: "#f5fbf7" }}
+      className="flex-1 bg-background"
       contentContainerStyle={{
         padding: 22,
         paddingTop: Math.max(insets.top, 24),
-        paddingBottom: 48,
+        paddingBottom: 48 + FLOATING_TAB_BAR_CLEARANCE,
       }}
     >
-      <Text style={{ color: "#173d30", fontSize: 28, fontWeight: "800" }}>
-        Privacy & automation
-      </Text>
-      <Text style={{ color: "#65776e", fontSize: 14, lineHeight: 21, marginTop: 8 }}>
+      <Text className="text-screen font-extrabold text-foreground">Privacy & automation</Text>
+      <Text className="mt-2 text-body leading-6 text-muted">
         These preferences are stored only on this device. SMS content and biometric results are not
         uploaded.
       </Text>
 
       {error ? (
-        <View style={{ backgroundColor: "#fee4e2", borderRadius: 14, padding: 14, marginTop: 18 }}>
-          <Text style={{ color: "#9c2a21", fontSize: 13 }}>{error}</Text>
-        </View>
+        <Surface variant="secondary" className="mt-4 rounded-tile bg-danger/10 p-4">
+          <Text className="text-caption text-danger">{error}</Text>
+        </Surface>
       ) : null}
 
-      <View
-        style={{
-          backgroundColor: "white",
-          borderRadius: 22,
-          paddingHorizontal: 18,
-          marginTop: 24,
-          borderWidth: 1,
-          borderColor: "#dfe8e2",
-        }}
-      >
+      <Surface className="mt-6 rounded-card px-4">
         {policy.showsBackgroundSync ? (
           <PreferenceRow
             title="Periodic background sync"
@@ -123,14 +99,14 @@ export function PrivacySettingsScreen() {
           disabled={pending !== null}
           onChange={(value) => void change("screenCaptureProtectionEnabled", value)}
         />
-      </View>
+      </Surface>
 
       {policy.showsShortcutsSetup ? <ShortcutsSetupCard /> : null}
 
       {pending ? (
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 18 }}>
-          <ActivityIndicator color="#176b4d" />
-          <Text style={{ color: "#65776e" }}>Applying setting…</Text>
+        <View className="mt-4 flex-row items-center gap-3">
+          <Spinner size="sm" />
+          <Text className="text-caption text-muted">Applying setting…</Text>
         </View>
       ) : null}
     </ScrollView>

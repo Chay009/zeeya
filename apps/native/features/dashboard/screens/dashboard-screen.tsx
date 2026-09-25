@@ -1,15 +1,10 @@
-import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useMemo, useState } from "react";
-import {
-  FlatList,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StatusBar,
-  Text,
-  View,
-} from "react-native";
+import { StatusBar } from "expo-status-bar";
+import { FlatList, Pressable, RefreshControl, ScrollView, View } from "react-native";
+
+import { AppText as Text } from "@/components/app-text";
+import { AppIcon } from "@/components/icon";
 
 import { dashboardTheme as t } from "@/constants/dashboard-theme";
 import { ActivityRow } from "@/features/dashboard/components/activity-row";
@@ -18,7 +13,7 @@ import { MandateList } from "@/features/dashboard/components/mandate-list";
 import { StatusCards } from "@/features/dashboard/components/status-cards";
 import { StatRow } from "@/features/dashboard/components/stat-row";
 import { SubscriptionSummary } from "@/features/dashboard/components/subscription-summary";
-import { useDashboardSync } from "@/features/dashboard/hooks/use-dashboard-sync";
+import { useDashboardSync } from "@/features/dashboard/hooks/dashboard-sync-provider";
 import { currenciesOf } from "@/features/dashboard/utils/format";
 import {
   ACTIVITY_CATEGORY_FILTERS,
@@ -39,7 +34,7 @@ export function DashboardScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: t.background }}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar style="light" />
       <FlatList
         contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
         data={status === "ready" ? filteredActivity.slice(0, 25) : []}
@@ -59,7 +54,7 @@ export function DashboardScreen() {
             >
               <Text style={{ color: t.textPrimary, fontSize: 24, fontWeight: "800" }}>zeeya</Text>
               <Pressable onPress={() => router.push("/backfill")} hitSlop={10}>
-                <Ionicons name="ellipsis-horizontal-circle-outline" size={26} color={t.textMuted} />
+                <AppIcon name="more" size={26} color={t.textMuted} />
               </Pressable>
             </View>
 
@@ -148,9 +143,25 @@ export function DashboardScreen() {
             )}
           </View>
         }
-        renderItem={({ item }) => (
-          <ActivityRow item={item} isRecurring={isRecurringTransaction(item, dashboard)} />
-        )}
+        renderItem={({ item }) => {
+          const row = (
+            <ActivityRow item={item} isRecurring={isRecurringTransaction(item, dashboard)} />
+          );
+          if (!__DEV__) return row;
+          return (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() =>
+                router.push({
+                  pathname: "/transaction/[id]",
+                  params: { id: `activity:${item.id}` },
+                })
+              }
+            >
+              {row}
+            </Pressable>
+          );
+        }}
       />
     </View>
   );

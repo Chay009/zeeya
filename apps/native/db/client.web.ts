@@ -13,6 +13,4 @@
 export const sqlite = null;
 export const db = null;
 
-export function migrateLegacyDatabaseIfNeeded(): void {}
-
 export type Database = never;

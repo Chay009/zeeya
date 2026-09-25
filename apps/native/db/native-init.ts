@@ -18,4 +18,6 @@ export function initializeNativeDatabase(sqlite: ExecSyncCapable): void {
   // off for backwards compatibility with pre-3.6.19 SQLite, not something
   // the schema file can request on its own.
   sqlite.execSync("PRAGMA foreign_keys = ON;");
+  // WAL lets readers (screen queries) proceed while ingestion writes projections.
+  sqlite.execSync("PRAGMA journal_mode = WAL;");
 }

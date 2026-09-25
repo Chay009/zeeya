@@ -24,14 +24,20 @@ export function deviceMessageCaptureRequiresReadPermission(): boolean {
 }
 
 export async function syncDeviceMessages(
-  options: { onProgress?: (progress: SyncProgress) => void } = {},
+  options: {
+    onProgress?: (progress: SyncProgress) => void;
+    currentDashboard?: Dashboard;
+  } = {},
 ): Promise<Dashboard> {
   const policy = currentPolicy();
   // onProgress is only meaningful for the paginated direct-inbox path —
   // the Apple Shortcuts queue is drained in one shot with no comparable
   // multi-page scan, so there's nothing to report progress on there.
   if (policy.capture === "direct-inbox") {
-    return syncInbox(readSmsInbox, { onProgress: options.onProgress });
+    return syncInbox(readSmsInbox, {
+      onProgress: options.onProgress,
+      currentDashboard: options.currentDashboard,
+    });
   }
   if (policy.capture === "apple-shortcuts") {
     const result = await drainShortcutInbox(getShortcutMessageQueue());

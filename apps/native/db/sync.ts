@@ -10,10 +10,12 @@ import type { RawSms } from "../lib/sms";
 import type { InboxOrder } from "../lib/sms-filter";
 import { drainInbox, validatePageSize } from "./inbox-pagination";
 import {
+  getProjectionStatus,
   getSyncStatus,
   ingestSmsBatch,
   loadDashboard,
   markInitialScanCompleted,
+  refreshDashboardProjection,
 } from "./ingestion";
 import { withIngestionLock } from "./single-flight";
 
@@ -38,13 +40,12 @@ const INITIAL_SCAN_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
 // end — scanned/inserted counts, not a percentage: the total size of what
 // still needs to be read isn't known upfront (the native reader has no
 // cheap COUNT), and a fabricated percentage would be more misleading than
-// no percentage at all. `dashboard` is the freshly recomputed state after
-// this page, so a caller can render real, growing numbers as a sync
-// proceeds instead of only once the whole call resolves.
+// no percentage at all. Financial totals remain on the previous consistent
+// dashboard until the full drain is published; a partial page can change
+// earlier reconciliation and must not be shown as final account state.
 export interface SyncProgress {
   scanned: number;
   inserted: number;
-  dashboard: Dashboard;
 }
 
 // InboxOrder itself lives in lib/sms-filter.ts (re-exported here) — that's
@@ -96,7 +97,12 @@ let inFlightSync: Promise<Dashboard> | null = null;
 // window below is computed relative to "now."
 export function syncInbox(
   readInbox: InboxReader,
-  options: { pageSize?: number; onProgress?: (progress: SyncProgress) => void; now?: number } = {},
+  options: {
+    pageSize?: number;
+    onProgress?: (progress: SyncProgress) => void;
+    now?: number;
+    currentDashboard?: Dashboard;
+  } = {},
 ): Promise<Dashboard> {
   if (inFlightSync) return inFlightSync;
 
@@ -110,12 +116,10 @@ export function syncInbox(
     let scanned = 0;
     let inserted = 0;
     const onPage = async (page: RawSms[]) => {
-      const result = await ingestSmsBatch(page);
+      const result = await ingestSmsBatch(page, { projection: "deferred" });
       scanned += page.length;
       inserted += result.inserted;
-      if (options.onProgress) {
-        options.onProgress({ scanned, inserted, dashboard: await loadDashboard() });
-      }
+      options.onProgress?.({ scanned, inserted });
       return result;
     };
 
@@ -165,7 +169,17 @@ export function syncInbox(
       );
     }
 
-    return loadDashboard();
+    if (inserted > 0) return refreshDashboardProjection();
+
+    // A clean foreground check should not rewrite every normalized table—or
+    // even decode the ledger again when the caller already owns the current
+    // dashboard. A revision mismatch means an earlier publish was interrupted,
+    // so repair it even though this particular inbox read inserted nothing.
+    const projection = await getProjectionStatus();
+    if (projection.projectedRevision !== projection.sourceRevision) {
+      return refreshDashboardProjection();
+    }
+    return options.currentDashboard ?? loadDashboard();
   }).finally(() => {
     inFlightSync = null;
   });

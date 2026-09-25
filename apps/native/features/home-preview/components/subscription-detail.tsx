@@ -1,5 +1,7 @@
-import { Ionicons } from "@expo/vector-icons";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
+
+import { AppText as Text } from "@/components/app-text";
+import { AppIcon } from "@/components/icon";
 
 import type { PreviewSub } from "../data";
 import { hp } from "../theme";
@@ -37,7 +39,7 @@ export function SubscriptionDetail({
           accessibilityLabel="Back to subscriptions"
           style={previewCircleButtonStyle}
         >
-          <Ionicons name="chevron-back" size={20} color={hp.inkSoft} />
+          <AppIcon name="chevron-left" size={20} color={hp.inkSoft} />
         </Pressable>
         <View style={{ minWidth: 0, alignItems: "center", flex: 1, paddingHorizontal: 12 }}>
           <Text style={previewEyebrowStyle}>SUBSCRIPTION</Text>
@@ -54,7 +56,7 @@ export function SubscriptionDetail({
           borderRadius: 27,
           borderWidth: 1,
           borderColor: hp.border,
-          backgroundColor: "rgba(255,255,255,0.8)",
+          backgroundColor: hp.card,
           padding: 20,
         }}
       >
@@ -92,7 +94,7 @@ export function SubscriptionDetail({
             marginTop: 20,
             paddingTop: 16,
             borderTopWidth: 1,
-            borderTopColor: "#eef4ef",
+            borderTopColor: hp.surfaceSageAlt,
           }}
         >
           <View style={{ flex: 1 }}>
@@ -108,7 +110,7 @@ export function SubscriptionDetail({
             </Text>
           </View>
           <View
-            style={{ flex: 1, borderLeftWidth: 1, borderLeftColor: "#eef4ef", paddingLeft: 16 }}
+            style={{ flex: 1, borderLeftWidth: 1, borderLeftColor: hp.surfaceSageAlt, paddingLeft: 16 }}
           >
             <Text style={metricLabel}>{subscription.dateLabelTitle}</Text>
             <Text style={metricValue}>

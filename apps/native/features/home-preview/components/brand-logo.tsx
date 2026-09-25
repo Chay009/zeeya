@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { Image, Text, View } from "react-native";
+import { Image, View } from "react-native";
+
+import { AppText as Text } from "@/components/app-text";
 import { SvgUri } from "react-native-svg";
 import { markLogoDomainFailed } from "../../../lib/logo-dev";
 

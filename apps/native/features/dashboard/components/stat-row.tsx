@@ -1,5 +1,7 @@
-import { Ionicons } from "@expo/vector-icons";
-import { Text, View } from "react-native";
+import { View } from "react-native";
+
+import { AppText as Text } from "@/components/app-text";
+import { AppIcon, type AppIconName } from "@/components/icon";
 
 import { dashboardTheme as t } from "@/constants/dashboard-theme";
 import { Card } from "@/features/dashboard/components/card";
@@ -21,19 +23,19 @@ export function StatRow({
         label={currency === "INR" ? "Income" : `Income (${currency})`}
         value={formatMoney(income, currency)}
         color={t.positive}
-        icon="trending-up"
+        icon="trend-up"
       />
       <Stat
         label={currency === "INR" ? "Expenses" : `Expenses (${currency})`}
         value={formatMoney(expense, currency)}
         color={t.negative}
-        icon="trending-down"
+        icon="trend-down"
       />
       <Stat
         label="Net"
         value={formatMoney(net, currency)}
         color={net >= 0 ? t.positive : t.negative}
-        icon="swap-horizontal"
+        icon="swap"
       />
     </Card>
   );
@@ -48,12 +50,12 @@ function Stat({
   label: string;
   value: string;
   color: string;
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: AppIconName;
 }) {
   return (
     <View style={{ flex: 1 }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 4 }}>
-        <Ionicons name={icon} size={13} color={color} />
+        <AppIcon name={icon} size={13} color={color} />
         <Text style={{ color: t.textMuted, fontSize: 12 }}>{label}</Text>
       </View>
       <Text style={{ color, fontWeight: "700", fontSize: 15 }}>{value}</Text>

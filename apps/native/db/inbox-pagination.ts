@@ -47,12 +47,8 @@ export interface DrainOptions {
   pageSize?: number;
 }
 
-// Exported so callers that accept a `pageSize` option but don't always
-// route it through drainInbox (db/sync.ts's first-ever-sync path reads a
-// single unpaginated page, bypassing drainInbox entirely) can still
-// validate it consistently at their own boundary, rather than a bad
-// pageSize being silently ignored on some code paths and only rejected on
-// others.
+// Exported so callers can validate a caller-provided page size at their own
+// public boundary before starting any synchronization work.
 export function validatePageSize(pageSize: number): void {
   // A pageSize <= 0 (or non-integer) breaks drainInbox's two loop
   // termination conditions at once: the real native reader ignores a
@@ -72,9 +68,8 @@ export function validatePageSize(pageSize: number): void {
 // messages, which sort *after* everything already paged through in an
 // ASC view, so earlier pages' positions never shift underneath this loop.
 // This helper is only ever used with order: "oldest-first" by both
-// callers — see their own comments for why a single, unpaginated
-// newest-first read is deliberately sufficient for the one case that
-// still uses that order (a first-ever sync).
+// callers. That stable ordering is what lets first sync, catch-up, and
+// manual backfill all stream arbitrary result sizes without page drift.
 export async function drainInbox(
   readInbox: InboxReader,
   options: DrainOptions,

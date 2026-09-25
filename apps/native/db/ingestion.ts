@@ -1,19 +1,36 @@
-// The local-first ingestion/read interface (issue #17). Ledger + checkpoint
-// only in this pass — see the header comment on loadDashboard for what's
-// deliberately deferred to the next slice, and why.
+// The local-first ingestion/read interface (issue #17). The ledger remains
+// the write-side source of truth. Standalone ingestion publishes query
+// tables immediately; bulk sync/backfill publishes once after its drain.
 import {
   createMalanaEngine,
   parsePersistedMalanaResult,
   PARSER_VERSION,
 } from "@zeeya/parser/malana";
-import { and, eq, inArray, ne, sql } from "drizzle-orm";
-import { deriveDashboard, type Dashboard } from "../lib/dashboard";
+import { and, desc, eq, gte, inArray, lte, lt, ne, or, sql, type SQL } from "drizzle-orm";
+import { deriveDashboard, deriveDashboardProjection, type Dashboard } from "../lib/dashboard";
+import type {
+  TransactionFilters,
+  TransactionPage,
+  TransactionPageQuery,
+  TransactionSummary,
+} from "../lib/dashboard-data";
 import type { ParsedSms, RawSms } from "../lib/sms";
 import { db } from "./client";
-import { identityConflicts, smsLedger, syncCheckpoint } from "./schema";
+import { replaceProjection } from "./projections";
+import { withIngestionLock } from "./single-flight";
+import {
+  identityConflicts,
+  projectionState,
+  smsArrivals,
+  smsLedger,
+  syncCheckpoint,
+  transactions,
+} from "./schema";
 import type { Database } from "./client.native";
 
 const engine = createMalanaEngine();
+const DASHBOARD_PROJECTION_ID = "dashboard";
+const MAX_PROJECTION_PUBLISH_ATTEMPTS = 3;
 
 function requireDb(): Database {
   if (!db) {
@@ -23,6 +40,60 @@ function requireDb(): Database {
     );
   }
   return db;
+}
+
+type ProjectionStateDatabase = Pick<Database, "insert" | "select" | "update">;
+
+function ensureProjectionStateRow(database: ProjectionStateDatabase): void {
+  database
+    .insert(projectionState)
+    .values({
+      id: DASHBOARD_PROJECTION_ID,
+      sourceRevision: 0,
+      projectedRevision: 0,
+      updatedAt: Date.now(),
+    })
+    .onConflictDoNothing()
+    .run();
+}
+
+function advanceProjectionSourceRevision(database: ProjectionStateDatabase): void {
+  database
+    .insert(projectionState)
+    .values({
+      id: DASHBOARD_PROJECTION_ID,
+      sourceRevision: 1,
+      projectedRevision: 0,
+      updatedAt: Date.now(),
+    })
+    .onConflictDoUpdate({
+      target: projectionState.id,
+      set: {
+        sourceRevision: sql`${projectionState.sourceRevision} + 1`,
+        updatedAt: Date.now(),
+      },
+    })
+    .run();
+}
+
+export interface ProjectionStatus {
+  sourceRevision: number;
+  projectedRevision: number;
+}
+
+export async function getProjectionStatus(): Promise<ProjectionStatus> {
+  const database = requireDb();
+  ensureProjectionStateRow(database);
+  const row = database
+    .select({
+      sourceRevision: projectionState.sourceRevision,
+      projectedRevision: projectionState.projectedRevision,
+    })
+    .from(projectionState)
+    .where(eq(projectionState.id, DASHBOARD_PROJECTION_ID))
+    .get();
+  if (!row) throw new Error("Dashboard projection state is missing after initialization.");
+  return row;
 }
 
 // ── Fingerprint ──────────────────────────────────────────────────────────────
@@ -136,6 +207,7 @@ function groupByFingerprint(prepared: readonly PreparedMessage[]): ContentGroup[
 // import: a phone that's been offline for a while can realistically
 // accumulate several hundred new messages before the next refresh.
 const EXISTENCE_CHECK_CHUNK_SIZE = 250;
+const LEDGER_INSERT_CHUNK_SIZE = 50;
 
 // engine.parse() on a real message is not free; yielding only between
 // cheap bookkeeping steps (as an earlier version of this function did)
@@ -459,7 +531,7 @@ export interface IngestResult {
   // Rows newly created in the ledger by this call — not the size of
   // `messages`, which may include already-ingested duplicates (recognized
   // by fingerprint) that contribute nothing new. This is what lets a
-  // caller (db/backfill.ts) report a real "N new transactions" count
+  // caller (db/backfill.ts) report a real "N new messages" count
   // instead of inferring it indirectly from a dashboard before/after diff,
   // which conflates "the ledger changed" with "this call's own messages
   // caused it," and can't tell "nothing new" apart from "something else
@@ -469,11 +541,19 @@ export interface IngestResult {
 
 export async function ingestSmsBatch(
   messages: RawSms[],
-  options: { advanceCheckpoint?: boolean } = {},
+  options: {
+    advanceCheckpoint?: boolean;
+    projection?: "immediate" | "deferred";
+    // Only automatic/live capture belongs in the "while you were away"
+    // arrival stream. A user-requested historical backfill still enters
+    // the ledger and projections, but must not masquerade as a new arrival.
+    recordArrival?: boolean;
+  } = {},
 ): Promise<IngestResult> {
   const database = requireDb();
   if (messages.length === 0) return { inserted: 0 };
   const advanceCheckpoint = options.advanceCheckpoint ?? true;
+  const recordArrival = options.recordArrival ?? true;
 
   const groups = groupByFingerprint(messages.map(prepareMessage));
   const fingerprints = groups.map((g) => g.fingerprint);
@@ -533,6 +613,7 @@ export async function ingestSmsBatch(
       tx.update(smsLedger).set({ providerId: null }).where(eq(smsLedger.id, fingerprint)).run();
     }
 
+    const rowsToInsert: (typeof smsLedger.$inferInsert)[] = [];
     for (const [fingerprint, providerId] of plan.insert) {
       const content = contentByFingerprint.get(fingerprint);
       // Absent only if this fingerprint wasn't new at preflight time but
@@ -553,9 +634,17 @@ export async function ingestSmsBatch(
       // unique-index violation here means planOwnership's own invariants
       // broke — better to roll back the transaction loudly than silently
       // drop the SMS this row represents.
-      tx.insert(smsLedger)
-        .values({ id: fingerprint, providerId, ...content })
-        .run();
+      rowsToInsert.push({ id: fingerprint, providerId, ...content });
+    }
+    for (const batch of chunk(rowsToInsert, LEDGER_INSERT_CHUNK_SIZE)) {
+      // A multi-row statement keeps bridge traffic bounded without risking
+      // Android SQLite's bind-variable ceiling (50 rows × 10 ledger columns).
+      tx.insert(smsLedger).values(batch).run();
+      if (recordArrival) {
+        tx.insert(smsArrivals)
+          .values(batch.map((row) => ({ smsId: row.id })))
+          .run();
+      }
     }
 
     for (const [fingerprint, providerId] of plan.updateProviderId) {
@@ -641,7 +730,27 @@ export async function ingestSmsBatch(
         })
         .run();
     }
+
+    if (insertedCount > 0) advanceProjectionSourceRevision(tx);
   });
+
+  // Refreshes the normalized projection tables (accounts, balance_readings,
+  // transactions, activity, mandates, mandate_events) from the ledger this
+  // batch just updated. Deliberately a full re-derive against the entire
+  // ledger, not an incremental patch scoped to this batch's rows — a newly
+  // ingested message can change reconciliation/attribution for accounts and
+  // transactions that were already projected (e.g. a delayed SMS arriving
+  // out of order), so anything less than "recompute from the same ledger
+  // deriveDashboard() would read" risks the projection silently drifting
+  // from what it's supposed to cache. See db/projections.ts.
+  if (insertedCount > 0 && options.projection !== "deferred") {
+    // Reprocesses any pre-existing row still parsed under an older
+    // PARSER_VERSION before reading the ledger — without this, a stale
+    // row's outdated parsedResult would get projected verbatim, silently
+    // drifting from what loadDashboard() (which always reprocesses first)
+    // would compute for the exact same ledger.
+    await refreshDashboardProjection();
+  }
 
   return { inserted: insertedCount };
 }
@@ -751,52 +860,222 @@ async function reprocessStaleLedgerRows(database: Database): Promise<void> {
           .where(and(eq(smsLedger.id, id), ne(smsLedger.parserVersion, PARSER_VERSION)))
           .run();
       }
+      if (reparsed.length > 0) advanceProjectionSourceRevision(tx);
     });
 
     await yieldToEventLoop();
   }
 }
 
-export async function loadDashboard(now: Date = new Date()): Promise<Dashboard> {
-  const database = requireDb();
-  await reprocessStaleLedgerRows(database);
+// Reads every parsed ledger row back into ParsedSms[] — the shared
+// reconstruction step both loadDashboard() and the post-ingest
+// projection write need, so there is
+// exactly one definition of "how the ledger's cached JSON becomes the
+// messages deriveDashboard() consumes."
+async function readAllLedgerMessages(database: Database): Promise<ParsedSms[]> {
   const rows = await database.select().from(smsLedger);
   const messages: ParsedSms[] = [];
   for (const row of rows) {
-    if (row.ingestionStatus !== "parsed" || !row.parsedResult) continue;
-    let decoded: unknown;
-    try {
-      decoded = JSON.parse(row.parsedResult);
-    } catch {
-      continue;
-    }
-    const result = parsePersistedMalanaResult(decoded);
-    if (!result) continue;
-    messages.push({
-      id: row.id,
-      sender: row.sender,
-      body: row.body,
-      date: row.date,
-      result,
-    });
+    const message = decodeLedgerMessage(row);
+    if (message) messages.push(message);
   }
+  return messages;
+}
+
+type LedgerMessageRow = typeof smsLedger.$inferSelect;
+
+function decodeLedgerMessage(row: LedgerMessageRow): ParsedSms | null {
+  if (row.ingestionStatus !== "parsed" || !row.parsedResult) return null;
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(row.parsedResult);
+  } catch {
+    return null;
+  }
+  const result = parsePersistedMalanaResult(decoded);
+  if (!result) return null;
+  return {
+    id: row.id,
+    sender: row.sender,
+    body: row.body,
+    date: row.date,
+    result,
+  };
+}
+
+export async function loadDashboard(now: Date = new Date()): Promise<Dashboard> {
+  const database = requireDb();
+  await reprocessStaleLedgerRows(database);
+  const messages = await readAllLedgerMessages(database);
   return deriveDashboard(messages, now);
 }
 
-export interface TransactionFilters {
-  from?: number;
-  to?: number;
+// Publishes one internally-consistent dashboard snapshot to the normalized
+// query tables and returns that exact snapshot to the caller. Bulk operations
+// defer their per-page projection work and call this once after the complete
+// drain, avoiding another full-ledger load merely to produce their return
+// value.
+class ProjectionSourceChangedError extends Error {}
+
+export async function refreshDashboardProjection(now: Date = new Date()): Promise<Dashboard> {
+  const database = requireDb();
+  await reprocessStaleLedgerRows(database);
+  // sourceRevision is a single indexed column read — cheap enough to
+  // re-check on every loop iteration. The full ledger read + deriveDashboard
+  // below is not, so it's only ever done once per revision this loop
+  // actually observes, not once per attempt regardless of whether the
+  // revision moved again — a retry storm during a fast-moving sync would
+  // otherwise re-read and re-derive the whole history on every attempt for
+  // no reason, since attempts 2+ would just discover the same staleness.
+  let target = await getProjectionStatus();
+  for (let attempt = 1; attempt <= MAX_PROJECTION_PUBLISH_ATTEMPTS; attempt++) {
+    const messages = await readAllLedgerMessages(database);
+    // deriveDashboardProjection, not deriveDashboard: replaceProjection
+    // needs the persistence-only allSubscriptions half too, which the
+    // public Dashboard deliberately doesn't carry (see
+    // lib/dashboard.ts's DashboardProjection). Passed through as the one
+    // DashboardProjection object it came back as, not split into positional
+    // arguments.
+    const projection = deriveDashboardProjection(messages, now);
+
+    try {
+      replaceProjection(database, projection, (tx) => {
+        const current = tx
+          .select({ sourceRevision: projectionState.sourceRevision })
+          .from(projectionState)
+          .where(eq(projectionState.id, DASHBOARD_PROJECTION_ID))
+          .get();
+        if (!current || current.sourceRevision !== target.sourceRevision) {
+          throw new ProjectionSourceChangedError();
+        }
+        tx.update(projectionState)
+          .set({ projectedRevision: target.sourceRevision, updatedAt: Date.now() })
+          .where(eq(projectionState.id, DASHBOARD_PROJECTION_ID))
+          .run();
+      });
+      return projection.dashboard;
+    } catch (cause) {
+      if (!(cause instanceof ProjectionSourceChangedError)) throw cause;
+      // A real race: the ledger changed again while this attempt was
+      // computing. Re-read the target revision once (cheap) and let the
+      // loop redo the expensive work exactly once more against it.
+      target = await getProjectionStatus();
+    }
+  }
+
+  throw new Error(
+    `Dashboard projection source changed during ${MAX_PROJECTION_PUBLISH_ATTEMPTS} consecutive publish attempts.`,
+  );
 }
 
-// Filters the same recognized-financial-transaction list loadDashboard()
-// already derives (dashboard.ts's `recent`) rather than querying the
-// ledger directly — same reasoning as loadDashboard: reuse the tested
-// derivation instead of re-deriving a second, possibly-inconsistent path.
-export async function loadTransactions(filters: TransactionFilters = {}): Promise<ParsedSms[]> {
-  const dashboard = await loadDashboard();
-  return dashboard.recent.filter((m) => {
-    if (filters.from !== undefined && m.date < filters.from) return false;
-    if (filters.to !== undefined && m.date > filters.to) return false;
-    return true;
+export function ensureDashboardProjectionCurrent(): Promise<void> {
+  // A multi-page sync deliberately leaves sourceRevision ahead of the
+  // projection until its final page. Queue readers behind that writer rather
+  // than interpreting the temporary mismatch as a crash and publishing a
+  // partial inbox. If no writer is active, the same mismatch is durable proof
+  // of an interrupted publish and is repaired here.
+  return withIngestionLock(async () => {
+    const status = await getProjectionStatus();
+    if (status.projectedRevision === status.sourceRevision) return;
+    await refreshDashboardProjection();
   });
+}
+
+function transactionConditions(filters: TransactionFilters): SQL[] {
+  const conditions: SQL[] = [];
+  if (filters.from !== undefined) conditions.push(gte(transactions.date, filters.from));
+  if (filters.to !== undefined) conditions.push(lte(transactions.date, filters.to));
+  if (filters.currency) conditions.push(eq(transactions.currency, filters.currency));
+  if (filters.direction) conditions.push(eq(transactions.direction, filters.direction));
+  if (filters.accountId) conditions.push(eq(transactions.accountId, filters.accountId));
+  if (filters.category) conditions.push(eq(transactions.category, filters.category));
+  const search = filters.search?.trim();
+  if (search) {
+    const escaped = search.replace(/[\\%_]/g, "\\$&");
+    const pattern = `%${escaped}%`;
+    conditions.push(sql`(
+      ${transactions.vendor} LIKE ${pattern} ESCAPE '\\'
+      OR ${transactions.brandName} LIKE ${pattern} ESCAPE '\\'
+      OR ${transactions.bankName} LIKE ${pattern} ESCAPE '\\'
+      OR ${transactions.category} LIKE ${pattern} ESCAPE '\\'
+      OR ${transactions.ref} LIKE ${pattern} ESCAPE '\\'
+    )`);
+  }
+  return conditions;
+}
+
+// Reads the normalized transaction index, applying bounds and ordering in
+// SQLite, then decodes only the matching ledger rows. Projection freshness is
+// checked first so this stays equivalent to dashboard.recent without loading
+// and deriving the entire dashboard for a transaction-list query.
+export async function loadTransactions(filters: TransactionFilters = {}): Promise<ParsedSms[]> {
+  const database = requireDb();
+  await ensureDashboardProjectionCurrent();
+
+  const rows = await database
+    .select({ ledger: smsLedger })
+    .from(transactions)
+    .innerJoin(smsLedger, eq(transactions.smsId, smsLedger.id))
+    .where(and(eq(smsLedger.ingestionStatus, "parsed"), ...transactionConditions(filters)))
+    .orderBy(desc(transactions.date), desc(transactions.id));
+
+  const messages: ParsedSms[] = [];
+  for (const { ledger } of rows) {
+    const message = decodeLedgerMessage(ledger);
+    if (message) messages.push(message);
+  }
+  return messages;
+}
+
+const TRANSACTION_SUMMARY_COLUMNS = {
+  id: transactions.id,
+  date: transactions.date,
+  amountMinorUnits: transactions.amountMinorUnits,
+  currency: transactions.currency,
+  direction: transactions.direction,
+  accountId: transactions.accountId,
+  trxTypeRich: transactions.trxTypeRich,
+  vendor: transactions.vendor,
+  brandName: transactions.brandName,
+  category: transactions.category,
+  ref: transactions.ref,
+  bankName: transactions.bankName,
+  mandateId: transactions.mandateId,
+};
+
+export async function queryTransactionPage(
+  query: TransactionPageQuery = {},
+): Promise<TransactionPage> {
+  const limit = query.limit ?? 50;
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+    throw new Error(`Transaction page limit must be an integer from 1 to 100, got ${limit}`);
+  }
+
+  const database = requireDb();
+  await ensureDashboardProjectionCurrent();
+  const conditions = transactionConditions(query);
+  if (query.cursor) {
+    conditions.push(
+      or(
+        lt(transactions.date, query.cursor.date),
+        and(eq(transactions.date, query.cursor.date), lt(transactions.id, query.cursor.id)),
+      )!,
+    );
+  }
+
+  const rows = await database
+    .select(TRANSACTION_SUMMARY_COLUMNS)
+    .from(transactions)
+    .where(and(...conditions))
+    .orderBy(desc(transactions.date), desc(transactions.id))
+    .limit(limit + 1);
+
+  const hasMore = rows.length > limit;
+  const visibleRows = hasMore ? rows.slice(0, limit) : rows;
+  const items: TransactionSummary[] = visibleRows;
+  const last = visibleRows.at(-1);
+  return {
+    items,
+    nextCursor: hasMore && last ? { date: last.date, id: last.id } : null,
+  };
 }

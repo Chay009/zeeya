@@ -14,7 +14,7 @@
 //  2. withIngestionLock (db/single-flight.ts) serializes this against any
 //     concurrent syncInbox() call, so the two can't interleave.
 import { drainInbox } from "./inbox-pagination";
-import { ingestSmsBatch } from "./ingestion";
+import { getProjectionStatus, ingestSmsBatch, refreshDashboardProjection } from "./ingestion";
 import { withIngestionLock } from "./single-flight";
 import type { InboxReader } from "./sync";
 
@@ -88,8 +88,21 @@ export async function backfillSms(
     const { inserted } = await drainInbox(
       readInbox,
       { since: range.from, until: range.to, order: "oldest-first", pageSize: options.pageSize },
-      (page) => ingestSmsBatch(page, { advanceCheckpoint: false }),
+      (page) =>
+        ingestSmsBatch(page, {
+          advanceCheckpoint: false,
+          projection: "deferred",
+          recordArrival: false,
+        }),
     );
+    if (inserted > 0) {
+      await refreshDashboardProjection();
+    } else {
+      const projection = await getProjectionStatus();
+      if (projection.projectedRevision !== projection.sourceRevision) {
+        await refreshDashboardProjection();
+      }
+    }
     return { insertedCount: inserted };
   });
 }

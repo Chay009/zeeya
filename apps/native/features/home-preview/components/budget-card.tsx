@@ -1,11 +1,15 @@
-import { Ionicons } from "@expo/vector-icons";
-import { StyleSheet, Text, View } from "react-native";
-import { Circle, Svg } from "react-native-svg";
+import { Surface } from "heroui-native";
+import { Pressable, View } from "react-native";
+import { Circle, Defs, LinearGradient, Stop, Svg } from "react-native-svg";
 
-import { hp } from "../theme";
+import { AppText as Text } from "@/components/app-text";
+import { AppIcon } from "@/components/icon";
+import { moneyFontFamily } from "@/lib/fonts";
 
-const SIZE = 104;
-const R = 44;
+import { useHomePalette } from "../theme";
+
+const SIZE = 72;
+const R = 30;
 const CIRC = 2 * Math.PI * R;
 
 export function BudgetCard({
@@ -14,102 +18,106 @@ export function BudgetCard({
   limit,
   usedPercent,
   remaining,
+  onOpen,
 }: {
   monthLabel: string;
   spent: string;
   limit: string | null;
   usedPercent: number | null;
   remaining: string | null;
+  onOpen?: () => void;
 }) {
+  const hp = useHomePalette();
   const hasBudget = limit !== null && usedPercent !== null;
 
   return (
-    <View
-      style={{
-        marginTop: 16,
-        borderRadius: 27,
-        borderWidth: 1,
-        borderColor: hp.border,
-        backgroundColor: "rgba(255,255,255,0.7)",
-        padding: 20,
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 20,
-      }}
-    >
-      <View style={{ width: SIZE, height: SIZE }}>
-        <Svg
-          viewBox="0 0 104 104"
-          style={{ width: "100%", height: "100%", transform: [{ rotate: "-90deg" }] }}
-        >
-          <Circle cx="52" cy="52" r={R} fill="none" stroke={hp.track} strokeWidth="9" />
-          <Circle
-            cx="52"
-            cy="52"
-            r={R}
-            fill="none"
-            stroke={hp.emerald}
-            strokeWidth="9"
-            strokeLinecap="round"
-            strokeDasharray={`${hasBudget ? (CIRC * usedPercent) / 100 : 0} ${CIRC}`}
-          />
-        </Svg>
-        <View
-          style={{
-            ...StyleSheet.absoluteFill,
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <Text style={{ fontSize: 20, fontWeight: "800", color: hp.ink }}>
-            {hasBudget ? `${usedPercent}%` : "—"}
-          </Text>
-          <Text style={{ fontSize: 9, fontWeight: "700", letterSpacing: 1.2, color: hp.mutedSoft }}>
-            USED
-          </Text>
+    <Surface asChild className="rounded-card bg-hero-surface p-5">
+      <View>
+        <View className="flex-row items-center justify-between">
+          <Text className="text-base font-bold tracking-tight text-on-ink">Monthly budget</Text>
+          {onOpen ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Open budget in Insights"
+              onPress={onOpen}
+              hitSlop={8}
+            >
+              <AppIcon name="chevron-right" size={16} color={hp.faint} />
+            </Pressable>
+          ) : (
+            <AppIcon name="chevron-right" size={16} color={hp.faint} />
+          )}
         </View>
-      </View>
 
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={{ fontSize: 10, fontWeight: "700", letterSpacing: 1.6, color: hp.muted }}>
-          {monthLabel.toUpperCase()} BUDGET
-        </Text>
-        {limit ? (
-          <Text
-            style={{
-              marginTop: 4,
-              fontSize: 21,
-              fontWeight: "800",
-              letterSpacing: -1.25,
-              color: hp.ink,
-            }}
+        <View className="mt-4" style={{ width: SIZE, height: SIZE }}>
+          <Svg
+            viewBox="0 0 72 72"
+            className="h-full w-full"
+            style={{ transform: [{ rotate: "-90deg" }] }}
           >
-            {spent}{" "}
-            <Text style={{ fontSize: 14, fontWeight: "700", color: hp.mutedSoft }}>of {limit}</Text>
-          </Text>
-        ) : (
-          <Text
-            style={{
-              marginTop: 4,
-              fontSize: 19,
-              fontWeight: "800",
-              color: hp.ink,
-            }}
-          >
-            No budget set
-          </Text>
-        )}
-        <View style={{ marginTop: 8, flexDirection: "row", alignItems: "center", gap: 6 }}>
-          <Ionicons
-            name={hasBudget ? "trending-up" : "information-circle-outline"}
-            size={14}
-            color={hp.emeraldDeep}
-          />
-          <Text style={{ fontSize: 12, fontWeight: "700", color: hp.emeraldDeep }}>
-            {remaining ?? "Set a limit to track progress"}
+            <Defs>
+              <LinearGradient id="budgetArc" x1="0" y1="0" x2="1" y2="1">
+                <Stop offset="0" stopColor={hp.accent} />
+                <Stop offset="1" stopColor={hp.accentDeep} />
+              </LinearGradient>
+            </Defs>
+            <Circle cx="36" cy="36" r={R} fill="none" stroke={hp.track} strokeWidth="10" />
+            <Circle
+              cx="36"
+              cy="36"
+              r={R}
+              fill="none"
+              stroke="url(#budgetArc)"
+              strokeWidth="10"
+              strokeLinecap="round"
+              strokeDasharray={`${hasBudget ? (CIRC * usedPercent) / 100 : 0} ${CIRC}`}
+            />
+          </Svg>
+          <View className="absolute inset-0 items-center justify-center">
+            {hasBudget ? (
+              <Text
+                className="text-[18px] tracking-tight text-on-ink"
+                style={{ fontFamily: moneyFontFamily("semibold") }}
+              >
+                {usedPercent}%
+              </Text>
+            ) : (
+              <AppIcon name="info" size={18} color={hp.accent} />
+            )}
+          </View>
+        </View>
+
+        <View className="mt-3 min-w-0">
+          {limit ? (
+            <Text
+              numberOfLines={1}
+              className="text-[19px] tracking-tight text-on-ink"
+              style={{ fontFamily: moneyFontFamily("semibold") }}
+            >
+              {spent}
+            </Text>
+          ) : (
+            <Text
+              className="text-[17px] text-on-ink"
+              style={{ fontFamily: moneyFontFamily("semibold") }}
+            >
+              No budget set
+            </Text>
+          )}
+          {limit ? (
+            <Text numberOfLines={1} className="mt-0.5 text-caption text-muted-soft">
+              of {limit}
+            </Text>
+          ) : null}
+        </View>
+
+        <View className="mt-3 flex-row items-center gap-1.5 self-start rounded-pill bg-white/10 px-2.5 py-1.5">
+          <AppIcon name={hasBudget ? "trend-up" : "info"} size={13} color={hp.positive} />
+          <Text numberOfLines={1} className="text-label font-bold text-positive">
+            {hasBudget ? remaining ? `${remaining} left` : "On track" : "Set a limit"}
           </Text>
         </View>
       </View>
-    </View>
+    </Surface>
   );
 }

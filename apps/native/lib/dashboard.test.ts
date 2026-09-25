@@ -1,7 +1,8 @@
-import { describe, it, expect } from "vitest";
-import { deriveDashboard, isRecurringTransaction } from "./dashboard";
+import { describe, it, expect, vi } from "vitest";
+import { deriveDashboard, deriveDashboardProjection, isRecurringTransaction } from "./dashboard";
 import type { ParsedSms } from "./sms";
 import { createMalanaEngine, type MalanaResult } from "@zeeya/parser/malana";
+import * as subscriptions from "./subscriptions";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const now = Date.now();
@@ -505,6 +506,7 @@ describe("deriveDashboard — account identity", () => {
         detectedAccount: "XX7521",
         association: { kind: "confirmed", accountLast4: "7521" },
         sender: "VM-SBIINB",
+        smsId: "july-balance",
         reconciliation: {
           previousAsOf: june,
           capturedIncome: 0,
@@ -523,6 +525,7 @@ describe("deriveDashboard — account identity", () => {
         detectedAccount: "XX7521",
         association: { kind: "confirmed", accountLast4: "7521" },
         sender: "VM-SBIINB",
+        smsId: "june-balance",
         reconciliation: null,
       },
     ]);
@@ -1157,5 +1160,89 @@ describe("deriveDashboard — subscriptions integration", () => {
 
     expect(mandates).toHaveLength(1);
     expect(subscriptions).toHaveLength(0);
+  });
+});
+
+describe("deriveDashboardProjection", () => {
+  it("does not put allSubscriptions on the public Dashboard it returns", () => {
+    const messages: ParsedSms[] = [
+      sms("1", "VM-TESTBK", now - 30 * DAY_MS, {
+        trxTypeRich: "EXPENSE",
+        trx: "199.00",
+        vendor: "Netflix",
+      }),
+      sms("2", "VM-TESTBK", now, { trxTypeRich: "EXPENSE", trx: "199.00", vendor: "Netflix" }),
+    ];
+
+    const { dashboard } = deriveDashboardProjection(messages, new Date(now));
+
+    // A runtime check, not just a type-level one: allSubscriptions must not
+    // be an own property of the object every UI consumer holds, so it
+    // can't leak into Zustand or a serialized snapshot even if some future
+    // caller ignored the type.
+    expect(Object.prototype.hasOwnProperty.call(dashboard, "allSubscriptions")).toBe(false);
+    expect(dashboard.subscriptions).toHaveLength(1);
+  });
+
+  it("computes dashboard.subscriptions and allSubscriptions from one derivation, not two independent calls", () => {
+    // A run long enough that recency-filtered vs. complete would visibly
+    // differ if either were computed separately from stale/mismatched
+    // input — every occurrence here is within the recency window, so both
+    // views must report the exact same complete run.
+    const startDate = now - 6 * 30 * DAY_MS;
+    const messages: ParsedSms[] = Array.from({ length: 6 }, (_, index) =>
+      sms(`netflix-${index}`, "VM-TESTBK", startDate + index * 30 * DAY_MS, {
+        trxTypeRich: "EXPENSE",
+        trx: "199.00",
+        vendor: "Netflix",
+      }),
+    );
+
+    const { dashboard, allSubscriptions } = deriveDashboardProjection(messages, new Date(now));
+
+    expect(dashboard.subscriptions).toHaveLength(1);
+    expect(allSubscriptions).toHaveLength(1);
+    expect(dashboard.subscriptions[0]).toEqual(allSubscriptions[0]);
+  });
+
+  it("calls the underlying subscription derivation exactly once per deriveDashboardProjection call", () => {
+    // The regression this guards: a prior version called deriveSubscriptions
+    // and deriveAllQualifyingSubscriptions separately, each internally
+    // re-running the same normalization/grouping/sorting/cadence/tolerance
+    // work over the same message array — genuinely doubling that work
+    // despite a comment claiming it happened "in one pass." Spying on the
+    // one function that does that work (allQualifyingSubscriptions) proves
+    // it's invoked exactly once, not merely that the two returned arrays
+    // happen to look equal.
+    const spy = vi.spyOn(subscriptions, "allQualifyingSubscriptions");
+    const messages: ParsedSms[] = [
+      sms("1", "VM-TESTBK", now - 30 * DAY_MS, {
+        trxTypeRich: "EXPENSE",
+        trx: "199.00",
+        vendor: "Netflix",
+      }),
+      sms("2", "VM-TESTBK", now, { trxTypeRich: "EXPENSE", trx: "199.00", vendor: "Netflix" }),
+    ];
+
+    deriveDashboardProjection(messages, new Date(now));
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    spy.mockRestore();
+  });
+
+  it("preserves deriveDashboard's existing public behaviour exactly — same subscriptions as before this split existed", () => {
+    const messages: ParsedSms[] = [
+      sms("1", "VM-TESTBK", now - 30 * DAY_MS, {
+        trxTypeRich: "EXPENSE",
+        trx: "199.00",
+        vendor: "Netflix",
+      }),
+      sms("2", "VM-TESTBK", now, { trxTypeRich: "EXPENSE", trx: "199.00", vendor: "Netflix" }),
+    ];
+
+    const viaDeriveDashboard = deriveDashboard(messages, new Date(now));
+    const viaProjection = deriveDashboardProjection(messages, new Date(now)).dashboard;
+
+    expect(viaDeriveDashboard).toEqual(viaProjection);
   });
 });

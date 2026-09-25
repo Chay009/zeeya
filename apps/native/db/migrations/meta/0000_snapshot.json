@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "a2069748-548d-489e-a022-33779e9e2cd9",
+  "id": "d1e1c1db-7be4-46ce-a800-575ea17e5f74",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "accounts": {
@@ -21,6 +21,13 @@
           "notNull": true,
           "autoincrement": false
         },
+        "bank_key": {
+          "name": "bank_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
         "last4": {
           "name": "last4",
           "type": "text",
@@ -35,11 +42,18 @@
           "notNull": true,
           "autoincrement": false
         },
+        "anchor_status": {
+          "name": "anchor_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
         "balance_minor_units": {
           "name": "balance_minor_units",
           "type": "integer",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "autoincrement": false
         },
         "balance_as_of": {
@@ -60,7 +74,7 @@
           "name": "estimated_balance_minor_units",
           "type": "integer",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "autoincrement": false
         },
         "estimated_as_of": {
@@ -76,13 +90,75 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "captured_income_minor_units": {
+          "name": "captured_income_minor_units",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "captured_expense_minor_units": {
+          "name": "captured_expense_minor_units",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "captured_change_minor_units": {
+          "name": "captured_change_minor_units",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "captured_transaction_count": {
+          "name": "captured_transaction_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "accounts_bank_key_currency_idx": {
+          "name": "accounts_bank_key_currency_idx",
+          "columns": [
+            "bank_key",
+            "currency"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "checkConstraints": {}
+      "checkConstraints": {
+        "accounts_anchor_status_check": {
+          "name": "accounts_anchor_status_check",
+          "value": "\"accounts\".\"anchor_status\" IN ('reported', 'unreported')"
+        },
+        "accounts_anchor_status_balance_nullability_check": {
+          "name": "accounts_anchor_status_balance_nullability_check",
+          "value": "(\"accounts\".\"anchor_status\" = 'reported' AND \"accounts\".\"balance_minor_units\" IS NOT NULL AND \"accounts\".\"estimated_balance_minor_units\" IS NOT NULL)\n       OR (\"accounts\".\"anchor_status\" = 'unreported' AND \"accounts\".\"balance_minor_units\" IS NULL AND \"accounts\".\"estimated_balance_minor_units\" IS NULL)"
+        },
+        "accounts_captured_transaction_count_check": {
+          "name": "accounts_captured_transaction_count_check",
+          "value": "\"accounts\".\"captured_transaction_count\" >= 0"
+        },
+        "accounts_captured_income_expense_nonnegative_check": {
+          "name": "accounts_captured_income_expense_nonnegative_check",
+          "value": "\"accounts\".\"captured_income_minor_units\" >= 0 AND \"accounts\".\"captured_expense_minor_units\" >= 0"
+        },
+        "accounts_captured_change_check": {
+          "name": "accounts_captured_change_check",
+          "value": "\"accounts\".\"captured_change_minor_units\" = \"accounts\".\"captured_income_minor_units\" - \"accounts\".\"captured_expense_minor_units\""
+        },
+        "accounts_captured_zero_count_check": {
+          "name": "accounts_captured_zero_count_check",
+          "value": "\"accounts\".\"captured_transaction_count\" != 0 OR (\"accounts\".\"captured_income_minor_units\" = 0 AND \"accounts\".\"captured_expense_minor_units\" = 0 AND \"accounts\".\"captured_change_minor_units\" = 0)"
+        }
+      }
     },
     "activity": {
       "name": "activity",
@@ -114,22 +190,141 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
+        },
+        "bank_name": {
+          "name": "bank_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "brand_name": {
+          "name": "brand_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "vendor": {
+          "name": "vendor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "trx_type_rich": {
+          "name": "trx_type_rich",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "subcategory": {
+          "name": "subcategory",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "mandate_event": {
+          "name": "mandate_event",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "is_from_card": {
+          "name": "is_from_card",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "amount_minor_units": {
+          "name": "amount_minor_units",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "direction": {
+          "name": "direction",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "bene": {
+          "name": "bene",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "merchant_category": {
+          "name": "merchant_category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "sender": {
+          "name": "sender",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
         }
       },
       "indexes": {
         "activity_sms_category_idx": {
           "name": "activity_sms_category_idx",
-          "columns": ["sms_id", "category"],
+          "columns": [
+            "sms_id",
+            "category"
+          ],
           "isUnique": true
         },
-        "activity_category_idx": {
-          "name": "activity_category_idx",
-          "columns": ["category"],
+        "activity_category_date_id_idx": {
+          "name": "activity_category_date_id_idx",
+          "columns": [
+            "category",
+            "date",
+            "id"
+          ],
           "isUnique": false
         },
-        "activity_date_idx": {
-          "name": "activity_date_idx",
-          "columns": ["date"],
+        "activity_date_id_idx": {
+          "name": "activity_date_id_idx",
+          "columns": [
+            "date",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "activity_date_sms_id_idx": {
+          "name": "activity_date_sms_id_idx",
+          "columns": [
+            "date",
+            "sms_id"
+          ],
+          "isUnique": false
+        },
+        "activity_category_date_sms_id_idx": {
+          "name": "activity_category_date_sms_id_idx",
+          "columns": [
+            "category",
+            "date",
+            "sms_id"
+          ],
           "isUnique": false
         }
       },
@@ -138,15 +333,36 @@
           "name": "activity_sms_id_sms_ledger_id_fk",
           "tableFrom": "activity",
           "tableTo": "sms_ledger",
-          "columnsFrom": ["sms_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "sms_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "checkConstraints": {}
+      "checkConstraints": {
+        "activity_mandate_event_check": {
+          "name": "activity_mandate_event_check",
+          "value": "\"activity\".\"mandate_event\" IS NULL OR \"activity\".\"mandate_event\" IN ('active', 'cancelled')"
+        },
+        "activity_direction_check": {
+          "name": "activity_direction_check",
+          "value": "\"activity\".\"direction\" IS NULL OR \"activity\".\"direction\" IN ('income', 'expense', 'neutral')"
+        },
+        "activity_category_check": {
+          "name": "activity_category_check",
+          "value": "\"activity\".\"category\" IN ('GRM_BANK', 'GRM_BILL', 'GRM_STOCKUPDATES', 'GRM_TRAVEL', 'GRM_DELIVERY', 'GRM_EVENT', 'GRM_APPOINTMENT', 'GRM_NOTIF', 'GRM_OTP', 'GRM_OFFERS')"
+        },
+        "activity_financial_fields_check": {
+          "name": "activity_financial_fields_check",
+          "value": "(\"activity\".\"amount_minor_units\" IS NULL AND \"activity\".\"currency\" IS NULL AND \"activity\".\"direction\" IS NULL)\n       OR (\"activity\".\"amount_minor_units\" IS NOT NULL AND \"activity\".\"currency\" IS NOT NULL AND \"activity\".\"direction\" IS NOT NULL)"
+        }
+      }
     },
     "balance_readings": {
       "name": "balance_readings",
@@ -195,6 +411,13 @@
         },
         "detected_bank_name": {
           "name": "detected_bank_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "detected_bank_key": {
+          "name": "detected_bank_key",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -265,14 +488,23 @@
         }
       },
       "indexes": {
-        "balance_readings_account_id_idx": {
-          "name": "balance_readings_account_id_idx",
-          "columns": ["account_id"],
+        "balance_readings_account_id_as_of_id_idx": {
+          "name": "balance_readings_account_id_as_of_id_idx",
+          "columns": [
+            "account_id",
+            "as_of",
+            "id"
+          ],
           "isUnique": false
         },
-        "balance_readings_as_of_idx": {
-          "name": "balance_readings_as_of_idx",
-          "columns": ["as_of"],
+        "balance_readings_bank_key_account_as_of_id_idx": {
+          "name": "balance_readings_bank_key_account_as_of_id_idx",
+          "columns": [
+            "detected_bank_key",
+            "account_id",
+            "as_of",
+            "id"
+          ],
           "isUnique": false
         }
       },
@@ -281,8 +513,12 @@
           "name": "balance_readings_sms_id_sms_ledger_id_fk",
           "tableFrom": "balance_readings",
           "tableTo": "sms_ledger",
-          "columnsFrom": ["sms_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "sms_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -290,8 +526,12 @@
           "name": "balance_readings_account_id_accounts_id_fk",
           "tableFrom": "balance_readings",
           "tableTo": "accounts",
-          "columnsFrom": ["account_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -302,8 +542,64 @@
         "balance_readings_association_kind_check": {
           "name": "balance_readings_association_kind_check",
           "value": "\"balance_readings\".\"association_kind\" IN ('confirmed', 'suggested', 'unassigned')"
+        },
+        "balance_readings_association_kind_account_id_check": {
+          "name": "balance_readings_association_kind_account_id_check",
+          "value": "(\"balance_readings\".\"association_kind\" = 'confirmed' AND \"balance_readings\".\"account_id\" IS NOT NULL)\n       OR (\"balance_readings\".\"association_kind\" IN ('suggested', 'unassigned') AND \"balance_readings\".\"account_id\" IS NULL)"
         }
       }
+    },
+    "detected_accounts": {
+      "name": "detected_accounts",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "bank_name": {
+          "name": "bank_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "last4": {
+          "name": "last4",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "as_of": {
+          "name": "as_of",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sender": {
+          "name": "sender",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
     },
     "identity_conflicts": {
       "name": "identity_conflicts",
@@ -347,12 +643,17 @@
       "indexes": {
         "identity_conflicts_sms_id_idx": {
           "name": "identity_conflicts_sms_id_idx",
-          "columns": ["sms_id"],
+          "columns": [
+            "sms_id"
+          ],
           "isUnique": false
         },
         "identity_conflicts_open_unique": {
           "name": "identity_conflicts_open_unique",
-          "columns": ["sms_id", "contested_provider_id"],
+          "columns": [
+            "sms_id",
+            "contested_provider_id"
+          ],
           "isUnique": true,
           "where": "\"identity_conflicts\".\"resolved_at\" IS NULL"
         }
@@ -362,8 +663,12 @@
           "name": "identity_conflicts_sms_id_sms_ledger_id_fk",
           "tableFrom": "identity_conflicts",
           "tableTo": "sms_ledger",
-          "columnsFrom": ["sms_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "sms_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -371,6 +676,90 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}
+    },
+    "local_settings": {
+      "name": "local_settings",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "background_sync_enabled": {
+          "name": "background_sync_enabled",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "transaction_notifications_enabled": {
+          "name": "transaction_notifications_enabled",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "biometric_lock_enabled": {
+          "name": "biometric_lock_enabled",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "screen_capture_protection_enabled": {
+          "name": "screen_capture_protection_enabled",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "daily_budget_minor_units": {
+          "name": "daily_budget_minor_units",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "last_seen_arrival_sequence": {
+          "name": "last_seen_arrival_sequence",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "local_settings_boolean_values": {
+          "name": "local_settings_boolean_values",
+          "value": "\"local_settings\".\"background_sync_enabled\" IN (0, 1) AND \"local_settings\".\"transaction_notifications_enabled\" IN (0, 1) AND \"local_settings\".\"biometric_lock_enabled\" IN (0, 1) AND \"local_settings\".\"screen_capture_protection_enabled\" IN (0, 1)"
+        },
+        "local_settings_arrival_cursor_check": {
+          "name": "local_settings_arrival_cursor_check",
+          "value": "\"local_settings\".\"last_seen_arrival_sequence\" >= 0"
+        },
+        "local_settings_daily_budget_check": {
+          "name": "local_settings_daily_budget_check",
+          "value": "\"local_settings\".\"daily_budget_minor_units\" IS NULL OR (typeof(\"local_settings\".\"daily_budget_minor_units\") = 'integer' AND \"local_settings\".\"daily_budget_minor_units\" > 0)"
+        }
+      }
     },
     "mandate_events": {
       "name": "mandate_events",
@@ -421,12 +810,18 @@
       "indexes": {
         "mandate_events_sms_id_idx": {
           "name": "mandate_events_sms_id_idx",
-          "columns": ["sms_id"],
+          "columns": [
+            "sms_id"
+          ],
           "isUnique": true
         },
-        "mandate_events_mandate_id_idx": {
-          "name": "mandate_events_mandate_id_idx",
-          "columns": ["mandate_id"],
+        "mandate_events_mandate_id_date_id_idx": {
+          "name": "mandate_events_mandate_id_date_id_idx",
+          "columns": [
+            "mandate_id",
+            "date",
+            "id"
+          ],
           "isUnique": false
         }
       },
@@ -435,8 +830,12 @@
           "name": "mandate_events_sms_id_sms_ledger_id_fk",
           "tableFrom": "mandate_events",
           "tableTo": "sms_ledger",
-          "columnsFrom": ["sms_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "sms_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -444,8 +843,12 @@
           "name": "mandate_events_mandate_id_mandates_mandate_id_fk",
           "tableFrom": "mandate_events",
           "tableTo": "mandates",
-          "columnsFrom": ["mandate_id"],
-          "columnsTo": ["mandate_id"],
+          "columnsFrom": [
+            "mandate_id"
+          ],
+          "columnsTo": [
+            "mandate_id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -519,7 +922,16 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "mandates_last_updated_mandate_id_idx": {
+          "name": "mandates_last_updated_mandate_id_idx",
+          "columns": [
+            "last_updated",
+            "mandate_id"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
@@ -529,6 +941,97 @@
           "value": "\"mandates\".\"status\" IN ('active', 'cancelled')"
         }
       }
+    },
+    "projection_state": {
+      "name": "projection_state",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_revision": {
+          "name": "source_revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "projected_revision": {
+          "name": "projected_revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "projection_state_revision_check": {
+          "name": "projection_state_revision_check",
+          "value": "\"projection_state\".\"source_revision\" >= 0 AND \"projection_state\".\"projected_revision\" >= 0 AND \"projection_state\".\"projected_revision\" <= \"projection_state\".\"source_revision\""
+        }
+      }
+    },
+    "sms_arrivals": {
+      "name": "sms_arrivals",
+      "columns": {
+        "sequence": {
+          "name": "sequence",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "sms_id": {
+          "name": "sms_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "sms_arrivals_sms_id_idx": {
+          "name": "sms_arrivals_sms_id_idx",
+          "columns": [
+            "sms_id"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "sms_arrivals_sms_id_sms_ledger_id_fk": {
+          "name": "sms_arrivals_sms_id_sms_ledger_id_fk",
+          "tableFrom": "sms_arrivals",
+          "tableTo": "sms_ledger",
+          "columnsFrom": [
+            "sms_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
     },
     "sms_ledger": {
       "name": "sms_ledger",
@@ -607,12 +1110,16 @@
       "indexes": {
         "sms_ledger_date_idx": {
           "name": "sms_ledger_date_idx",
-          "columns": ["date"],
+          "columns": [
+            "date"
+          ],
           "isUnique": false
         },
         "sms_ledger_provider_id_idx": {
           "name": "sms_ledger_provider_id_idx",
-          "columns": ["provider_id"],
+          "columns": [
+            "provider_id"
+          ],
           "isUnique": true
         }
       },
@@ -623,6 +1130,79 @@
         "sms_ledger_parsed_result_matches_status": {
           "name": "sms_ledger_parsed_result_matches_status",
           "value": "(\"sms_ledger\".\"ingestion_status\" = 'parsed' AND \"sms_ledger\".\"parsed_result\" IS NOT NULL AND \"sms_ledger\".\"ingestion_error\" IS NULL) OR (\"sms_ledger\".\"ingestion_status\" = 'error' AND \"sms_ledger\".\"parsed_result\" IS NULL AND \"sms_ledger\".\"ingestion_error\" IS NOT NULL)"
+        }
+      }
+    },
+    "subscriptions": {
+      "name": "subscriptions",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "merchant": {
+          "name": "merchant",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "amount_minor_units": {
+          "name": "amount_minor_units",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "count": {
+          "name": "count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "last_date": {
+          "name": "last_date",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "confidence": {
+          "name": "confidence",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "subscriptions_last_date_id_idx": {
+          "name": "subscriptions_last_date_id_idx",
+          "columns": [
+            "last_date",
+            "id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "subscriptions_confidence_check": {
+          "name": "subscriptions_confidence_check",
+          "value": "typeof(\"subscriptions\".\"count\") = 'integer' AND (\n        (\"subscriptions\".\"confidence\" = 'possible' AND \"subscriptions\".\"count\" = 2)\n        OR\n        (\"subscriptions\".\"confidence\" = 'likely' AND \"subscriptions\".\"count\" >= 3)\n      )"
         }
       }
     },
@@ -646,6 +1226,13 @@
         "last_ingested_provider_id": {
           "name": "last_ingested_provider_id",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "initial_scan_completed_at": {
+          "name": "initial_scan_completed_at",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
@@ -737,6 +1324,20 @@
           "notNull": false,
           "autoincrement": false
         },
+        "subcategory": {
+          "name": "subcategory",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "category": {
+          "name": "category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
         "ref": {
           "name": "ref",
           "type": "text",
@@ -764,22 +1365,35 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "subscription_identity_key": {
+          "name": "subscription_identity_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         }
       },
       "indexes": {
         "transactions_account_id_idx": {
           "name": "transactions_account_id_idx",
-          "columns": ["account_id"],
+          "columns": [
+            "account_id"
+          ],
           "isUnique": false
         },
         "transactions_date_idx": {
           "name": "transactions_date_idx",
-          "columns": ["date"],
+          "columns": [
+            "date"
+          ],
           "isUnique": false
         },
         "transactions_sms_id_idx": {
           "name": "transactions_sms_id_idx",
-          "columns": ["sms_id"],
+          "columns": [
+            "sms_id"
+          ],
           "isUnique": true
         }
       },
@@ -788,8 +1402,12 @@
           "name": "transactions_sms_id_sms_ledger_id_fk",
           "tableFrom": "transactions",
           "tableTo": "sms_ledger",
-          "columnsFrom": ["sms_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "sms_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -797,8 +1415,12 @@
           "name": "transactions_account_id_accounts_id_fk",
           "tableFrom": "transactions",
           "tableTo": "accounts",
-          "columnsFrom": ["account_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }

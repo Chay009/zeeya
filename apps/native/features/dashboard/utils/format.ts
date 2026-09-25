@@ -2,8 +2,20 @@
 // silently round to ₹200 — toLocaleString only prints decimals when the
 // amount actually has them, so whole amounts still render without ".00".
 export function formatMoney(amount: number, currency: string): string {
-  const symbol = currency === "INR" ? "₹" : currency + " ";
+  const symbol = currency === "INR" ? "₹ " : `${currency} `;
   return `${symbol}${amount.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+}
+
+// Axis labels and tight chart captions — not full precision formatMoney.
+export function formatCompactMoney(amount: number, currency: string): string {
+  const symbol = currency === "INR" ? "₹" : `${currency} `;
+  const abs = Math.abs(amount);
+  if (abs >= 100_000) {
+    return `${symbol}${(abs / 100_000).toFixed(abs >= 1_000_000 ? 0 : 1)}L`;
+  }
+  if (abs >= 1_000) return `${symbol}${Math.round(abs / 1_000)}k`;
+  if (abs === 0) return `${symbol}0`;
+  return `${symbol}${Math.round(abs)}`;
 }
 
 // Currencies present across a set of per-currency totals, INR first (this

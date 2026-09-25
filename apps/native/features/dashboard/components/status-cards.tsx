@@ -1,8 +1,10 @@
-import { Pressable, Text } from "react-native";
+import { Pressable } from "react-native";
+
+import { AppText as Text } from "@/components/app-text";
 
 import { dashboardTheme as t } from "@/constants/dashboard-theme";
 import { Card } from "@/features/dashboard/components/card";
-import type { Status } from "@/features/dashboard/hooks/use-dashboard-sync";
+import type { Status } from "@/features/dashboard/hooks/dashboard-sync-provider";
 
 export function StatusCards({
   status,

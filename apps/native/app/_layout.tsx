@@ -1,46 +1,77 @@
 import "@/global.css";
 import { QueryClientProvider } from "@tanstack/react-query";
+import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { HeroUINativeProvider } from "heroui-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 
+import { AppStatusBar } from "@/components/app-status-bar";
 import { AppThemeProvider } from "@/contexts/app-theme-context";
 import { DatabaseProvider } from "@/db/provider";
 import { CapabilityProvider } from "@/features/capabilities/provider";
 import "@/features/capabilities/background/task";
+import { DashboardSyncProvider } from "@/features/dashboard/hooks/dashboard-sync-provider";
+import { appFontsToLoad } from "@/lib/fonts";
 import { queryClient } from "@/utils/trpc";
 
 void SplashScreen.preventAutoHideAsync();
 
 export const unstable_settings = {
-  initialRouteName: "(drawer)",
+  initialRouteName: "(tabs)",
 };
 
 function StackLayout() {
   return (
     <Stack screenOptions={{}}>
-      <Stack.Screen name="(drawer)" options={{ headerShown: false }} />
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen
+        name="activity-detail/[id]"
+        options={{ headerShown: false, animation: "fade" }}
+      />
+      <Stack.Screen
+        name="transaction-detail/[id]"
+        options={{ headerShown: false, animation: "fade" }}
+      />
       <Stack.Screen
         name="backfill"
         options={{ title: "Backfill history", presentation: "modal" }}
       />
+      <Stack.Screen name="cards" options={{ title: "Cards & accounts" }} />
+      <Stack.Screen name="settings" options={{ title: "Privacy & automation" }} />
+      <Stack.Screen name="dashboard-dev" options={{ title: "Dashboard dev" }} />
+      <Stack.Screen name="transaction/[id]" options={{ title: "Transaction" }} />
+      <Stack.Screen name="subscriptions/index" options={{ headerShown: false }} />
+      <Stack.Screen name="subscriptions/[key]" options={{ headerShown: false }} />
     </Stack>
   );
 }
 
 export default function Layout() {
+  // appFontsToLoad carries three kinds of font: Inter, which only Android
+  // needs (iOS renders real SF Pro as its own OS default with no
+  // fontFamily override — see lib/fonts.ts), plus Plus Jakarta Sans for money
+  // and headings — the app's own display identity, which
+  // BOTH platforms need since neither OS provides either. So both
+  // platforms wait here — iOS's blocking load is small and happens once.
+  const [fontsLoaded] = useFonts(appFontsToLoad);
+
+  if (!fontsLoaded) return null;
+
   return (
     <QueryClientProvider client={queryClient}>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <KeyboardProvider>
           <AppThemeProvider>
+            <AppStatusBar />
             <HeroUINativeProvider>
               <DatabaseProvider>
-                <CapabilityProvider>
-                  <StackLayout />
-                </CapabilityProvider>
+                <DashboardSyncProvider>
+                  <CapabilityProvider>
+                    <StackLayout />
+                  </CapabilityProvider>
+                </DashboardSyncProvider>
               </DatabaseProvider>
             </HeroUINativeProvider>
           </AppThemeProvider>

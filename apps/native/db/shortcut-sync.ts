@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import type { Dashboard } from "../lib/dashboard";
 import type { RawSms } from "../lib/sms";
-import { ingestSmsBatch, loadDashboard } from "./ingestion";
+import { ingestSmsBatch, refreshDashboardProjection } from "./ingestion";
 import { withIngestionLock } from "./single-flight";
 
 const ShortcutEnvelopeSchema = z.object({
@@ -107,12 +107,12 @@ export function drainShortcutInbox(queue: ShortcutMessageQueue): Promise<Shortcu
     }
 
     if (messages.length > 0) {
-      await ingestSmsBatch(messages, { advanceCheckpoint: false });
+      await ingestSmsBatch(messages, { advanceCheckpoint: false, projection: "deferred" });
       for (const file of acceptedFiles) await queue.acknowledge(file.fileName);
     }
 
     return {
-      dashboard: await loadDashboard(),
+      dashboard: await refreshDashboardProjection(),
       accepted: messages.length,
       rejected,
     };

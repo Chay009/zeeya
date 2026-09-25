@@ -91,8 +91,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         {
           image: "./assets/images/android-icon-foreground.png",
           imageWidth: 120,
-          backgroundColor: "#f5fbf7",
-          dark: { backgroundColor: "#10251e" },
+          // Matches hp.background in features/home-preview/theme.ts, so the
+          // splash doesn't flash a different tint before the first render.
+          backgroundColor: "#f7f7f8",
+          dark: { backgroundColor: "#18181b" },
         },
       ],
       "expo-background-task",

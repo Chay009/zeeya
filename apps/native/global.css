@@ -3,3 +3,224 @@
 @import "heroui-native/styles";
 
 @source './node_modules/heroui-native/lib';
+
+/* Zeeya's palette, expressed as the tokens HeroUI's components already read,
+   so Button, ListGroup, Switch and the rest come out in our colours with no
+   per-screen overrides. Values mirror features/home-preview/theme.ts.
+   Green family usage — see that file's header comment. Short version:
+     --app-accent       lime fill (bg-accent) — pair with --app-on-accent
+     --app-on-accent    near-black text ON lime (text-on-accent) — never white
+     --app-accent-deep  forest text on white (text-accent-deep, links)
+     --app-accent-soft  mint surface tint (bg-accent-soft) — NOT lime */
+@layer theme {
+  :root {
+    @variant light {
+      --app-background: #f4f4f6;
+      --app-card: #ffffff;
+      --app-card-alt: #f4f4f6;
+      --app-border-soft: #eeeef2;
+      --app-ink: #101014;
+      --app-ink-deep: #1c1c22;
+      --app-ink-soft: #4a4a55;
+      --app-muted-soft: #8b8b96;
+      --app-faint: #adadb8;
+      --app-on-ink: #ffffff;
+      --app-hero-surface: #141419;
+      --app-hero-surface-soft: #22222b;
+      --app-accent: #c9ef69;
+      --app-on-accent: #101014;
+      --app-accent-deep: #0a5c2e;
+      --app-accent-soft: #eaf7ef;
+      --app-lime: #c9ef69;
+      --app-chip-bg: #f2f2f5;
+      --app-track: #ececf0;
+      --app-divider: #f0f0f3;
+      --app-surface-muted: #f2f2f5;
+      --app-frost: #f2f2f5;
+      --app-frost-strong: #ececf0;
+      --app-chip: #f2f2f5;
+      --app-chip-on: #101014;
+      --app-notice-bg: #eaf7ef;
+      --app-notice-border: #c5e6d0;
+      --app-notice-ink: #0a5c2e;
+
+      --background: var(--app-background);
+      --foreground: var(--app-ink);
+      --surface: var(--app-card);
+      --surface-foreground: var(--app-ink);
+      --surface-secondary: var(--app-surface-muted);
+      --surface-secondary-foreground: var(--app-ink-deep);
+      --surface-tertiary: var(--app-background);
+      --surface-tertiary-foreground: var(--app-ink-deep);
+      --overlay: var(--app-card);
+      --overlay-foreground: var(--app-ink);
+      --muted: #6e6e7a;
+      --border: #e6e6eb;
+      --separator: var(--app-divider);
+      --default: var(--app-chip-bg);
+      --default-foreground: var(--app-ink);
+      --accent: var(--app-accent);
+      --accent-foreground: var(--app-on-accent);
+      --focus: var(--app-accent);
+      --link: var(--app-accent-deep);
+      --success: #12a150;
+      --success-foreground: #ffffff;
+      --danger: #e5484d;
+      --danger-foreground: #ffffff;
+      --warning: #f5a524;
+      --warning-foreground: #ffffff;
+    }
+
+    @variant dark {
+      --app-background: #111116;
+      --app-card: #1c1c24;
+      --app-card-alt: #22222b;
+      --app-border-soft: rgba(255, 255, 255, 0.1);
+      --app-ink: #f7f7fa;
+      --app-ink-deep: #ffffff;
+      --app-ink-soft: #d0d0da;
+      --app-muted-soft: #b4b4c1;
+      --app-faint: #8f8f9c;
+      --app-on-ink: #111116;
+      --app-hero-surface: #0d0d12;
+      --app-hero-surface-soft: #1a1a22;
+      --app-accent: #c9ef69;
+      --app-on-accent: #101014;
+      --app-accent-deep: #daf99d;
+      --app-accent-soft: rgba(60, 196, 111, 0.14);
+      --app-lime: #c9ef69;
+      --app-chip-bg: #2a2a34;
+      --app-track: #2f2f3a;
+      --app-divider: rgba(255, 255, 255, 0.08);
+      --app-surface-muted: #22222b;
+      --app-frost: #22222b;
+      --app-frost-strong: #2a2a34;
+      --app-chip: #2a2a34;
+      --app-chip-on: #f7f7fa;
+      --app-notice-bg: rgba(60, 196, 111, 0.12);
+      --app-notice-border: rgba(60, 196, 111, 0.28);
+      --app-notice-ink: #c9ef69;
+
+      --background: var(--app-background);
+      --foreground: var(--app-ink);
+      --surface: var(--app-card);
+      --surface-foreground: var(--app-ink);
+      --surface-secondary: var(--app-surface-muted);
+      --surface-secondary-foreground: var(--app-ink);
+      --surface-tertiary: var(--app-card-alt);
+      --surface-tertiary-foreground: var(--app-ink);
+      --overlay: var(--app-card);
+      --overlay-foreground: var(--app-ink);
+      --muted: #b4b4c1;
+      --border: rgba(255, 255, 255, 0.12);
+      --separator: var(--app-divider);
+      --default: var(--app-chip-bg);
+      --default-foreground: var(--app-ink);
+      --accent: var(--app-accent);
+      --accent-foreground: var(--app-on-accent);
+      --focus: var(--app-accent);
+      --link: var(--app-accent-deep);
+      --success: #3cc46f;
+      --success-foreground: #0d1a12;
+      --danger: #ff6b70;
+      --danger-foreground: #1a0d0e;
+      --warning: #f5a524;
+      --warning-foreground: #1a1208;
+    }
+  }
+}
+
+@theme {
+  --color-background: var(--app-background);
+  --color-card: var(--app-card);
+  --color-card-alt: var(--app-card-alt);
+  --color-border-soft: var(--app-border-soft);
+
+  --color-ink: var(--app-ink);
+  --color-ink-deep: var(--app-ink-deep);
+  --color-ink-soft: var(--app-ink-soft);
+  --color-muted-soft: var(--app-muted-soft);
+  --color-faint: var(--app-faint);
+  --color-on-ink: var(--app-on-ink);
+  --color-on-accent: var(--app-on-accent);
+
+  --color-hero-surface: var(--app-hero-surface);
+  --color-hero-surface-soft: var(--app-hero-surface-soft);
+
+  /* bg-accent = lime fill. On lime use text-on-accent (black). On white/mint
+     use text-accent-deep for links — not text-on-ink. */
+  --color-accent: var(--app-accent);
+  --color-accent-deep: var(--app-accent-deep);
+  --color-accent-soft: var(--app-accent-soft);
+  --color-chip-bg: var(--app-chip-bg);
+  --color-track: var(--app-track);
+  --color-divider: var(--app-divider);
+  --color-surface-muted: var(--app-surface-muted);
+  --color-lime: var(--app-lime);
+
+  --color-emerald: #12a150;
+  --color-emerald-deep: #0e8442;
+  --color-mint: #12a150;
+  --color-mint-light: #3cc46f;
+  --color-ink-forest: var(--app-ink);
+  --color-forest: var(--app-accent-deep);
+  --color-forest-soft: var(--app-ink-soft);
+  --color-sage: #6e6e7a;
+  --color-sage-soft: var(--app-muted-soft);
+  --color-sage-faint: var(--app-faint);
+  --color-sage-muted: var(--app-faint);
+  --color-sage-disabled: #cdcdd6;
+  --color-shadow-forest: var(--app-ink);
+  --color-surface-sage: var(--app-surface-muted);
+  --color-surface-sage-alt: var(--app-background);
+  --color-surface-mint: #eaf7ef;
+  --color-surface-mint-alt: var(--app-surface-muted);
+  --color-border-sage: #e6e6eb;
+
+  --color-positive: #12a150;
+  --color-positive-deep: #0e8442;
+  --color-negative: #e5484d;
+  --color-danger: #e5484d;
+  --color-coral: #e5484d;
+  --color-coral-bar: #f0736f;
+  --color-recurring-bg: var(--app-accent-soft);
+  --color-recurring-ink: var(--app-accent-deep);
+  --color-manual-bg: #fff4e5;
+  --color-manual-ink: #b25e09;
+  --color-expense-bg: #ffeceb;
+  --color-calculated-bg: #fff4e5;
+  --color-calculated-ink: #b25e09;
+
+  --color-notice-bg: var(--app-notice-bg);
+  --color-notice-border: var(--app-notice-border);
+  --color-notice-ink: var(--app-notice-ink);
+
+  --color-category-1: #12a150;
+  --color-category-2: #12a150;
+  --color-category-3: #f5a524;
+  --color-category-4: #f76808;
+  --color-category-5: #0090ff;
+  --color-category-6: #c4c4cf;
+
+  --spacing-page: 20px;
+
+  --radius-tile: 16px;
+  --radius-card: 24px;
+  --radius-hero: 28px;
+  --radius-pill: 999px;
+
+  --text-label: 10px;
+  --text-meta: 11px;
+  --text-caption: 12px;
+  --text-body: 14px;
+  --text-subtitle: 15px;
+  --text-title: 20px;
+  --text-screen: 28px;
+  --text-hero: 34px;
+  --text-display: 44px;
+
+  --color-frost: var(--app-frost);
+  --color-frost-strong: var(--app-frost-strong);
+  --color-chip: var(--app-chip);
+  --color-chip-on: var(--app-chip-on);
+}

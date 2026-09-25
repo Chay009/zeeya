@@ -73,6 +73,54 @@ describe("local SQLite schema", () => {
     ctx = freshInitializedDb();
   });
 
+  it("ships one fresh-install migration rather than a compatibility chain", () => {
+    const migrationFiles = readdirSync(MIGRATIONS_DIR)
+      .filter((file) => file.endsWith(".sql"))
+      .sort();
+    expect(migrationFiles).toHaveLength(1);
+    expect(migrationFiles[0]).toMatch(/^0000_.+\.sql$/);
+  });
+
+  // migrations.js is drizzle-kit generated output (see its own header
+  // comment) — every `drizzle-kit generate` run rewrites it to import
+  // whichever .sql file the run just produced. Regenerating the baseline
+  // (delete + drizzle-kit generate, the recipe README.md documents) without
+  // this file happening to get regenerated in the same pass — e.g.
+  // restoring only schema.ts/*.sql/meta/* from a backup after a mutation
+  // test, as happened here — leaves it importing a filename that no longer
+  // exists on disk. Node's own migration tests (applyMigrations above)
+  // never catch this: they enumerate .sql files directly by reading the
+  // directory, the same way this app's real migration bundling does NOT —
+  // db/provider.tsx's real Expo/React Native migration path goes through
+  // this exact generated file and a static bundler import, which would
+  // fail at build or run time on a stale reference no Node test exercises.
+  it("migrations.js imports the exact .sql file the journal names, not a stale one", () => {
+    const journal = JSON.parse(
+      readFileSync(path.join(MIGRATIONS_DIR, "meta/_journal.json"), "utf-8"),
+    ) as {
+      entries: { tag: string }[];
+    };
+    expect(journal.entries).toHaveLength(1);
+    const journalTag = journal.entries[0]!.tag;
+
+    const migrationFiles = readdirSync(MIGRATIONS_DIR).filter((file) => file.endsWith(".sql"));
+    expect(migrationFiles).toEqual([`${journalTag}.sql`]);
+
+    const migrationsJs = readFileSync(path.join(MIGRATIONS_DIR, "migrations.js"), "utf-8");
+    const importMatch = migrationsJs.match(/from ['"]\.\/(.+\.sql)['"]/);
+    expect(importMatch).not.toBeNull();
+    const importedFile = importMatch![1];
+
+    // The two failure modes this test exists to catch: importing a
+    // filename that doesn't match the journal's own tag, and importing a
+    // filename that isn't actually present on disk (a real bundler import
+    // of a missing file fails at build/run time — Node's require/import
+    // resolution below reproduces the exact same "file not found" check a
+    // real Metro bundle would hit).
+    expect(importedFile).toBe(`${journalTag}.sql`);
+    expect(readdirSync(MIGRATIONS_DIR)).toContain(importedFile);
+  });
+
   it("does NOT cascade when the database is never initialized — proves the case below is initializeNativeDatabase, not a driver default", () => {
     const uninitialized = freshUninitializedDb();
     uninitialized.db
@@ -96,6 +144,7 @@ describe("local SQLite schema", () => {
         amountMinorUnits: 10000,
         currency: "INR",
         direction: "expense",
+        category: "Transaction",
         date: 1000,
       })
       .run();
@@ -126,11 +175,15 @@ describe("local SQLite schema", () => {
         "accounts",
         "activity",
         "balance_readings",
+        "detected_accounts",
         "identity_conflicts",
         "local_settings",
         "mandate_events",
         "mandates",
+        "projection_state",
+        "sms_arrivals",
         "sms_ledger",
+        "subscriptions",
         "sync_checkpoint",
         "transactions",
       ].sort(),
@@ -159,6 +212,7 @@ describe("local SQLite schema", () => {
         amountMinorUnits: 10000,
         currency: "INR",
         direction: "expense",
+        category: "Transaction",
         date: 1000,
       })
       .run();
@@ -185,6 +239,7 @@ describe("local SQLite schema", () => {
           amountMinorUnits: 5000,
           currency: "INR",
           direction: "expense",
+          category: "Transaction",
           date: 1000,
         })
         .run(),
@@ -312,9 +367,9 @@ describe("local SQLite schema", () => {
     expect(() =>
       ctx.sqlite
         .prepare(
-          "INSERT INTO transactions (id, sms_id, amount_minor_units, currency, direction, date) VALUES (?, ?, ?, ?, ?, ?)",
+          "INSERT INTO transactions (id, sms_id, amount_minor_units, currency, direction, category, date) VALUES (?, ?, ?, ?, ?, ?, ?)",
         )
-        .run("trx-bad", "sms-2", 10000, "INR", "sideways", 1000),
+        .run("trx-bad", "sms-2", 10000, "INR", "sideways", "Transaction", 1000),
     ).toThrow(/CHECK constraint failed/);
   });
 
@@ -350,5 +405,609 @@ describe("local SQLite schema", () => {
         })
         .run(),
     ).toThrow(/UNIQUE constraint failed/);
+  });
+
+  describe("accounts anchor_status invariant", () => {
+    it("rejects an anchor_status outside the enum", () => {
+      expect(() =>
+        ctx.sqlite
+          .prepare(
+            "INSERT INTO accounts (id, bank_name, bank_key, last4, currency, anchor_status, balance_minor_units, balance_as_of, balance_sender, estimated_balance_minor_units, estimated_as_of, captured_income_minor_units, captured_expense_minor_units, captured_change_minor_units, captured_transaction_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          )
+          .run(
+            "hdfc|1234",
+            "HDFC Bank",
+            "hdfc bank",
+            "1234",
+            "INR",
+            "pending",
+            0,
+            1000,
+            "VM-HDFCBK",
+            0,
+            1000,
+            0,
+            0,
+            0,
+            0,
+          ),
+      ).toThrow(/CHECK constraint failed/);
+    });
+
+    it("accepts both valid anchor_status values", () => {
+      expect(() =>
+        ctx.sqlite
+          .prepare(
+            "INSERT INTO accounts (id, bank_name, bank_key, last4, currency, anchor_status, balance_minor_units, balance_as_of, balance_sender, estimated_balance_minor_units, estimated_as_of, captured_income_minor_units, captured_expense_minor_units, captured_change_minor_units, captured_transaction_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          )
+          .run(
+            "hdfc|1234",
+            "HDFC Bank",
+            "hdfc bank",
+            "1234",
+            "INR",
+            "reported",
+            1000000,
+            1000,
+            "VM-HDFCBK",
+            1000000,
+            1000,
+            0,
+            0,
+            0,
+            0,
+          ),
+      ).not.toThrow();
+
+      expect(() =>
+        ctx.sqlite
+          .prepare(
+            "INSERT INTO accounts (id, bank_name, bank_key, last4, currency, anchor_status, balance_minor_units, balance_as_of, balance_sender, estimated_balance_minor_units, estimated_as_of, captured_income_minor_units, captured_expense_minor_units, captured_change_minor_units, captured_transaction_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          )
+          .run(
+            "icici|5678",
+            "ICICI Bank",
+            "icici bank",
+            "5678",
+            "INR",
+            "unreported",
+            null,
+            1000,
+            "VM-ICICIB",
+            null,
+            1000,
+            0,
+            0,
+            0,
+            0,
+          ),
+      ).not.toThrow();
+    });
+  });
+
+  describe("accounts anchor_status/balance nullability invariant", () => {
+    // A 0 in either balance column must always mean a real reported zero
+    // balance, never "unreported" — this is exactly the ambiguity the
+    // nullability CHECK exists to make impossible at the database level,
+    // not just by convention in projections.ts's write path.
+    it("rejects anchor_status=reported with a null balance", () => {
+      expect(() =>
+        ctx.sqlite
+          .prepare(
+            "INSERT INTO accounts (id, bank_name, bank_key, last4, currency, anchor_status, balance_minor_units, balance_as_of, balance_sender, estimated_balance_minor_units, estimated_as_of, captured_income_minor_units, captured_expense_minor_units, captured_change_minor_units, captured_transaction_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          )
+          .run(
+            "hdfc|1234",
+            "HDFC Bank",
+            "hdfc bank",
+            "1234",
+            "INR",
+            "reported",
+            null,
+            1000,
+            "VM-HDFCBK",
+            5000,
+            1000,
+            0,
+            0,
+            0,
+            0,
+          ),
+      ).toThrow(/CHECK constraint failed/);
+    });
+
+    it("rejects anchor_status=unreported with a real (non-null) balance", () => {
+      expect(() =>
+        ctx.sqlite
+          .prepare(
+            "INSERT INTO accounts (id, bank_name, bank_key, last4, currency, anchor_status, balance_minor_units, balance_as_of, balance_sender, estimated_balance_minor_units, estimated_as_of, captured_income_minor_units, captured_expense_minor_units, captured_change_minor_units, captured_transaction_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          )
+          .run(
+            "hdfc|1234",
+            "HDFC Bank",
+            "hdfc bank",
+            "1234",
+            "INR",
+            "unreported",
+            0,
+            1000,
+            "VM-HDFCBK",
+            null,
+            1000,
+            0,
+            0,
+            0,
+            0,
+          ),
+      ).toThrow(/CHECK constraint failed/);
+    });
+  });
+
+  describe("accounts captured_transaction_count invariant", () => {
+    it("rejects a negative captured_transaction_count", () => {
+      expect(() =>
+        ctx.sqlite
+          .prepare(
+            "INSERT INTO accounts (id, bank_name, bank_key, last4, currency, anchor_status, balance_minor_units, balance_as_of, balance_sender, estimated_balance_minor_units, estimated_as_of, captured_income_minor_units, captured_expense_minor_units, captured_change_minor_units, captured_transaction_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          )
+          .run(
+            "hdfc|1234",
+            "HDFC Bank",
+            "hdfc bank",
+            "1234",
+            "INR",
+            "reported",
+            100000,
+            1000,
+            "VM-HDFCBK",
+            100000,
+            1000,
+            0,
+            0,
+            0,
+            -1,
+          ),
+      ).toThrow(/CHECK constraint failed/);
+    });
+
+    it("accepts zero and a positive captured_transaction_count", () => {
+      expect(() =>
+        ctx.sqlite
+          .prepare(
+            "INSERT INTO accounts (id, bank_name, bank_key, last4, currency, anchor_status, balance_minor_units, balance_as_of, balance_sender, estimated_balance_minor_units, estimated_as_of, captured_income_minor_units, captured_expense_minor_units, captured_change_minor_units, captured_transaction_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          )
+          .run(
+            "hdfc|1234",
+            "HDFC Bank",
+            "hdfc bank",
+            "1234",
+            "INR",
+            "reported",
+            100000,
+            1000,
+            "VM-HDFCBK",
+            100000,
+            1000,
+            0,
+            0,
+            0,
+            0,
+          ),
+      ).not.toThrow();
+
+      expect(() =>
+        ctx.sqlite
+          .prepare(
+            "INSERT INTO accounts (id, bank_name, bank_key, last4, currency, anchor_status, balance_minor_units, balance_as_of, balance_sender, estimated_balance_minor_units, estimated_as_of, captured_income_minor_units, captured_expense_minor_units, captured_change_minor_units, captured_transaction_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          )
+          .run(
+            "icici|5678",
+            "ICICI Bank",
+            "icici bank",
+            "5678",
+            "INR",
+            "reported",
+            50000,
+            1000,
+            "VM-ICICIB",
+            50000,
+            1000,
+            10000,
+            0,
+            10000,
+            3,
+          ),
+      ).not.toThrow();
+    });
+  });
+
+  describe("accounts captured income/expense/change invariants", () => {
+    // Shared insert helper — only the four captured-* values vary between
+    // cases below; everything else is fixed, valid boilerplate.
+    let nextAccountId = 0;
+    function insertAccountCaptured(
+      capturedIncome: number,
+      capturedExpense: number,
+      capturedChange: number,
+      capturedTransactionCount: number,
+    ) {
+      nextAccountId++;
+      return ctx.sqlite
+        .prepare(
+          "INSERT INTO accounts (id, bank_name, bank_key, last4, currency, anchor_status, balance_minor_units, balance_as_of, balance_sender, estimated_balance_minor_units, estimated_as_of, captured_income_minor_units, captured_expense_minor_units, captured_change_minor_units, captured_transaction_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          `hdfc|${nextAccountId}`,
+          "HDFC Bank",
+          "hdfc bank",
+          `${nextAccountId}`,
+          "INR",
+          "reported",
+          100000,
+          1000,
+          "VM-HDFCBK",
+          100000,
+          1000,
+          capturedIncome,
+          capturedExpense,
+          capturedChange,
+          capturedTransactionCount,
+        );
+    }
+
+    it("rejects a negative captured_income_minor_units", () => {
+      expect(() => insertAccountCaptured(-100, 0, -100, 1)).toThrow(/CHECK constraint failed/);
+    });
+
+    it("rejects a negative captured_expense_minor_units", () => {
+      expect(() => insertAccountCaptured(0, -100, 100, 1)).toThrow(/CHECK constraint failed/);
+    });
+
+    it("rejects captured_change that doesn't equal income minus expense", () => {
+      expect(() => insertAccountCaptured(500, 200, 999, 2)).toThrow(/CHECK constraint failed/);
+    });
+
+    it("accepts captured_change that correctly equals income minus expense, including a negative result", () => {
+      expect(() => insertAccountCaptured(500, 200, 300, 2)).not.toThrow();
+      expect(() => insertAccountCaptured(200, 500, -300, 2)).not.toThrow();
+    });
+
+    it("rejects a zero captured_transaction_count with a non-zero captured amount", () => {
+      expect(() => insertAccountCaptured(500, 0, 500, 0)).toThrow(/CHECK constraint failed/);
+      expect(() => insertAccountCaptured(0, 500, -500, 0)).toThrow(/CHECK constraint failed/);
+      expect(() => insertAccountCaptured(0, 0, 100, 0)).toThrow(/CHECK constraint failed/);
+    });
+
+    it("accepts a zero captured_transaction_count only when every captured amount is also zero", () => {
+      expect(() => insertAccountCaptured(0, 0, 0, 0)).not.toThrow();
+    });
+  });
+
+  describe("balance_readings association_kind/account_id invariant", () => {
+    // A reading is only ever written with a non-null account_id when
+    // db/projections.ts calls projectBalanceReading for a reading inside a
+    // confirmed AccountBalance.history — association kind 'confirmed'.
+    // Every 'suggested'/'unassigned' reading is always written with
+    // accountId null, even once 'suggested' picks a sole-candidate account
+    // for display — the suggestion is presentation-only and never becomes
+    // a real foreign key. This CHECK makes the contradictory combinations
+    // (confirmed+null, unassigned+non-null) impossible at the database
+    // level, not just by projections.ts's own convention.
+    function seedLedgerRow(id: string) {
+      ctx.db
+        .insert(schema.smsLedger)
+        .values({
+          id,
+          sender: "VM-HDFCBK",
+          body: "test",
+          date: 1000,
+          parserVersion: "1.0.0",
+          parsedResult: "{}",
+          ingestionStatus: "parsed",
+          createdAt: 1000,
+        })
+        .run();
+    }
+
+    function seedAccount(id: string) {
+      ctx.sqlite
+        .prepare(
+          "INSERT INTO accounts (id, bank_name, bank_key, last4, currency, anchor_status, balance_minor_units, balance_as_of, balance_sender, estimated_balance_minor_units, estimated_as_of, captured_income_minor_units, captured_expense_minor_units, captured_change_minor_units, captured_transaction_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          id,
+          "HDFC Bank",
+          "hdfc bank",
+          "1234",
+          "INR",
+          "reported",
+          100000,
+          1000,
+          "VM-HDFCBK",
+          100000,
+          1000,
+          0,
+          0,
+          0,
+          0,
+        );
+    }
+
+    it("rejects association_kind=confirmed with a null account_id", () => {
+      seedLedgerRow("sms-br-1");
+      expect(() =>
+        ctx.sqlite
+          .prepare(
+            "INSERT INTO balance_readings (id, sms_id, account_id, balance_minor_units, currency, as_of, detected_bank_name, detected_bank_key, association_kind, sender) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          )
+          .run(
+            "sms-br-1",
+            "sms-br-1",
+            null,
+            100000,
+            "INR",
+            1000,
+            "HDFC Bank",
+            "hdfc bank",
+            "confirmed",
+            "VM-HDFCBK",
+          ),
+      ).toThrow(/CHECK constraint failed/);
+    });
+
+    it("rejects association_kind=unassigned with a non-null account_id", () => {
+      seedLedgerRow("sms-br-2");
+      seedAccount("hdfc|1234");
+      expect(() =>
+        ctx.sqlite
+          .prepare(
+            "INSERT INTO balance_readings (id, sms_id, account_id, balance_minor_units, currency, as_of, detected_bank_name, detected_bank_key, association_kind, sender) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          )
+          .run(
+            "sms-br-2",
+            "sms-br-2",
+            "hdfc|1234",
+            100000,
+            "INR",
+            1000,
+            "HDFC Bank",
+            "hdfc bank",
+            "unassigned",
+            "VM-HDFCBK",
+          ),
+      ).toThrow(/CHECK constraint failed/);
+    });
+
+    it("accepts confirmed with a non-null account_id, and unassigned/suggested with a null one", () => {
+      seedLedgerRow("sms-br-3");
+      seedAccount("hdfc|1234");
+      expect(() =>
+        ctx.sqlite
+          .prepare(
+            "INSERT INTO balance_readings (id, sms_id, account_id, balance_minor_units, currency, as_of, detected_bank_name, detected_bank_key, association_kind, sender) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          )
+          .run(
+            "sms-br-3",
+            "sms-br-3",
+            "hdfc|1234",
+            100000,
+            "INR",
+            1000,
+            "HDFC Bank",
+            "hdfc bank",
+            "confirmed",
+            "VM-HDFCBK",
+          ),
+      ).not.toThrow();
+
+      seedLedgerRow("sms-br-4");
+      expect(() =>
+        ctx.sqlite
+          .prepare(
+            "INSERT INTO balance_readings (id, sms_id, account_id, balance_minor_units, currency, as_of, detected_bank_name, detected_bank_key, association_kind, sender) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          )
+          .run(
+            "sms-br-4",
+            "sms-br-4",
+            null,
+            100000,
+            "INR",
+            1000,
+            "HDFC Bank",
+            "hdfc bank",
+            "unassigned",
+            "VM-HDFCBK",
+          ),
+      ).not.toThrow();
+
+      seedLedgerRow("sms-br-5");
+      expect(() =>
+        ctx.sqlite
+          .prepare(
+            "INSERT INTO balance_readings (id, sms_id, account_id, balance_minor_units, currency, as_of, detected_bank_name, detected_bank_key, association_kind, sender) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          )
+          .run(
+            "sms-br-5",
+            "sms-br-5",
+            null,
+            100000,
+            "INR",
+            1000,
+            "HDFC Bank",
+            "hdfc bank",
+            "suggested",
+            "VM-HDFCBK",
+          ),
+      ).not.toThrow();
+    });
+  });
+
+  describe("activity category/mandate_event/direction invariants", () => {
+    function seedLedgerRow(id: string) {
+      ctx.db
+        .insert(schema.smsLedger)
+        .values({
+          id,
+          sender: "VM-HDFCBK",
+          body: "test",
+          date: 1000,
+          parserVersion: "1.0.0",
+          parsedResult: "{}",
+          ingestionStatus: "parsed",
+          createdAt: 1000,
+        })
+        .run();
+    }
+
+    it("rejects a category outside the ten product categories projectActivityRows ever writes", () => {
+      seedLedgerRow("sms-act-1");
+      expect(() =>
+        ctx.sqlite
+          .prepare(
+            "INSERT INTO activity (id, sms_id, category, date, is_from_card, sender) VALUES (?, ?, ?, ?, ?, ?)",
+          )
+          .run("sms-act-1|GRM_VOID", "sms-act-1", "GRM_VOID", 1000, 0, "VM-HDFCBK"),
+      ).toThrow(/CHECK constraint failed/);
+    });
+
+    it("accepts every one of the ten valid categories", () => {
+      const categories = [
+        "GRM_BANK",
+        "GRM_BILL",
+        "GRM_STOCKUPDATES",
+        "GRM_TRAVEL",
+        "GRM_DELIVERY",
+        "GRM_EVENT",
+        "GRM_APPOINTMENT",
+        "GRM_NOTIF",
+        "GRM_OTP",
+        "GRM_OFFERS",
+      ];
+      categories.forEach((category, index) => {
+        const smsId = `sms-act-cat-${index}`;
+        seedLedgerRow(smsId);
+        expect(() =>
+          ctx.sqlite
+            .prepare(
+              "INSERT INTO activity (id, sms_id, category, date, is_from_card, sender) VALUES (?, ?, ?, ?, ?, ?)",
+            )
+            .run(`${smsId}|${category}`, smsId, category, 1000, 0, "VM-HDFCBK"),
+        ).not.toThrow();
+      });
+    });
+
+    it("rejects a mandate_event outside active/cancelled", () => {
+      seedLedgerRow("sms-act-2");
+      expect(() =>
+        ctx.sqlite
+          .prepare(
+            "INSERT INTO activity (id, sms_id, category, date, mandate_event, is_from_card, sender) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          )
+          .run("sms-act-2|GRM_BANK", "sms-act-2", "GRM_BANK", 1000, "pending", 0, "VM-HDFCBK"),
+      ).toThrow(/CHECK constraint failed/);
+    });
+
+    it("rejects a direction outside income/expense/neutral", () => {
+      seedLedgerRow("sms-act-3");
+      expect(() =>
+        ctx.sqlite
+          .prepare(
+            "INSERT INTO activity (id, sms_id, category, date, direction, is_from_card, sender) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          )
+          .run("sms-act-3|GRM_BANK", "sms-act-3", "GRM_BANK", 1000, "sideways", 0, "VM-HDFCBK"),
+      ).toThrow(/CHECK constraint failed/);
+    });
+
+    it("accepts a non-financial activity row with null amount/currency/direction", () => {
+      seedLedgerRow("sms-act-4");
+      expect(() =>
+        ctx.sqlite
+          .prepare(
+            "INSERT INTO activity (id, sms_id, category, date, is_from_card, sender) VALUES (?, ?, ?, ?, ?, ?)",
+          )
+          .run("sms-act-4|GRM_TRAVEL", "sms-act-4", "GRM_TRAVEL", 1000, 0, "VM-HDFCBK"),
+      ).not.toThrow();
+    });
+
+    // A financial activity row (one whose message also produced a
+    // transactions row) always carries all three of
+    // amount_minor_units/currency/direction together, never a partial
+    // combination — see projectActivityRows's financialRow parameter.
+    it("rejects an amount with null currency and direction (partial financial data)", () => {
+      seedLedgerRow("sms-act-5");
+      expect(() =>
+        ctx.sqlite
+          .prepare(
+            "INSERT INTO activity (id, sms_id, category, date, amount_minor_units, is_from_card, sender) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          )
+          .run("sms-act-5|GRM_BANK", "sms-act-5", "GRM_BANK", 1000, 50000, 0, "VM-HDFCBK"),
+      ).toThrow(/CHECK constraint failed/);
+    });
+
+    it("accepts amount, currency, and direction together (complete financial data)", () => {
+      seedLedgerRow("sms-act-6");
+      expect(() =>
+        ctx.sqlite
+          .prepare(
+            "INSERT INTO activity (id, sms_id, category, date, amount_minor_units, currency, direction, is_from_card, sender) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          )
+          .run(
+            "sms-act-6|GRM_BANK",
+            "sms-act-6",
+            "GRM_BANK",
+            1000,
+            50000,
+            "INR",
+            "expense",
+            0,
+            "VM-HDFCBK",
+          ),
+      ).not.toThrow();
+    });
+  });
+
+  describe("subscriptions confidence/count invariant", () => {
+    // Mirrors lib/subscriptions.ts's own rule exactly: a qualifying run
+    // shorter than 2 occurrences is never turned into a Subscription at
+    // all, so "possible" can only ever mean exactly 2 occurrences and
+    // "likely" only ever 3+ — see the CHECK constraint's own comment in
+    // db/schema.ts.
+    it("rejects confidence=possible with a count other than 2", () => {
+      expect(() =>
+        ctx.sqlite
+          .prepare(
+            "INSERT INTO subscriptions (id, merchant, amount_minor_units, currency, count, last_date, confidence) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          )
+          .run("netflix|inr", "Netflix", 64900, "INR", 3, 1000, "possible"),
+      ).toThrow(/CHECK constraint failed/);
+    });
+
+    it("rejects confidence=likely with a count below 3", () => {
+      expect(() =>
+        ctx.sqlite
+          .prepare(
+            "INSERT INTO subscriptions (id, merchant, amount_minor_units, currency, count, last_date, confidence) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          )
+          .run("spotify|inr", "Spotify", 11900, "INR", 2, 1000, "likely"),
+      ).toThrow(/CHECK constraint failed/);
+    });
+
+    it("accepts the two valid combinations", () => {
+      expect(() =>
+        ctx.sqlite
+          .prepare(
+            "INSERT INTO subscriptions (id, merchant, amount_minor_units, currency, count, last_date, confidence) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          )
+          .run("gym|inr", "Cult Fit", 120000, "INR", 2, 1000, "possible"),
+      ).not.toThrow();
+
+      expect(() =>
+        ctx.sqlite
+          .prepare(
+            "INSERT INTO subscriptions (id, merchant, amount_minor_units, currency, count, last_date, confidence) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          )
+          .run("netflix|inr", "Netflix", 64900, "INR", 24, 1000, "likely"),
+      ).not.toThrow();
+    });
   });
 });

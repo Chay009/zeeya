@@ -1,13 +1,20 @@
-import type { DevicePlatform } from "@/lib/device-message-policy";
+import type { LocalSettings } from "@/db/settings";
 
 /**
- * Realtime Android capture is an explicit automation capability. Foreground
- * inbox reads do not use this predicate and only require READ_SMS.
+ * The JS listener is foreground-only. A backgrounded process must leave the
+ * native pending signal untouched for Android's OS-notification/background
+ * path instead of silently consuming it in a still-alive JS runtime.
  */
 export function shouldSubscribeToRealtimeSms(
-  platform: DevicePlatform,
-  backgroundSyncEnabled: boolean,
+  platform: string,
+  appIsActive: boolean,
   hasCapturePermissions: boolean,
 ): boolean {
-  return platform === "android" && backgroundSyncEnabled && hasCapturePermissions;
+  return platform === "android" && appIsActive && hasCapturePermissions;
+}
+
+export function shouldNotifyBackgroundSms(
+  settings: Pick<LocalSettings, "backgroundSyncEnabled" | "transactionNotificationsEnabled">,
+): boolean {
+  return settings.backgroundSyncEnabled && settings.transactionNotificationsEnabled;
 }

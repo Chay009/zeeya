@@ -1,0 +1,43 @@
+import { useDashboardSync } from "@/features/dashboard/hooks/dashboard-sync-provider";
+import { localQueryKeys } from "@/lib/local-query-keys";
+import { useLocalQuery } from "@/lib/use-local-query";
+
+import { seriesQueryErrorMessage } from "./series-query-error";
+
+export { seriesQueryErrorMessage } from "./series-query-error";
+
+export interface SeriesQueryState<T> {
+  value: T | null;
+  error: string | null;
+  isInitialLoading: boolean;
+}
+
+// TanStack Query-backed series reads for Insights charts. Keeps the last
+// good series visible while a refresh or projection revision is in flight.
+export function useSeriesQuery<T>(
+  seriesKey: string,
+  fetch: () => Promise<T>,
+  deps: readonly unknown[],
+  enabled = true,
+): SeriesQueryState<T> {
+  const { syncRevision } = useDashboardSync();
+
+  const { data, error, isInitialLoading } = useLocalQuery({
+    queryKey: localQueryKeys.series(seriesKey, syncRevision, deps),
+    queryFn: async () => {
+      try {
+        return await fetch();
+      } catch (cause: unknown) {
+        console.error("Zeeya insights series query failed", cause);
+        throw new Error(seriesQueryErrorMessage(cause));
+      }
+    },
+    enabled,
+  });
+
+  return {
+    value: data ?? null,
+    error,
+    isInitialLoading,
+  };
+}

@@ -58,8 +58,16 @@ vi.mock("./client", () => ({
   },
 }));
 
-const { ingestSmsBatch, getSyncStatus, loadDashboard, loadTransactions, computeFingerprint } =
-  await import("./ingestion");
+const {
+  computeFingerprint,
+  ensureDashboardProjectionCurrent,
+  getProjectionStatus,
+  getSyncStatus,
+  ingestSmsBatch,
+  loadDashboard,
+  loadTransactions,
+  queryTransactionPage,
+} = await import("./ingestion");
 
 const HDFC_DEBIT =
   "INR 5,000.00 debited from account XX1234 on 09-08-2026. Avail Bal: INR 12,500.00";
@@ -108,6 +116,9 @@ describe("ingestSmsBatch", () => {
     expect(rows[0]!.ingestionStatus).toBe("parsed");
     expect(rows[0]!.parsedResult).not.toBeNull();
     expect(JSON.parse(rows[0]!.parsedResult!).trx).toBe("5000.00");
+    expect(testDb.select().from(schema.smsArrivals).all()).toEqual([
+      { sequence: 1, smsId: rows[0]!.id },
+    ]);
   });
 
   it("is idempotent AND does not re-parse already-ingested messages", async () => {
@@ -975,6 +986,12 @@ describe("loadDashboard", () => {
     const dashboard = await loadDashboard();
     expect(dashboard.recent[0]!.result.bankName).toBe("State Bank of India");
     expect(parseSpy).toHaveBeenCalledTimes(1);
+    const dirty = await getProjectionStatus();
+    expect(dirty.sourceRevision).toBeGreaterThan(dirty.projectedRevision);
+
+    await ensureDashboardProjectionCurrent();
+    const repaired = await getProjectionStatus();
+    expect(repaired.projectedRevision).toBe(repaired.sourceRevision);
 
     await loadDashboard();
     expect(parseSpy).toHaveBeenCalledTimes(1);
@@ -1081,13 +1098,79 @@ describe("loadTransactions", () => {
     testDb = freshDb();
   });
 
-  it("filters by date range", async () => {
+  it("filters inclusively by both date bounds and returns newest first", async () => {
     await ingestSmsBatch([
       rawSms({ id: "1", body: HDFC_DEBIT, date: 1000 }),
-      rawSms({ id: "2", body: HDFC_DEBIT, date: 5000 }),
+      rawSms({ id: "2", body: HDFC_DEBIT, date: 3000 }),
+      rawSms({ id: "3", body: HDFC_DEBIT, date: 5000 }),
     ]);
 
-    const filtered = await loadTransactions({ from: 2000 });
-    expect(filtered.map((m) => m.date)).toEqual([5000]);
+    const all = await loadTransactions();
+    const filtered = await loadTransactions({ from: 3000, to: 5000 });
+
+    expect(all.map((m) => m.date)).toEqual([5000, 3000, 1000]);
+    expect(filtered.map((m) => m.date)).toEqual([5000, 3000]);
+  });
+
+  it("paginates transactions with a stable cursor while SQLite applies filters", async () => {
+    await ingestSmsBatch([
+      rawSms({ id: "page-1", body: HDFC_DEBIT, date: 1000 }),
+      rawSms({ id: "page-2", body: HDFC_DEBIT, date: 2000 }),
+      rawSms({ id: "page-3", body: HDFC_DEBIT, date: 3000 }),
+      rawSms({ id: "page-4", body: HDFC_DEBIT, date: 4000 }),
+    ]);
+
+    const first = await queryTransactionPage({ currency: "INR", direction: "expense", limit: 2 });
+    const second = await queryTransactionPage({
+      currency: "INR",
+      direction: "expense",
+      limit: 2,
+      cursor: first.nextCursor ?? undefined,
+    });
+
+    expect(first.items.map((message) => message.date)).toEqual([4000, 3000]);
+    expect(first.items[0]).not.toHaveProperty("body");
+    expect(first.items[0]).not.toHaveProperty("result");
+    expect(first.nextCursor).toBeDefined();
+    expect(second.items.map((message) => message.date)).toEqual([2000, 1000]);
+    expect(second.nextCursor).toBeNull();
+  });
+
+  it("applies merchant search and category filters in SQLite", async () => {
+    await ingestSmsBatch([
+      rawSms({ id: "swiggy", body: HDFC_DEBIT, date: 1000 }),
+      rawSms({ id: "zomato", body: HDFC_DEBIT, date: 2000 }),
+    ]);
+    testDb
+      .update(schema.transactions)
+      .set({ vendor: "Swiggy", merchantCategory: "food", category: "Food" })
+      .where(eq(schema.transactions.date, 1000))
+      .run();
+    testDb
+      .update(schema.transactions)
+      .set({ vendor: "Zomato", merchantCategory: "Dining", category: "Dining" })
+      .where(eq(schema.transactions.date, 2000))
+      .run();
+
+    const page = await queryTransactionPage({ search: "wig", category: "Food" });
+
+    expect(page.items.map((message) => message.date)).toEqual([1000]);
+  });
+
+  it("filters by the canonical category shown by aggregates, not the raw parser casing", async () => {
+    await ingestSmsBatch([rawSms({ id: "upi", body: HDFC_DEBIT, date: 1000 })]);
+    testDb
+      .update(schema.transactions)
+      .set({ merchantCategory: null, subcategory: "upi", category: "Upi" })
+      .run();
+
+    const page = await queryTransactionPage({ category: "Upi" });
+
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0]?.category).toBe("Upi");
+  });
+
+  it("rejects transaction page limits outside the bounded contract", async () => {
+    await expect(queryTransactionPage({ limit: 101 })).rejects.toThrow(/1 to 100/);
   });
 });
