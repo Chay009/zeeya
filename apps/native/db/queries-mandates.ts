@@ -3,7 +3,7 @@
 // drizzle-orm's sync query builder against the already-open, already-keyed
 // connection (db/client.native.ts's `db` — never a second connection), the
 // same pattern as db/queries-accounts.ts.
-import { and, desc, eq, lt, or, type SQL } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, or, type SQL } from "drizzle-orm";
 import type {
   MandateCursor,
   MandateEventCursor,
@@ -145,4 +145,53 @@ export async function queryMandateEvents(query: MandateEventQuery): Promise<Mand
     items,
     nextCursor: hasMore && last ? { date: last.date, id: last.id } : null,
   };
+}
+
+// SQLite's default bound-parameter ceiling is 999; stay well under it.
+const MANDATE_ID_CHUNK = 500;
+
+// Latest events for MANY mandates in one pass — the subscriptions catalog
+// used to call queryMandateEvents once per mandate (N queries, and N
+// projection-freshness checks). One freshness check, one indexed read per
+// chunk of ids, grouped in memory. Each mandate's list is newest-first
+// (date DESC, id DESC — same order as queryMandateEvents) and capped at
+// `limitPerMandate`. Every requested id gets an entry, empty if it has no
+// events.
+export async function queryMandateEventsForMandates(
+  mandateIds: readonly string[],
+  limitPerMandate: number = MANDATE_EVENTS_DEFAULT_LIMIT,
+): Promise<Map<string, MandateEventSummary[]>> {
+  const limit = validatedLimit(
+    limitPerMandate,
+    MANDATE_EVENTS_DEFAULT_LIMIT,
+    MANDATE_EVENTS_MAX_LIMIT,
+    "Mandate event page",
+  );
+  const uniqueIds = [...new Set(mandateIds)];
+  const grouped = new Map<string, MandateEventSummary[]>(uniqueIds.map((id) => [id, []]));
+  if (uniqueIds.length === 0) return grouped;
+
+  const database = requireDb();
+  await ensureDashboardProjectionCurrent();
+
+  for (let start = 0; start < uniqueIds.length; start += MANDATE_ID_CHUNK) {
+    const chunk = uniqueIds.slice(start, start + MANDATE_ID_CHUNK);
+    const rows: MandateEventSummary[] = await database
+      .select({
+        id: mandateEvents.id,
+        mandateId: mandateEvents.mandateId,
+        status: mandateEvents.status,
+        date: mandateEvents.date,
+        sender: mandateEvents.sender,
+      })
+      .from(mandateEvents)
+      .where(inArray(mandateEvents.mandateId, chunk))
+      .orderBy(desc(mandateEvents.date), desc(mandateEvents.id));
+
+    for (const row of rows) {
+      const bucket = grouped.get(row.mandateId);
+      if (bucket && bucket.length < limit) bucket.push(row);
+    }
+  }
+  return grouped;
 }

@@ -932,6 +932,13 @@ export interface FinanceDataSource {
     // mandate over its lifetime, unlike the mandate row itself — paginated
     // the same way balance history is.
     listEvents(input: MandateEventQuery): Promise<MandateEventPage>;
+    // Latest events for many mandates in one read (newest-first, capped per
+    // mandate) — for list screens that need every mandate's recent history
+    // at once, instead of one listEvents call per mandate.
+    listRecentEventsFor(
+      mandateIds: readonly string[],
+      limitPerMandate?: number,
+    ): Promise<Map<string, MandateEventSummary[]>>;
   };
   subscriptions: {
     // Unpaginated: subscriptions are one row per distinct merchant+currency

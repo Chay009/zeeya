@@ -56,7 +56,9 @@ vi.mock("./client", () => ({
   },
 }));
 
-const { queryMandateEvents, queryMandates } = await import("./queries-mandates");
+const { queryMandateEvents, queryMandateEventsForMandates, queryMandates } = await import(
+  "./queries-mandates"
+);
 
 function result(overrides: Partial<MalanaResult>): MalanaResult {
   return {
@@ -389,6 +391,67 @@ describe("queryMandateEvents", () => {
     const page = await queryMandateEvents({ mandateId: "nonexistent" });
     expect(page.items).toEqual([]);
     expect(page.nextCursor).toBeNull();
+  });
+});
+
+describe("queryMandateEventsForMandates", () => {
+  it("groups each mandate's events, newest-first, with no cross-mandate leakage", async () => {
+    useFreshDb();
+    seedAndProject(
+      [
+        mandateMessage("a-1", 1000, { mandateId: "UMN-A", mandateMerchant: "Netflix", mandateEvent: "active" }),
+        mandateMessage("a-2", 3000, { mandateId: "UMN-A", mandateMerchant: "Netflix", mandateEvent: "cancelled" }),
+        mandateMessage("b-1", 2000, { mandateId: "UMN-B", mandateMerchant: "Spotify", mandateEvent: "active" }),
+      ],
+      new Date(5000),
+    );
+
+    const grouped = await queryMandateEventsForMandates(["UMN-A", "UMN-B"]);
+    expect(grouped.get("UMN-A")!.map((event) => event.status)).toEqual(["cancelled", "active"]);
+    expect(grouped.get("UMN-A")!.every((event) => event.mandateId === "UMN-A")).toBe(true);
+    expect(grouped.get("UMN-B")!).toHaveLength(1);
+    expect(grouped.get("UMN-B")![0]!.mandateId).toBe("UMN-B");
+  });
+
+  it("matches queryMandateEvents' first page for every mandate", async () => {
+    useFreshDb();
+    seedAndProject(
+      Array.from({ length: 5 }, (_, index) =>
+        mandateMessage(`m-${index}`, 1000 + index * 1000, {
+          mandateEvent: index % 2 === 0 ? "active" : "cancelled",
+        }),
+      ),
+      new Date(10000),
+    );
+
+    const grouped = await queryMandateEventsForMandates(["UMN123456789"], 3);
+    const page = await queryMandateEvents({ mandateId: "UMN123456789", limit: 3 });
+    expect(grouped.get("UMN123456789")).toEqual(page.items);
+  });
+
+  it("caps each mandate at the per-mandate limit", async () => {
+    useFreshDb();
+    seedAndProject(
+      Array.from({ length: 4 }, (_, index) => mandateMessage(`m-${index}`, 1000 + index * 1000)),
+      new Date(10000),
+    );
+    const grouped = await queryMandateEventsForMandates(["UMN123456789"], 2);
+    expect(grouped.get("UMN123456789")).toHaveLength(2);
+  });
+
+  it("returns an empty list for unknown ids and an empty map for no ids", async () => {
+    useFreshDb();
+    seedAndProject([], new Date(2000));
+    const grouped = await queryMandateEventsForMandates(["nonexistent", "nonexistent"]);
+    expect([...grouped.entries()]).toEqual([["nonexistent", []]]);
+    expect((await queryMandateEventsForMandates([])).size).toBe(0);
+  });
+
+  it("rejects a per-mandate limit outside the valid range", async () => {
+    useFreshDb();
+    seedAndProject([], new Date(2000));
+    await expect(queryMandateEventsForMandates(["x"], 0)).rejects.toThrow(/limit/i);
+    await expect(queryMandateEventsForMandates(["x"], 101)).rejects.toThrow(/limit/i);
   });
 });
 

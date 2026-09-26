@@ -14,7 +14,11 @@ import {
   queryDetectedAccounts,
   queryUnassignedReadings,
 } from "@/db/queries-accounts";
-import { queryMandateEvents, queryMandates } from "@/db/queries-mandates";
+import {
+  queryMandateEvents,
+  queryMandateEventsForMandates,
+  queryMandates,
+} from "@/db/queries-mandates";
 import {
   queryActivityDetail,
   queryActivityPage,
@@ -57,6 +61,7 @@ export const financeDataSource: FinanceDataSource = {
   mandates: {
     list: queryMandates,
     listEvents: queryMandateEvents,
+    listRecentEventsFor: queryMandateEventsForMandates,
   },
   subscriptions: {
     list: async ({ at } = {}) => {

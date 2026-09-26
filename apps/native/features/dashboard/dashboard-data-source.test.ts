@@ -18,6 +18,7 @@ const dependencies = vi.hoisted(() => ({
   queryActivityDetail: vi.fn(async () => null),
   queryMandates: vi.fn(async () => ({ items: [], nextCursor: null })),
   queryMandateEvents: vi.fn(async () => ({ items: [], nextCursor: null })),
+  queryMandateEventsForMandates: vi.fn(async () => new Map()),
   querySubscriptions: vi.fn(async () => []),
   queryDailySeries: vi.fn(async () => []),
   queryMonthlySeries: vi.fn(async () => []),
@@ -67,6 +68,7 @@ vi.mock("@/db/queries-accounts", () => ({
 vi.mock("@/db/queries-mandates", () => ({
   queryMandates: dependencies.queryMandates,
   queryMandateEvents: dependencies.queryMandateEvents,
+  queryMandateEventsForMandates: dependencies.queryMandateEventsForMandates,
 }));
 
 vi.mock("@/db/queries-transactions", () => ({
@@ -166,9 +168,11 @@ describe("dashboardDataSource", () => {
   it("exposes the mandate family behind the same storage-neutral boundary", async () => {
     await financeDataSource.mandates.list({ limit: 25 });
     await financeDataSource.mandates.listEvents({ mandateId: "UMN123" });
+    await financeDataSource.mandates.listRecentEventsFor(["UMN123", "UMN456"], 30);
 
     expect(dependencies.queryMandates).toHaveBeenCalledWith({ limit: 25 });
     expect(dependencies.queryMandateEvents).toHaveBeenCalledWith({ mandateId: "UMN123" });
+    expect(dependencies.queryMandateEventsForMandates).toHaveBeenCalledWith(["UMN123", "UMN456"], 30);
   });
 
   it("repairs an interrupted projection before listing subscriptions, defaulting `at` to now", async () => {
