@@ -3,7 +3,7 @@ import { View } from "react-native";
 
 import { AppText as Text } from "@/components/app-text";
 import { AppIcon, type AppIconName } from "@/components/icon";
-import { hp } from "../theme";
+import { useThemeColors } from "@/components/ui/theme";
 
 export function EmptyNote({
   icon,
@@ -14,10 +14,11 @@ export function EmptyNote({
   title: string;
   body: string;
 }) {
+  const colors = useThemeColors();
   return (
     <View className="items-center px-3 py-6">
       <View className="h-12 w-12 items-center justify-center rounded-full bg-accent-soft">
-        <AppIcon name={icon} size={26} color={hp.accent} />
+        <AppIcon name={icon} size={26} color={colors.accent} />
       </View>
       <Text className="mt-3 text-center text-subtitle font-semibold text-ink">{title}</Text>
       <Text className="mt-1.5 max-w-[260px] text-center text-caption leading-[18px] text-muted">

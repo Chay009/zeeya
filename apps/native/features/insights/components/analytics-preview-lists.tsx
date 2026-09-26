@@ -9,7 +9,7 @@ import { EmptyNote } from "@/features/home-preview/components/empty-note";
 import { BrandLogo } from "@/features/home-preview/components/brand-logo";
 import { merchantVisual } from "@/features/home-preview/data";
 import { formatMoney } from "@/features/dashboard/utils/format";
-import { hp } from "@/features/home-preview/theme";
+import { useThemeColors } from "@/components/ui/theme";
 import { fromMinorUnits } from "@/lib/currency";
 
 import { analyticsTrendChip } from "../analytics-trend";
@@ -53,6 +53,7 @@ function translucent(hex: string, alpha: number): string {
 }
 
 function CategoryRing({ pct, color }: { pct: number; color: string }) {
+  const colors = useThemeColors();
   const visiblePct = Math.max(0, Math.min(100, pct));
   const dashOffset = RING_CIRCUMFERENCE * (1 - visiblePct / 100);
 
@@ -64,7 +65,7 @@ function CategoryRing({ pct, color }: { pct: number; color: string }) {
           cy={RING_SIZE / 2}
           r={RING_RADIUS}
           fill="transparent"
-          stroke={hp.track}
+          stroke={colors.fillStrong}
           strokeWidth={RING_STROKE}
         />
         <Circle
@@ -167,6 +168,7 @@ export function AnalyticsTransactionsPreview({
   onRetry?: () => void;
   bare?: boolean;
 }) {
+  const colors = useThemeColors();
   const preview = items.slice(0, PREVIEW_ROW_LIMIT);
   const title = direction === "income" ? "Recent income" : "Recent spending";
   const hasRows = preview.length > 0;
@@ -174,11 +176,11 @@ export function AnalyticsTransactionsPreview({
   return (
     <AnalyticsPreviewSection title={title} onSeeAll={hasRows ? onSeeAll : undefined} bare={bare}>
       {status === "loading" ? (
-        <Text className="text-caption text-muted-soft">Loading recent transactions…</Text>
+        <Text className="text-caption text-muted">Loading recent transactions…</Text>
       ) : status === "error" ? (
         <View>
           <Text className="text-caption font-bold text-ink">Couldn&apos;t load transactions</Text>
-          <Text className="mt-1 text-caption text-muted-soft" numberOfLines={3}>
+          <Text className="mt-1 text-caption text-muted" numberOfLines={3}>
             {error ?? "Try again in a moment."}
           </Text>
           {onRetry ? (
@@ -192,7 +194,7 @@ export function AnalyticsTransactionsPreview({
           {preview.map((item, index) => (
             <ActivityItemRow
               key={`preview:${item.key}:${item.date}`}
-              item={mapInsightsTransactionToActivityRow(item, direction)}
+              item={mapInsightsTransactionToActivityRow(item, direction, colors)}
               index={index}
               onPress={() => onSelect(item)}
             />
@@ -239,7 +241,7 @@ export function AnalyticsVendorsPreview({
 
           return (
             <View key={`vendor:${vendor.vendor}`} className="flex-row items-center gap-3 py-3">
-              <View className="h-7 w-7 shrink-0 items-center justify-center rounded-full bg-frost">
+              <View className="h-7 w-7 shrink-0 items-center justify-center rounded-full bg-fill">
                 <Text className="text-meta font-extrabold text-muted">{index + 1}</Text>
               </View>
               <BrandLogo

@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppIcon } from "@/components/icon";
 
-import { useNativeUiTheme } from "./theme";
+import { useThemeColors } from "@/components/ui/theme";
 
 export type NativeBottomSheetProps = {
   isOpen: boolean;
@@ -32,7 +32,7 @@ export function NativeBottomSheet({
   children,
   snapPoints = ["70%"],
 }: NativeBottomSheetProps) {
-  const { colors } = useNativeUiTheme();
+  const colors = useThemeColors();
   const insets = useSafeAreaInsets();
   const reducedMotion = useReducedMotion();
 
@@ -52,7 +52,7 @@ export function NativeBottomSheet({
           enableDynamicSizing={false}
           enablePanDownToClose
           backgroundStyle={{
-            backgroundColor: colors.surfaceRaised,
+            backgroundColor: colors.card,
             borderTopLeftRadius: 28,
             borderTopRightRadius: 28,
           }}
@@ -113,7 +113,7 @@ export function NativeBottomSheet({
                   alignItems: "center",
                   justifyContent: "center",
                   borderRadius: 16,
-                  backgroundColor: colors.surfacePressed,
+                  backgroundColor: colors.fill,
                 }}
               >
                 <AppIcon name="close" size={20} color={colors.ink} />

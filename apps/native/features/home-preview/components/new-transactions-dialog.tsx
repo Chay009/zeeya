@@ -2,7 +2,7 @@ import { View } from "react-native";
 
 import { AppText as Text } from "@/components/app-text";
 import { NativeBottomSheet } from "@/components/native-ui/native-bottom-sheet";
-import { useNativeUiColors } from "@/components/native-ui/theme";
+import { Row, RowGroup } from "@/components/ui/list";
 
 import type { NewTransactionSummary } from "../data";
 
@@ -16,54 +16,39 @@ export function NewTransactionsDialog({
   onDismiss: () => void;
 }) {
   const isOpen = transactions.length > 0;
-  const colors = useNativeUiColors();
 
   return (
     <NativeBottomSheet
       isOpen={isOpen}
       onOpenChange={(open) => !open && onDismiss()}
       title={total === 1 ? "1 new transaction" : `${total} new transactions`}
-      description="Zeeya caught up with your latest financial activity."
+      description="Caught up with your latest activity."
     >
-      <View style={{ gap: 4 }}>
-        {transactions.slice(0, 8).map((transaction, index) => (
-          <View
+      <RowGroup variant="transparent" inset={0} className="rounded-none">
+        {transactions.slice(0, 8).map((transaction) => (
+          <Row
             key={transaction.key}
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 12,
-              paddingVertical: 10,
-              borderTopWidth: index === 0 ? 0 : 1,
-              borderTopColor: colors.border,
-            }}
-          >
-            <Text
-              numberOfLines={1}
-              style={{ flex: 1, fontSize: 14, fontWeight: "700", color: colors.ink }}
-            >
-              {transaction.name}
-            </Text>
-            {transaction.amount && (
-              <Text
-                style={{
-                  fontSize: 14,
-                  fontWeight: "800",
-                  color: transaction.direction === "income" ? colors.accent : colors.ink,
-                }}
-              >
-                {transaction.amount}
-              </Text>
-            )}
-          </View>
+            className="min-h-[52px] px-0"
+            title={transaction.name}
+            trailing={
+              transaction.amount ? (
+                <Text
+                  className={`text-body font-semibold ${
+                    transaction.direction === "income" ? "text-positive" : "text-ink"
+                  }`}
+                >
+                  {transaction.amount}
+                </Text>
+              ) : undefined
+            }
+          />
         ))}
-        {total > 8 && (
-          <Text style={{ marginTop: 4, fontSize: 12, color: colors.muted }}>
-            +{total - 8} more in Recent activity
-          </Text>
-        )}
-      </View>
+      </RowGroup>
+      {total > 8 ? (
+        <View className="pt-2">
+          <Text className="text-caption text-muted">+{total - 8} more in Transactions</Text>
+        </View>
+      ) : null}
     </NativeBottomSheet>
   );
 }

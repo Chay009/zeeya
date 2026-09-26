@@ -1,7 +1,7 @@
 import { Pressable, View } from "react-native";
 
 import { AppText as Text } from "@/components/app-text";
-import { hp } from "@/features/home-preview/theme";
+import { useThemeColors } from "@/components/ui/theme";
 import { moneyFontFamily } from "@/lib/fonts";
 
 import { analyticsTabChartTitle } from "../analytics-format";
@@ -64,10 +64,11 @@ export function AnalyticsHero({
   onRetry: () => void;
   at: Date;
 }) {
-  const theme = analyticsTabTheme(tab);
+  const colors = useThemeColors();
+  const theme = analyticsTabTheme(tab, colors);
   const hasDaily = dailySeries.some((point) => point.value > 0);
   const hasMonthly = monthlySeries.some((point) => point.value > 0);
-  const activeBarColor = direction === "income" ? hp.positive : hp.coralBar;
+  const activeBarColor = direction === "income" ? colors.positive : colors.negative;
   return (
     <AnalyticsCard>
       <Text

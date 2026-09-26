@@ -7,12 +7,11 @@ import { formatMoney } from "@/features/dashboard/utils/format";
 import { fromMinorUnits } from "@/lib/currency";
 
 import type { InsightsPresentation } from "../insights-presentation";
-import { hp } from "../../home-preview/theme";
+import { useThemeColors, type ThemeColors } from "@/components/ui/theme";
 
 const PANEL_STYLE = {
   marginTop: 14,
   borderRadius: 24,
-  borderColor: hp.border,
   padding: 18,
 } as const;
 
@@ -25,16 +24,18 @@ function Panel({
   subtitle?: string;
   children: React.ReactNode;
 }) {
+  const colors = useThemeColors();
   return (
     <GlassSurface effectStyle="clear" elevated accessibilityLabel={title} style={PANEL_STYLE}>
-      <Text style={{ fontSize: 17, fontWeight: "800", color: hp.ink }}>{title}</Text>
-      {subtitle && <Text style={{ marginTop: 4, fontSize: 12, color: hp.muted }}>{subtitle}</Text>}
+      <Text style={{ fontSize: 17, fontWeight: "800", color: colors.ink }}>{title}</Text>
+      {subtitle && <Text style={{ marginTop: 4, fontSize: 12, color: colors.muted }}>{subtitle}</Text>}
       {children}
     </GlassSurface>
   );
 }
 
 function EmptyPanel({ title, body }: { title: string; body: string }) {
+  const colors = useThemeColors();
   return (
     <View style={{ alignItems: "center", paddingVertical: 22, paddingHorizontal: 8 }}>
       <View
@@ -44,14 +45,14 @@ function EmptyPanel({ title, body }: { title: string; body: string }) {
           alignItems: "center",
           justifyContent: "center",
           borderRadius: 21,
-          backgroundColor: hp.surfaceMuted,
+          backgroundColor: colors.fill,
         }}
       >
-        <AppIcon name="sparkles" size={20} color={hp.muted} />
+        <AppIcon name="sparkles" size={20} color={colors.muted} />
       </View>
-      <Text style={{ marginTop: 10, fontSize: 14, fontWeight: "800", color: hp.ink }}>{title}</Text>
+      <Text style={{ marginTop: 10, fontSize: 14, fontWeight: "800", color: colors.ink }}>{title}</Text>
       <Text
-        style={{ marginTop: 4, fontSize: 12, lineHeight: 18, textAlign: "center", color: hp.muted }}
+        style={{ marginTop: 4, fontSize: 12, lineHeight: 18, textAlign: "center", color: colors.muted }}
       >
         {body}
       </Text>
@@ -65,9 +66,9 @@ function changeLabel(percent: number | null): string {
   return `${percent > 0 ? "+" : ""}${percent}% vs last month`;
 }
 
-function changeColor(percent: number | null): string {
-  if (percent === null || percent === 0) return hp.muted;
-  return percent > 0 ? hp.coral : hp.positive;
+function changeColor(percent: number | null, colors: ThemeColors): string {
+  if (percent === null || percent === 0) return colors.muted;
+  return percent > 0 ? colors.negative : colors.positive;
 }
 
 function AmountPair({
@@ -79,13 +80,14 @@ function AmountPair({
   previous: number;
   currency: string;
 }) {
+  const colors = useThemeColors();
   return (
     <View style={{ alignItems: "flex-end", gap: 2 }}>
       <Text
         numberOfLines={1}
         adjustsFontSizeToFit
         minimumFontScale={0.7}
-        style={{ fontSize: 16, fontWeight: "800", color: hp.ink }}
+        style={{ fontSize: 16, fontWeight: "800", color: colors.ink }}
       >
         {formatMoney(fromMinorUnits(current, currency), currency)}
       </Text>
@@ -93,7 +95,7 @@ function AmountPair({
         numberOfLines={1}
         adjustsFontSizeToFit
         minimumFontScale={0.7}
-        style={{ fontSize: 11, color: hp.muted }}
+        style={{ fontSize: 11, color: colors.muted }}
       >
         {formatMoney(fromMinorUnits(previous, currency), currency)} last month
       </Text>
@@ -102,6 +104,7 @@ function AmountPair({
 }
 
 export function InsightsMonthTotalsPanel({ data }: { data: InsightsPresentation }) {
+  const colors = useThemeColors();
   const current = data.currentMonth;
   const previous = data.previousMonth;
   const rows = [
@@ -125,12 +128,12 @@ export function InsightsMonthTotalsPanel({ data }: { data: InsightsPresentation 
               alignItems: "center",
               justifyContent: "space-between",
               borderTopWidth: index === 0 ? 0 : 1,
-              borderTopColor: hp.divider,
+              borderTopColor: colors.divider,
             }}
           >
             <View>
-              <Text style={{ fontSize: 13, fontWeight: "700", color: hp.ink }}>{label}</Text>
-              <Text style={{ marginTop: 2, fontSize: 11, color: hp.muted }}>
+              <Text style={{ fontSize: 13, fontWeight: "700", color: colors.ink }}>{label}</Text>
+              <Text style={{ marginTop: 2, fontSize: 11, color: colors.muted }}>
                 Current · previous
               </Text>
             </View>
@@ -143,6 +146,7 @@ export function InsightsMonthTotalsPanel({ data }: { data: InsightsPresentation 
 }
 
 export function InsightsCategoriesPanel({ data }: { data: InsightsPresentation }) {
+  const colors = useThemeColors();
   return (
     <Panel title="Top categories" subtitle="Current month compared with the previous month">
       {data.topCategories.length === 0 ? (
@@ -161,7 +165,7 @@ export function InsightsCategoriesPanel({ data }: { data: InsightsPresentation }
                 alignItems: "center",
                 gap: 10,
                 borderTopWidth: index === 0 ? 0 : 1,
-                borderTopColor: hp.divider,
+                borderTopColor: colors.divider,
               }}
             >
               <View
@@ -171,17 +175,17 @@ export function InsightsCategoriesPanel({ data }: { data: InsightsPresentation }
                   alignItems: "center",
                   justifyContent: "center",
                   borderRadius: 17,
-                  backgroundColor: hp.accentSoft,
+                  backgroundColor: colors.accentSoft,
                 }}
               >
-                <AppIcon name="pie-chart" size={17} color={hp.accent} />
+                <AppIcon name="pie-chart" size={17} color={colors.accent} />
               </View>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text numberOfLines={1} style={{ fontSize: 13, fontWeight: "800", color: hp.ink }}>
+                <Text numberOfLines={1} style={{ fontSize: 13, fontWeight: "800", color: colors.ink }}>
                   {category.category}
                 </Text>
                 <Text
-                  style={{ marginTop: 3, fontSize: 11, color: changeColor(category.changePercent) }}
+                  style={{ marginTop: 3, fontSize: 11, color: changeColor(category.changePercent, colors) }}
                 >
                   {changeLabel(category.changePercent)}
                 </Text>
@@ -200,6 +204,7 @@ export function InsightsCategoriesPanel({ data }: { data: InsightsPresentation }
 }
 
 export function InsightsSubscriptionsPanel({ data }: { data: InsightsPresentation }) {
+  const colors = useThemeColors();
   const subscriptions = data.subscriptions;
   return (
     <Panel
@@ -210,14 +215,14 @@ export function InsightsSubscriptionsPanel({ data }: { data: InsightsPresentatio
         numberOfLines={1}
         adjustsFontSizeToFit
         minimumFontScale={0.7}
-        style={{ marginTop: 12, fontSize: 26, fontWeight: "800", color: hp.ink }}
+        style={{ marginTop: 12, fontSize: 26, fontWeight: "800", color: colors.ink }}
       >
         {formatMoney(
           fromMinorUnits(subscriptions.monthlyCommittedMinorUnits, data.currency),
           data.currency,
         )}
       </Text>
-      <Text style={{ marginTop: 3, fontSize: 12, color: hp.muted }}>
+      <Text style={{ marginTop: 3, fontSize: 12, color: colors.muted }}>
         Monthly total for likely recurring charges
       </Text>
 
@@ -238,19 +243,19 @@ export function InsightsSubscriptionsPanel({ data }: { data: InsightsPresentatio
                 justifyContent: "space-between",
                 gap: 12,
                 borderTopWidth: index === 0 ? 0 : 1,
-                borderTopColor: hp.divider,
+                borderTopColor: colors.divider,
               }}
             >
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text numberOfLines={1} style={{ fontSize: 13, fontWeight: "800", color: hp.ink }}>
+                <Text numberOfLines={1} style={{ fontSize: 13, fontWeight: "800", color: colors.ink }}>
                   {subscription.merchant}
                 </Text>
-                <Text style={{ marginTop: 3, fontSize: 11, color: hp.muted }}>
+                <Text style={{ marginTop: 3, fontSize: 11, color: colors.muted }}>
                   {subscription.confidence === "likely" ? "Likely recurring" : "Possible recurring"}{" "}
                   · {subscription.count} charge{subscription.count === 1 ? "" : "s"}
                 </Text>
               </View>
-              <Text style={{ fontSize: 14, fontWeight: "800", color: hp.ink }}>
+              <Text style={{ fontSize: 14, fontWeight: "800", color: colors.ink }}>
                 {formatMoney(
                   fromMinorUnits(subscription.amountMinorUnits, data.currency),
                   data.currency,
@@ -265,6 +270,7 @@ export function InsightsSubscriptionsPanel({ data }: { data: InsightsPresentatio
 }
 
 export function InsightsVendorsPanel({ data }: { data: InsightsPresentation }) {
+  const colors = useThemeColors();
   return (
     <Panel title="Top vendors" subtitle="Ranked by current-month captured spend">
       {data.topVendors.length === 0 ? (
@@ -284,15 +290,15 @@ export function InsightsVendorsPanel({ data }: { data: InsightsPresentation }) {
                 justifyContent: "space-between",
                 gap: 12,
                 borderTopWidth: index === 0 ? 0 : 1,
-                borderTopColor: hp.divider,
+                borderTopColor: colors.divider,
               }}
             >
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text numberOfLines={1} style={{ fontSize: 13, fontWeight: "800", color: hp.ink }}>
+                <Text numberOfLines={1} style={{ fontSize: 13, fontWeight: "800", color: colors.ink }}>
                   {vendor.vendor}
                 </Text>
                 <Text
-                  style={{ marginTop: 3, fontSize: 11, color: changeColor(vendor.changePercent) }}
+                  style={{ marginTop: 3, fontSize: 11, color: changeColor(vendor.changePercent, colors) }}
                 >
                   {changeLabel(vendor.changePercent)} · {vendor.transactionCount} transaction
                   {vendor.transactionCount === 1 ? "" : "s"}
@@ -312,6 +318,7 @@ export function InsightsVendorsPanel({ data }: { data: InsightsPresentation }) {
 }
 
 export function InsightsBudgetPanel({ data }: { data: InsightsPresentation }) {
+  const colors = useThemeColors();
   const budget = data.budget;
   if (budget === null) return null;
 
@@ -319,14 +326,14 @@ export function InsightsBudgetPanel({ data }: { data: InsightsPresentation }) {
     <Panel title="Budget performance" subtitle="Based on the configured daily budget">
       <View style={{ marginTop: 14, flexDirection: "row", justifyContent: "space-between" }}>
         <View>
-          <Text style={{ fontSize: 11, color: hp.muted }}>Adherence</Text>
-          <Text style={{ marginTop: 3, fontSize: 24, fontWeight: "800", color: hp.ink }}>
+          <Text style={{ fontSize: 11, color: colors.muted }}>Adherence</Text>
+          <Text style={{ marginTop: 3, fontSize: 24, fontWeight: "800", color: colors.ink }}>
             {budget.adherenceScore}%
           </Text>
         </View>
         <View style={{ alignItems: "flex-end" }}>
-          <Text style={{ fontSize: 11, color: hp.muted }}>Projected month</Text>
-          <Text style={{ marginTop: 3, fontSize: 16, fontWeight: "800", color: hp.ink }}>
+          <Text style={{ fontSize: 11, color: colors.muted }}>Projected month</Text>
+          <Text style={{ marginTop: 3, fontSize: 16, fontWeight: "800", color: colors.ink }}>
             {formatMoney(
               fromMinorUnits(budget.projectedMonthSpendMinorUnits, data.currency),
               data.currency,
@@ -340,7 +347,7 @@ export function InsightsBudgetPanel({ data }: { data: InsightsPresentation }) {
           height: 8,
           overflow: "hidden",
           borderRadius: 4,
-          backgroundColor: hp.track,
+          backgroundColor: colors.fillStrong,
         }}
       >
         <View
@@ -348,11 +355,11 @@ export function InsightsBudgetPanel({ data }: { data: InsightsPresentation }) {
             width: `${Math.min(100, Math.max(0, budget.usedPercent))}%`,
             height: "100%",
             borderRadius: 4,
-            backgroundColor: hp.accent,
+            backgroundColor: colors.accent,
           }}
         />
       </View>
-      <Text style={{ marginTop: 7, fontSize: 12, color: hp.muted }}>
+      <Text style={{ marginTop: 7, fontSize: 12, color: colors.muted }}>
         {formatMoney(
           fromMinorUnits(budget.currentMonthSpentMinorUnits, data.currency),
           data.currency,

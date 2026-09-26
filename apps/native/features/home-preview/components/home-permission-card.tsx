@@ -2,6 +2,8 @@ import { Button, Spinner, Surface } from "heroui-native";
 import { View } from "react-native";
 
 import { AppText as Text } from "@/components/app-text";
+import { IconTile } from "@/components/ui/controls";
+import { useThemeColors } from "@/components/ui/theme";
 
 import type { Status } from "@/features/dashboard/hooks/dashboard-sync-provider";
 
@@ -10,17 +12,32 @@ export function HomePermissionCard({
   error,
   progress,
   onConnect,
+  hasData = false,
 }: {
   status: Status;
   error: string | null;
   progress?: { scanned: number; inserted: number } | null;
   onConnect: () => Promise<void>;
+  /** The screen already shows real data — a background catch-up is a hint, not a blocker. */
+  hasData?: boolean;
 }) {
+  const colors = useThemeColors();
   if (status === "ready") return null;
 
   const checking = status === "checking";
   const loading = status === "loading";
   const busy = checking || loading;
+
+  if (busy && hasData) {
+    return (
+      <View className="mt-3 flex-row items-center gap-2 self-start rounded-pill bg-card px-3 py-1.5">
+        <Spinner size="sm" />
+        <Text className="text-meta font-medium text-muted">
+          {loading && progress ? `Checking new messages · ${progress.inserted} new` : "Checking for new messages"}
+        </Text>
+      </View>
+    );
+  }
   const needsPermission = status === "needs-permission";
   const unsupported = status === "unsupported";
   const title = needsPermission
@@ -43,12 +60,15 @@ export function HomePermissionCard({
           : "Checking whether zeeya can read your bank and transaction messages.";
 
   return (
-    <Surface className="mt-4 rounded-card p-4">
-      <Text className="text-label font-extrabold tracking-wider text-muted">
-        {unsupported ? "DEVICE SUPPORT" : "PRIVATE BY DESIGN"}
-      </Text>
-      <Text className="mt-1 text-title font-extrabold text-ink">{title}</Text>
-      <Text className="mt-2 text-caption leading-5 text-muted-soft">{body}</Text>
+    <Surface className="mt-4 rounded-card p-5">
+      <View className="flex-row items-center gap-3">
+        <IconTile icon={unsupported ? "info" : "shield"} color={colors.accentDeep} background={colors.accentSoft} size={36} />
+        <Text className="text-caption font-medium text-muted">
+          {unsupported ? "Device support" : "Private by design"}
+        </Text>
+      </View>
+      <Text className="mt-3 text-subtitle font-semibold text-ink">{title}</Text>
+      <Text className="mt-1 text-caption text-muted">{body}</Text>
 
       {needsPermission && (
         <Button className="mt-4" isDisabled={busy} onPress={onConnect}>
@@ -59,7 +79,7 @@ export function HomePermissionCard({
       {busy && (
         <View className="mt-4 flex-row items-center gap-2">
           <Spinner size="sm" />
-          <Text className="text-caption font-bold text-accent-deep">
+          <Text className="text-caption font-medium text-ink-soft">
             {loading
               ? progress
                 ? // Counts, not a percentage — the total to scan isn't

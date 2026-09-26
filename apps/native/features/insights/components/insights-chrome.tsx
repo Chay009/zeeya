@@ -5,7 +5,7 @@ import { AppText as Text } from "@/components/app-text";
 import { AppIcon, type AppIconName } from "@/components/icon";
 import { GlassButton } from "@/components/native-ui/glass-button";
 import { GlassSurface } from "@/components/native-ui/glass-surface";
-import { hp } from "@/features/home-preview/theme";
+import { useThemeColors } from "@/components/ui/theme";
 
 export function InsightsPanel({
   children,
@@ -37,21 +37,23 @@ export function InsightsIconButton({
   icon: AppIconName;
   onPress: () => void;
 }) {
+  const colors = useThemeColors();
   return (
     <GlassButton
       iconOnly
       accessibilityLabel={label}
       onPress={onPress}
-      icon={<AppIcon name={icon} size={20} color={hp.ink} />}
+      icon={<AppIcon name={icon} size={20} color={colors.ink} />}
     />
   );
 }
 
 export function InsightsNotice({ children }: { children: string }) {
+  const colors = useThemeColors();
   return (
     <GlassSurface effectStyle="clear" className="rounded-card p-4">
       <View className="flex-row items-start gap-2.5">
-        <AppIcon name="info" size={18} color={hp.accent} />
+        <AppIcon name="info" size={18} color={colors.accent} />
         <Text className="flex-1 text-[13px] leading-[18px] text-ink-soft">{children}</Text>
       </View>
     </GlassSurface>
@@ -67,10 +69,11 @@ export function InsightsEmptyState({
   title: string;
   body: string;
 }) {
+  const colors = useThemeColors();
   return (
     <View className="items-center px-2 py-5">
-      <View className="mb-2.5 h-9 w-9 items-center justify-center rounded-full bg-frost">
-        <AppIcon name={icon} size={18} color={hp.muted} />
+      <View className="mb-2.5 h-9 w-9 items-center justify-center rounded-full bg-fill">
+        <AppIcon name={icon} size={18} color={colors.muted} />
       </View>
       <Text className="text-subtitle font-bold text-ink">{title}</Text>
       <Text className="mt-1.5 text-center text-[13px] leading-[18px] text-muted">{body}</Text>

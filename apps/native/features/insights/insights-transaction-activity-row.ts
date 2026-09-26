@@ -1,5 +1,5 @@
 import type { ActivityRowPresentation } from "@/features/home-preview/data/types";
-import { hp } from "@/features/home-preview/theme";
+import type { ThemeColors } from "@/components/ui/theme";
 
 import type { AnalyticsDirection } from "./analytics-scope";
 import type { InsightsTransactionRow } from "./insights-transaction-presentation";
@@ -8,6 +8,7 @@ import type { InsightsTransactionRow } from "./insights-transaction-presentation
 export function mapInsightsTransactionToActivityRow(
   item: InsightsTransactionRow,
   direction: AnalyticsDirection,
+  colors: Pick<ThemeColors, "positive" | "negative">,
 ): ActivityRowPresentation {
   const flow = direction === "income" ? "income" : "expense";
   return {
@@ -16,7 +17,7 @@ export function mapInsightsTransactionToActivityRow(
     tile: item.tile,
     ink: item.ink,
     img: item.img ?? undefined,
-    bar: flow === "income" ? hp.positive : hp.coral,
+    bar: flow === "income" ? colors.positive : colors.negative,
     name: item.name,
     sub: item.sub,
     amount: item.amount,

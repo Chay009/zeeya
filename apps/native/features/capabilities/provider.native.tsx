@@ -249,7 +249,7 @@ export function CapabilityProvider({ children }: PropsWithChildren) {
         <Text className="mb-5 text-center text-body text-muted">
           Authenticate to view your financial information.
         </Text>
-        {error ? <Text className="mb-4 text-caption text-danger">{error}</Text> : null}
+        {error ? <Text className="mb-4 text-caption text-negative">{error}</Text> : null}
         <Button onPress={() => void unlock()}>Unlock</Button>
       </View>
     );

@@ -25,7 +25,7 @@ export function AnimatedFlowBar({ height, tone }: { height: number; tone: "incom
 
   return (
     <Animated.View
-      className={`w-3 rounded-[2px] ${tone === "income" ? "bg-emerald" : "bg-coral-bar"}`}
+      className={`w-3 rounded-[2px] ${tone === "income" ? "bg-positive" : "bg-negative"}`}
       style={style}
     />
   );

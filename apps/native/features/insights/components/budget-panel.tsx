@@ -26,7 +26,7 @@ export function BudgetPanel({
       </Text>
       <Text className="mt-1 text-[13px] text-muted">on track this month</Text>
 
-      <View className="mt-[22px] h-2 overflow-hidden rounded-pill bg-frost-strong">
+      <View className="mt-[22px] h-2 overflow-hidden rounded-pill bg-fill-strong">
         <View
           className="h-full rounded-pill bg-accent"
           style={{ width: `${Math.min(100, Math.max(0, budget.usedPercent))}%` }}

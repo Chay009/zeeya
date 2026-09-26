@@ -16,21 +16,21 @@ export function HomeSkeleton() {
       </View>
 
       <View className="flex-row gap-2">
-        <View className="h-14 w-20 rounded-tile bg-track" />
-        <View className="h-14 w-36 rounded-tile bg-track" />
-        <View className="h-14 w-36 rounded-tile bg-track" />
+        <View className="h-14 w-20 rounded-tile bg-fill-strong" />
+        <View className="h-14 w-36 rounded-tile bg-fill-strong" />
+        <View className="h-14 w-36 rounded-tile bg-fill-strong" />
       </View>
 
       <View className="gap-3">
-        <View className="h-28 w-full rounded-card bg-track" />
-        <View className="h-[280px] w-full rounded-card bg-track" />
+        <View className="h-28 w-full rounded-card bg-fill-strong" />
+        <View className="h-[280px] w-full rounded-card bg-fill-strong" />
         <View className="flex-row gap-3">
-          <View className="h-[132px] flex-1 rounded-card bg-track" />
-          <View className="h-[132px] flex-1 rounded-card bg-track" />
+          <View className="h-[132px] flex-1 rounded-card bg-fill-strong" />
+          <View className="h-[132px] flex-1 rounded-card bg-fill-strong" />
         </View>
       </View>
-      <View className="h-[200px] w-full rounded-card bg-track" />
-      <View className="h-[220px] w-full rounded-card bg-track" />
+      <View className="h-[200px] w-full rounded-card bg-fill-strong" />
+      <View className="h-[220px] w-full rounded-card bg-fill-strong" />
     </View>
   );
 }

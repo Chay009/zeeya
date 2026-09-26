@@ -6,7 +6,7 @@ import {
 } from "expo-glass-effect";
 import { Platform, StyleSheet, View, type ViewProps } from "react-native";
 
-import { useNativeUiTheme } from "./theme";
+import { useThemeColors } from "@/components/ui/theme";
 
 export type GlassSurfaceProps = ViewProps & {
   effectStyle?: GlassStyle | GlassEffectStyleConfig;
@@ -38,7 +38,7 @@ export function GlassSurface({
   style,
   ...props
 }: GlassSurfaceProps) {
-  const { isDark } = useNativeUiTheme();
+  const { isDark } = useThemeColors();
 
   if (supportsNativeGlass()) {
     return (

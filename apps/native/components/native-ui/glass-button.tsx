@@ -14,7 +14,7 @@ import {
 import { AppText } from "@/components/app-text";
 
 import { GlassSurface } from "./glass-surface";
-import { useNativeUiColors } from "./theme";
+import { useThemeColors } from "@/components/ui/theme";
 
 export type GlassButtonTone = "neutral" | "accent";
 
@@ -54,7 +54,7 @@ export const GlassButton = forwardRef<View, GlassButtonProps>(function GlassButt
   },
   ref,
 ) {
-  const colors = useNativeUiColors();
+  const colors = useThemeColors();
 
   const handlePress = (event: GestureResponderEvent) => {
     if (disabled) return;

@@ -1,7 +1,7 @@
 ﻿import { Pressable, ScrollView, View } from "react-native";
 
 import { AppText as Text } from "@/components/app-text";
-import { hp } from "@/features/home-preview/theme";
+import { useThemeColors } from "@/components/ui/theme";
 
 export function AnalyticsCurrencyPicker({
   currencies,
@@ -12,11 +12,12 @@ export function AnalyticsCurrencyPicker({
   selected: string;
   onSelect(currency: string): void;
 }) {
+  const colors = useThemeColors();
   if (currencies.length < 2) return null;
 
   return (
     <View style={{ marginTop: 14 }}>
-      <Text style={{ fontSize: 11, color: hp.muted }}>Showing real values in</Text>
+      <Text style={{ fontSize: 11, color: colors.muted }}>Showing real values in</Text>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -36,14 +37,14 @@ export function AnalyticsCurrencyPicker({
                 justifyContent: "center",
                 borderRadius: 999,
                 borderWidth: 1,
-                borderColor: active ? hp.ink : hp.border,
-                backgroundColor: active ? hp.ink : hp.card,
+                borderColor: active ? colors.ink : colors.border,
+                backgroundColor: active ? colors.ink : colors.card,
                 paddingHorizontal: 13,
                 opacity: pressed ? 0.72 : 1,
               })}
             >
               <Text
-                style={{ fontSize: 11, fontWeight: "800", color: active ? hp.onInk : hp.inkSoft }}
+                style={{ fontSize: 11, fontWeight: "800", color: active ? colors.onInk : colors.inkSoft }}
               >
                 {currency}
               </Text>

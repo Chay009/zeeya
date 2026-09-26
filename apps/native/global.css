@@ -4,223 +4,256 @@
 
 @source './node_modules/heroui-native/lib';
 
-/* Zeeya's palette, expressed as the tokens HeroUI's components already read,
-   so Button, ListGroup, Switch and the rest come out in our colours with no
-   per-screen overrides. Values mirror features/home-preview/theme.ts.
-   Green family usage — see that file's header comment. Short version:
-     --app-accent       lime fill (bg-accent) — pair with --app-on-accent
-     --app-on-accent    near-black text ON lime (text-on-accent) — never white
-     --app-accent-deep  forest text on white (text-accent-deep, links)
-     --app-accent-soft  mint surface tint (bg-accent-soft) — NOT lime */
+/* ────────────────────────────────────────────────────────────────────────
+   Zeeya design tokens — the ONE source of truth.
+
+   Every colour, type size, radius lives here. Style with classNames
+   (bg-card, text-ink, text-caption, rounded-card …). Code that needs a raw
+   value (SVG strokes, icon colours, charts) reads the same tokens through
+   useThemeColors() in components/ui/theme.ts — never a hex literal.
+
+   Colour roles
+     background   page behind cards            card       grouped surface
+     fill         controls on a card (segment  fill-strong  tracks, pressed
+                  track, icon tile, input)
+     border       hairline around a surface    divider    rule between rows
+     ink          primary text                 ink-soft   emphasised secondary
+     muted        secondary text               faint      tertiary / disabled
+     on-ink       text on an ink (inverted) surface, e.g. selected segment
+     accent       brand lime — FILLS only, always with text-on-accent
+     accent-deep  brand text on light surfaces (links, "See all")
+     accent-soft  brand tint behind an icon or highlight
+     positive / negative / warning (+ -soft)  semantic money + status
+     chart-1..6   categorical series; chart-line = neutral series stroke
+
+   Rule of thumb: spending is NOT red. Amounts render in ink; only income
+   gets the positive colour, and negative is reserved for real problems
+   (over budget, failed load).
+   ──────────────────────────────────────────────────────────────────────── */
 @layer theme {
   :root {
     @variant light {
-      --app-background: #f4f4f6;
+      --app-background: #f2f2f7;
       --app-card: #ffffff;
-      --app-card-alt: #f4f4f6;
-      --app-border-soft: #eeeef2;
-      --app-ink: #101014;
-      --app-ink-deep: #1c1c22;
-      --app-ink-soft: #4a4a55;
-      --app-muted-soft: #8b8b96;
-      --app-faint: #adadb8;
+      --app-fill: #f2f2f5;
+      --app-fill-strong: #e6e6eb;
+      --app-border: #e5e5ea;
+      --app-divider: #efeff3;
+
+      --app-ink: #0b0b0d;
+      --app-ink-soft: #3a3a40;
+      --app-muted: #6e6e76;
+      --app-faint: #aeaeb4;
       --app-on-ink: #ffffff;
-      --app-hero-surface: #141419;
-      --app-hero-surface-soft: #22222b;
-      --app-accent: #c9ef69;
-      --app-on-accent: #101014;
-      --app-accent-deep: #0a5c2e;
-      --app-accent-soft: #eaf7ef;
-      --app-lime: #c9ef69;
-      --app-chip-bg: #f2f2f5;
-      --app-track: #ececf0;
-      --app-divider: #f0f0f3;
-      --app-surface-muted: #f2f2f5;
-      --app-frost: #f2f2f5;
-      --app-frost-strong: #ececf0;
-      --app-chip: #f2f2f5;
-      --app-chip-on: #101014;
-      --app-notice-bg: #eaf7ef;
-      --app-notice-border: #c5e6d0;
-      --app-notice-ink: #0a5c2e;
 
+      --app-accent: #c9ef69;
+      --app-on-accent: #0b0b0d;
+      --app-accent-deep: #3b7209;
+      --app-accent-soft: #f1f9dc;
+
+      --app-positive: #16863f;
+      --app-positive-soft: #e7f5ec;
+      --app-negative: #d23b3b;
+      --app-negative-soft: #fcebeb;
+      --app-warning: #a86400;
+      --app-warning-soft: #fff3df;
+
+      --app-hero: #0b0b0d;
+      --app-on-hero: #ffffff;
+      --app-on-hero-muted: #9a9aa3;
+
+      --app-chart-line: #0b0b0d;
+      --app-chart-1: #5b5bd6;
+      --app-chart-2: #12a594;
+      --app-chart-3: #f5a524;
+      --app-chart-4: #e5675a;
+      --app-chart-5: #3e9b4f;
+      --app-chart-6: #b4b4bc;
+
+      --app-scrim: rgba(11, 11, 13, 0.32);
+
+      /* HeroUI reads these names. */
       --background: var(--app-background);
       --foreground: var(--app-ink);
       --surface: var(--app-card);
       --surface-foreground: var(--app-ink);
-      --surface-secondary: var(--app-surface-muted);
-      --surface-secondary-foreground: var(--app-ink-deep);
-      --surface-tertiary: var(--app-background);
-      --surface-tertiary-foreground: var(--app-ink-deep);
-      --overlay: var(--app-card);
-      --overlay-foreground: var(--app-ink);
-      --muted: #6e6e7a;
-      --border: #e6e6eb;
-      --separator: var(--app-divider);
-      --default: var(--app-chip-bg);
-      --default-foreground: var(--app-ink);
-      --accent: var(--app-accent);
-      --accent-foreground: var(--app-on-accent);
-      --focus: var(--app-accent);
-      --link: var(--app-accent-deep);
-      --success: #12a150;
-      --success-foreground: #ffffff;
-      --danger: #e5484d;
-      --danger-foreground: #ffffff;
-      --warning: #f5a524;
-      --warning-foreground: #ffffff;
-    }
-
-    @variant dark {
-      --app-background: #111116;
-      --app-card: #1c1c24;
-      --app-card-alt: #22222b;
-      --app-border-soft: rgba(255, 255, 255, 0.1);
-      --app-ink: #f7f7fa;
-      --app-ink-deep: #ffffff;
-      --app-ink-soft: #d0d0da;
-      --app-muted-soft: #b4b4c1;
-      --app-faint: #8f8f9c;
-      --app-on-ink: #111116;
-      --app-hero-surface: #0d0d12;
-      --app-hero-surface-soft: #1a1a22;
-      --app-accent: #c9ef69;
-      --app-on-accent: #101014;
-      --app-accent-deep: #daf99d;
-      --app-accent-soft: rgba(60, 196, 111, 0.14);
-      --app-lime: #c9ef69;
-      --app-chip-bg: #2a2a34;
-      --app-track: #2f2f3a;
-      --app-divider: rgba(255, 255, 255, 0.08);
-      --app-surface-muted: #22222b;
-      --app-frost: #22222b;
-      --app-frost-strong: #2a2a34;
-      --app-chip: #2a2a34;
-      --app-chip-on: #f7f7fa;
-      --app-notice-bg: rgba(60, 196, 111, 0.12);
-      --app-notice-border: rgba(60, 196, 111, 0.28);
-      --app-notice-ink: #c9ef69;
-
-      --background: var(--app-background);
-      --foreground: var(--app-ink);
-      --surface: var(--app-card);
-      --surface-foreground: var(--app-ink);
-      --surface-secondary: var(--app-surface-muted);
+      --surface-secondary: var(--app-fill);
       --surface-secondary-foreground: var(--app-ink);
-      --surface-tertiary: var(--app-card-alt);
+      --surface-tertiary: var(--app-background);
       --surface-tertiary-foreground: var(--app-ink);
       --overlay: var(--app-card);
       --overlay-foreground: var(--app-ink);
-      --muted: #b4b4c1;
-      --border: rgba(255, 255, 255, 0.12);
+      --muted: var(--app-muted);
+      --border: var(--app-border);
       --separator: var(--app-divider);
-      --default: var(--app-chip-bg);
+      --default: var(--app-fill);
       --default-foreground: var(--app-ink);
       --accent: var(--app-accent);
       --accent-foreground: var(--app-on-accent);
       --focus: var(--app-accent);
       --link: var(--app-accent-deep);
-      --success: #3cc46f;
-      --success-foreground: #0d1a12;
-      --danger: #ff6b70;
-      --danger-foreground: #1a0d0e;
+      --success: var(--app-positive);
+      --success-foreground: #ffffff;
+      --danger: var(--app-negative);
+      --danger-foreground: #ffffff;
       --warning: #f5a524;
-      --warning-foreground: #1a1208;
+      --warning-foreground: #0b0b0d;
+      --segment: var(--app-card);
+      --segment-foreground: var(--app-ink);
+      --backdrop: rgba(11, 11, 13, 0.28);
+      --surface-shadow:
+        0 1px 2px 0 rgba(11, 11, 13, 0.04), 0 4px 16px -4px rgba(11, 11, 13, 0.06);
+      --overlay-shadow:
+        0 8px 32px -8px rgba(11, 11, 13, 0.18), 0 0 1px 0 rgba(11, 11, 13, 0.12);
+      --field-background: var(--app-fill);
+    }
+
+    @variant dark {
+      --app-background: #000000;
+      --app-card: #161618;
+      --app-fill: #232326;
+      --app-fill-strong: #303034;
+      --app-border: #2a2a2e;
+      --app-divider: #242427;
+
+      --app-ink: #f5f5f7;
+      --app-ink-soft: #d4d4da;
+      --app-muted: #9a9aa3;
+      --app-faint: #5f5f66;
+      --app-on-ink: #0b0b0d;
+
+      --app-accent: #c9ef69;
+      --app-on-accent: #0b0b0d;
+      --app-accent-deep: #d3f38a;
+      --app-accent-soft: rgba(201, 239, 105, 0.13);
+
+      --app-positive: #3ccf6e;
+      --app-positive-soft: rgba(60, 207, 110, 0.14);
+      --app-negative: #ff6b6b;
+      --app-negative-soft: rgba(255, 107, 107, 0.14);
+      --app-warning: #ffb547;
+      --app-warning-soft: rgba(255, 181, 71, 0.14);
+
+      --app-hero: #161618;
+      --app-on-hero: #f5f5f7;
+      --app-on-hero-muted: #9a9aa3;
+
+      --app-chart-line: #f5f5f7;
+      --app-chart-1: #8080ff;
+      --app-chart-2: #2ec4b2;
+      --app-chart-3: #ffb547;
+      --app-chart-4: #ff8577;
+      --app-chart-5: #5cc26c;
+      --app-chart-6: #5f5f66;
+
+      --app-scrim: rgba(0, 0, 0, 0.56);
+
+      --background: var(--app-background);
+      --foreground: var(--app-ink);
+      --surface: var(--app-card);
+      --surface-foreground: var(--app-ink);
+      --surface-secondary: var(--app-fill);
+      --surface-secondary-foreground: var(--app-ink);
+      --surface-tertiary: var(--app-fill);
+      --surface-tertiary-foreground: var(--app-ink);
+      --overlay: var(--app-card);
+      --overlay-foreground: var(--app-ink);
+      --muted: var(--app-muted);
+      --border: var(--app-border);
+      --separator: var(--app-divider);
+      --default: var(--app-fill);
+      --default-foreground: var(--app-ink);
+      --accent: var(--app-accent);
+      --accent-foreground: var(--app-on-accent);
+      --focus: var(--app-accent);
+      --link: var(--app-accent-deep);
+      --success: var(--app-positive);
+      --success-foreground: #0b0b0d;
+      --danger: var(--app-negative);
+      --danger-foreground: #0b0b0d;
+      --warning: var(--app-warning);
+      --warning-foreground: #0b0b0d;
+      --segment: var(--app-fill-strong);
+      --segment-foreground: var(--app-ink);
+      --backdrop: rgba(0, 0, 0, 0.56);
+      --surface-shadow: 0 0 0 0 transparent inset;
+      --overlay-shadow: 0 0 1px 0 rgba(255, 255, 255, 0.18) inset;
+      --field-background: var(--app-fill);
     }
   }
 }
 
-@theme {
+/* `static` keeps every token in the build even before a className uses it,
+   so useCSSVariable() can always resolve it. */
+@theme static {
+  /* HeroUI derives every component radius from this: 3xl = 22px cards,
+     2xl = 15px controls, xl = 11px chips. */
+  --radius: 7.33px;
+
   --color-background: var(--app-background);
   --color-card: var(--app-card);
-  --color-card-alt: var(--app-card-alt);
-  --color-border-soft: var(--app-border-soft);
+  --color-fill: var(--app-fill);
+  --color-fill-strong: var(--app-fill-strong);
+  --color-border: var(--app-border);
+  --color-divider: var(--app-divider);
 
   --color-ink: var(--app-ink);
-  --color-ink-deep: var(--app-ink-deep);
   --color-ink-soft: var(--app-ink-soft);
-  --color-muted-soft: var(--app-muted-soft);
+  --color-muted: var(--app-muted);
   --color-faint: var(--app-faint);
   --color-on-ink: var(--app-on-ink);
-  --color-on-accent: var(--app-on-accent);
 
-  --color-hero-surface: var(--app-hero-surface);
-  --color-hero-surface-soft: var(--app-hero-surface-soft);
-
-  /* bg-accent = lime fill. On lime use text-on-accent (black). On white/mint
-     use text-accent-deep for links — not text-on-ink. */
   --color-accent: var(--app-accent);
+  --color-on-accent: var(--app-on-accent);
   --color-accent-deep: var(--app-accent-deep);
   --color-accent-soft: var(--app-accent-soft);
-  --color-chip-bg: var(--app-chip-bg);
-  --color-track: var(--app-track);
-  --color-divider: var(--app-divider);
-  --color-surface-muted: var(--app-surface-muted);
-  --color-lime: var(--app-lime);
 
-  --color-emerald: #12a150;
-  --color-emerald-deep: #0e8442;
-  --color-mint: #12a150;
-  --color-mint-light: #3cc46f;
-  --color-ink-forest: var(--app-ink);
-  --color-forest: var(--app-accent-deep);
-  --color-forest-soft: var(--app-ink-soft);
-  --color-sage: #6e6e7a;
-  --color-sage-soft: var(--app-muted-soft);
-  --color-sage-faint: var(--app-faint);
-  --color-sage-muted: var(--app-faint);
-  --color-sage-disabled: #cdcdd6;
-  --color-shadow-forest: var(--app-ink);
-  --color-surface-sage: var(--app-surface-muted);
-  --color-surface-sage-alt: var(--app-background);
-  --color-surface-mint: #eaf7ef;
-  --color-surface-mint-alt: var(--app-surface-muted);
-  --color-border-sage: #e6e6eb;
+  --color-positive: var(--app-positive);
+  --color-positive-soft: var(--app-positive-soft);
+  --color-negative: var(--app-negative);
+  --color-negative-soft: var(--app-negative-soft);
+  --color-warning: var(--app-warning);
+  --color-warning-soft: var(--app-warning-soft);
 
-  --color-positive: #12a150;
-  --color-positive-deep: #0e8442;
-  --color-negative: #e5484d;
-  --color-danger: #e5484d;
-  --color-coral: #e5484d;
-  --color-coral-bar: #f0736f;
-  --color-recurring-bg: var(--app-accent-soft);
-  --color-recurring-ink: var(--app-accent-deep);
-  --color-manual-bg: #fff4e5;
-  --color-manual-ink: #b25e09;
-  --color-expense-bg: #ffeceb;
-  --color-calculated-bg: #fff4e5;
-  --color-calculated-ink: #b25e09;
+  --color-hero: var(--app-hero);
+  --color-on-hero: var(--app-on-hero);
+  --color-on-hero-muted: var(--app-on-hero-muted);
 
-  --color-notice-bg: var(--app-notice-bg);
-  --color-notice-border: var(--app-notice-border);
-  --color-notice-ink: var(--app-notice-ink);
+  --color-chart-line: var(--app-chart-line);
+  --color-chart-1: var(--app-chart-1);
+  --color-chart-2: var(--app-chart-2);
+  --color-chart-3: var(--app-chart-3);
+  --color-chart-4: var(--app-chart-4);
+  --color-chart-5: var(--app-chart-5);
+  --color-chart-6: var(--app-chart-6);
 
-  --color-category-1: #12a150;
-  --color-category-2: #12a150;
-  --color-category-3: #f5a524;
-  --color-category-4: #f76808;
-  --color-category-5: #0090ff;
-  --color-category-6: #c4c4cf;
+  --color-scrim: var(--app-scrim);
+
+  /* Type scale — iOS-derived. Sizes carry their own line heights. */
+  --text-label: 11px;
+  --text-label--line-height: 14px;
+  --text-meta: 12px;
+  --text-meta--line-height: 16px;
+  --text-caption: 13px;
+  --text-caption--line-height: 18px;
+  --text-body: 15px;
+  --text-body--line-height: 20px;
+  --text-subtitle: 17px;
+  --text-subtitle--line-height: 22px;
+  --text-title: 22px;
+  --text-title--line-height: 28px;
+  --text-screen: 32px;
+  --text-screen--line-height: 38px;
+  --text-hero: 40px;
+  --text-hero--line-height: 46px;
+  --text-display: 48px;
+  --text-display--line-height: 54px;
 
   --spacing-page: 20px;
 
-  --radius-tile: 16px;
-  --radius-card: 24px;
+  --radius-sm: 8px;
+  --radius-tile: 14px;
+  --radius-card: 22px;
   --radius-hero: 28px;
   --radius-pill: 999px;
-
-  --text-label: 10px;
-  --text-meta: 11px;
-  --text-caption: 12px;
-  --text-body: 14px;
-  --text-subtitle: 15px;
-  --text-title: 20px;
-  --text-screen: 28px;
-  --text-hero: 34px;
-  --text-display: 44px;
-
-  --color-frost: var(--app-frost);
-  --color-frost-strong: var(--app-frost-strong);
-  --color-chip: var(--app-chip);
-  --color-chip-on: var(--app-chip-on);
 }

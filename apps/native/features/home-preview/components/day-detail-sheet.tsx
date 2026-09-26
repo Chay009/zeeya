@@ -3,16 +3,17 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ScrollView, View } from "react-native";
 
 import { AppText as Text } from "@/components/app-text";
+import { TransactionRow } from "@/components/finance/transaction-row";
+import { Money } from "@/components/ui/money";
+import { EmptyState, SkeletonRows } from "@/components/ui/states";
+import { fromMinorUnits } from "@/lib/currency";
 import { NativeBottomSheet } from "@/components/native-ui/native-bottom-sheet";
 import { formatMoney } from "@/features/dashboard/utils/format";
-import { fromMinorUnits } from "@/lib/currency";
 import type { TransactionSummary } from "@/lib/dashboard-data";
-import { moneyFontFamily } from "@/lib/fonts";
 
 import { merchantVisual } from "../data";
-import { hp } from "../theme";
+import { useThemeColors } from "@/components/ui/theme";
 import { BrandLogo } from "./brand-logo";
-import { EmptyNote } from "./empty-note";
 import { useDayTransactions } from "../hooks/use-day-transactions";
 
 // 'yyyy-MM-dd', local calendar date — react-native-calendars' own dateString
@@ -43,11 +44,8 @@ function formatTime(ms: number): string {
 // updated on theme changes — see WeekCalendar/new.js), so a fresh object
 // here every render buys nothing but allocation churn; hoisted since it
 // never depends on props or state.
-const WEEK_STRIP_THEME = {
+const WEEK_STRIP_THEME_BASE = {
   calendarBackground: "transparent",
-  todayTextColor: hp.accent,
-  selectedDayBackgroundColor: hp.accent,
-  selectedDayTextColor: hp.onInk,
   textDayFontWeight: "700" as const,
   textDayHeaderFontWeight: "700" as const,
 };
@@ -59,36 +57,16 @@ function formatDayTitle(ms: number): string {
 function DayTransactionRow({ item }: { item: TransactionSummary }) {
   const name = item.brandName?.trim() || item.vendor?.trim() || item.category;
   const visual = merchantVisual(item.brandName?.trim() || item.vendor?.trim() || "", item.category);
-  const isIncome = item.direction === "income";
-
   return (
-    <View className="flex-row items-center gap-3 py-3">
-      <View className="shrink-0">
-        <BrandLogo
-          letter={name.charAt(0).toUpperCase() || "?"}
-          tile={visual.tile}
-          ink={visual.ink}
-          img={visual.img}
-          size={40}
-          radius={20}
-          iconRatio={0.62}
-        />
-      </View>
-      <View className="min-w-0 flex-1">
-        <Text numberOfLines={1} className="text-subtitle font-semibold text-ink">
-          {name}
-        </Text>
-        <Text className="mt-0.5 text-label text-muted">{formatTime(item.date)}</Text>
-      </View>
-      <Text
-        numberOfLines={1}
-        className={`text-subtitle font-semibold ${isIncome ? "text-positive" : "text-coral"}`}
-        style={{ fontFamily: moneyFontFamily("medium") }}
-      >
-        {isIncome ? "+" : "−"}
-        {amount(item.amountMinorUnits, item.currency)}
-      </Text>
-    </View>
+    <TransactionRow
+      name={name}
+      subtitle={item.category}
+      meta={formatTime(item.date)}
+      logo={{ letter: name.charAt(0).toUpperCase() || "?", tile: visual.tile, ink: visual.ink, img: visual.img }}
+      amount={fromMinorUnits(item.amountMinorUnits, item.currency)}
+      currency={item.currency}
+      direction={item.direction}
+    />
   );
 }
 
@@ -103,6 +81,7 @@ export function DayDetailSheet({
   dayStartMs: number | null;
   currency: string;
 }) {
+  const colors = useThemeColors();
   // The sheet's own shown day, distinct from the tapped-day prop — once
   // open, the week strip can move the user to a different day without the
   // parent calendar tab needing to know or re-render for it.
@@ -161,7 +140,7 @@ export function DayDetailSheet({
             <WeekCalendar
               firstDay={1}
               allowShadow={false}
-              theme={WEEK_STRIP_THEME}
+              theme={{ ...WEEK_STRIP_THEME_BASE, todayTextColor: colors.accentDeep, selectedDayBackgroundColor: colors.ink, selectedDayTextColor: colors.onInk }}
               markedDates={markedDates}
             />
           </CalendarProvider>
@@ -169,31 +148,27 @@ export function DayDetailSheet({
       )}
 
       {status === "loading" && items.length === 0 ? (
-        <View className="items-center py-10">
-          <Text className="text-caption text-muted">Loading transactions…</Text>
+        <View className="mt-4">
+          <SkeletonRows count={3} />
         </View>
       ) : status !== "loading" && items.length === 0 ? (
-        <EmptyNote
-          icon="rupee-receipt"
-          title="No transactions this day"
-          body="Nothing was captured for this date."
-        />
+        <EmptyState compact icon="rupee-receipt" title="No transactions this day" />
       ) : (
         <>
-          <View className="mt-3 flex-row items-center justify-between rounded-card bg-accent-soft px-4 py-3">
+          <View className="mt-3 flex-row items-end justify-between rounded-card bg-fill px-4 py-3.5">
             <View>
-              <Text
-                className={`text-[22px] tracking-tight ${netMinorUnits >= 0 ? "text-positive" : "text-coral"}`}
-                style={{ fontFamily: moneyFontFamily("semibold") }}
-              >
-                {netMinorUnits >= 0 ? "+" : "−"}
-                {amount(Math.abs(netMinorUnits), currency)}
-              </Text>
-              <Text className="mt-0.5 text-caption text-muted">net</Text>
+              <Text className="text-meta font-medium text-muted">Net</Text>
+              <Money
+                value={Math.abs(fromMinorUnits(netMinorUnits, currency))}
+                currency={currency}
+                size="title"
+                tone={netMinorUnits > 0 ? "income" : "default"}
+                sign={netMinorUnits > 0 ? "income" : netMinorUnits < 0 ? "expense" : "none"}
+              />
             </View>
-            <View className="items-end gap-1">
+            <View className="items-end">
               <Text className="text-caption text-positive">{amount(incomeMinorUnits, currency)} in</Text>
-              <Text className="text-caption text-coral">{amount(expenseMinorUnits, currency)} out</Text>
+              <Text className="mt-0.5 text-caption text-ink-soft">{amount(expenseMinorUnits, currency)} out</Text>
             </View>
           </View>
 

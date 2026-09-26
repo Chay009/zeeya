@@ -1,141 +1,71 @@
+import { Chip } from "heroui-native";
 import { View } from "react-native";
 
 import { AppText as Text } from "@/components/app-text";
 import type { PreviewSub } from "../data";
-import { hp } from "../theme";
+import { moneyFontFamily } from "@/lib/fonts";
 
-export const previewCircleButtonStyle = {
-  width: 40,
-  height: 40,
-  borderRadius: 20,
-  borderWidth: 1,
-  borderColor: hp.border,
-  backgroundColor: hp.card,
-  alignItems: "center" as const,
-  justifyContent: "center" as const,
-};
+export const previewCircleButtonClass =
+  "h-10 w-10 items-center justify-center rounded-full border border-border bg-card";
 
-export const previewEyebrowStyle = {
-  fontSize: 10,
-  fontWeight: "700" as const,
-  letterSpacing: 1.8,
-  color: hp.muted,
-};
+export const previewEyebrowClass = "text-label font-semibold uppercase tracking-widest text-muted";
 
-export const previewScreenTitleStyle = {
-  marginTop: 4,
-  fontSize: 22,
-  fontWeight: "800" as const,
-  letterSpacing: -1.3,
-  color: hp.ink,
-};
+export const previewScreenTitleClass = "mt-1 text-title font-bold tracking-tight text-ink";
 
 export function SubscriptionSpendValue({ value, size = 28 }: { value: string; size?: number }) {
   const lines = value.split(" + ").map((part, index) => (index === 0 ? part : `+ ${part}`));
   const hasAmount = value !== "—";
-
   return (
-    <View
-      style={{
-        marginTop: 6,
-        minWidth: 0,
-      }}
-    >
+    <View className="mt-1">
       {lines.map((line, index) => (
-        <Text
-          key={`${index}-${line}`}
-          style={{
-            fontSize: size,
-            fontWeight: "800",
-            letterSpacing: -(size * (size >= 32 ? 0.07 : 0.06)),
-            lineHeight: size,
-            color: hp.ink,
-          }}
-        >
-          {line}
-          {hasAmount && index === lines.length - 1 && (
-            <Text
-              style={{
-                fontSize: 10,
-                fontWeight: "700",
-                letterSpacing: 0.2,
-                color: hp.mutedSoft,
-              }}
-            >
-              {" "}
-              / month
-            </Text>
-          )}
-        </Text>
+        <View key={`${index}-${line}`} className="flex-row items-baseline">
+          <Text
+            className="text-ink"
+            style={{ fontFamily: moneyFontFamily("bold"), fontSize: size, lineHeight: size * 1.18, letterSpacing: -size * 0.03 }}
+          >
+            {line}
+          </Text>
+          {hasAmount && index === lines.length - 1 ? (
+            <Text className="ml-1 text-caption text-muted">/ month</Text>
+          ) : null}
+        </View>
       ))}
     </View>
   );
 }
 
-const typePalette: Record<PreviewSub["type"], { backgroundColor: string; color: string }> = {
-  autopay: { backgroundColor: hp.chipBg, color: hp.emeraldDeep },
-  recurring: { backgroundColor: hp.recurringBg, color: hp.recurringInk },
-  manual: { backgroundColor: hp.manualBg, color: hp.manualInk },
+const TYPE_COLOR: Record<PreviewSub["type"], "success" | "accent" | "warning"> = {
+  autopay: "success",
+  recurring: "accent",
+  manual: "warning",
 };
 
 export function SubscriptionTypeBadge({ subscription }: { subscription: PreviewSub }) {
-  const palette = typePalette[subscription.type];
   return (
-    <Text
-      style={{
-        borderRadius: 999,
-        backgroundColor: palette.backgroundColor,
-        paddingHorizontal: 8,
-        paddingVertical: 3,
-        fontSize: 9,
-        fontWeight: "700",
-        color: palette.color,
-      }}
-    >
-      {subscription.typeLabel}
-    </Text>
+    <Chip size="sm" variant="soft" color={TYPE_COLOR[subscription.type]} className="rounded-pill px-2">
+      <Chip.Label className="text-label font-semibold">{subscription.typeLabel}</Chip.Label>
+    </Chip>
   );
 }
 
 export function SubscriptionStatusBadge({
   subscription,
-  contained = false,
 }: {
   subscription: PreviewSub;
   contained?: boolean;
 }) {
   const active = subscription.status === "Active";
   return (
-    <Text
-      style={{
-        borderRadius: 999,
-        backgroundColor: contained ? (active ? hp.surfaceSage : hp.surfaceSageAlt) : "transparent",
-        paddingHorizontal: contained ? 8 : 0,
-        paddingVertical: contained ? 3 : 0,
-        fontSize: contained ? 9 : 11,
-        fontWeight: "700",
-        color: active ? hp.emeraldDeep : "#8a8378",
-      }}
-    >
-      ● {subscription.status}
-    </Text>
+    <Chip size="sm" variant="soft" color={active ? "success" : "default"} className="rounded-pill px-2">
+      <Chip.Label className="text-label font-semibold">{subscription.status}</Chip.Label>
+    </Chip>
   );
 }
 
 export function ReactivatedBadge() {
   return (
-    <Text
-      style={{
-        borderRadius: 999,
-        backgroundColor: hp.recurringBg,
-        paddingHorizontal: 8,
-        paddingVertical: 3,
-        fontSize: 9,
-        fontWeight: "700",
-        color: hp.recurringInk,
-      }}
-    >
-      Reactivated
-    </Text>
+    <Chip size="sm" variant="soft" color="accent" className="rounded-pill px-2">
+      <Chip.Label className="text-label font-semibold">Reactivated</Chip.Label>
+    </Chip>
   );
 }

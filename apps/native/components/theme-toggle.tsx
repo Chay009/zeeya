@@ -3,12 +3,12 @@ import { Platform, Pressable } from "react-native";
 import Animated, { FadeOut, ZoomIn } from "react-native-reanimated";
 
 import { AppIcon } from "@/components/icon";
-import { useNativeUiColors } from "@/components/native-ui/theme";
+import { useThemeColors } from "@/components/ui/theme";
 import { useAppTheme } from "@/contexts/app-theme-context";
 
 export function ThemeToggle() {
   const { toggleTheme, isLight } = useAppTheme();
-  const colors = useNativeUiColors();
+  const colors = useThemeColors();
 
   return (
     <Pressable

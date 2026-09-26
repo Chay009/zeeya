@@ -8,7 +8,7 @@ import {
 } from "react-native";
 
 import type { HomeAccount } from "../data";
-import { homeSpacing, hp } from "../theme";
+import { useThemeColors } from "@/components/ui/theme";
 import { AccountCard } from "./account-card";
 
 // How much of the next card is left visible at the right edge. A peeked
@@ -32,6 +32,7 @@ export function AccountCarousel({
   accounts: HomeAccount[];
   bleedRight?: number;
 }) {
+  const colors = useThemeColors();
   const [containerWidth, setContainerWidth] = useState(0);
   const [activeIndex, setActiveIndex] = useState(0);
 
@@ -49,7 +50,7 @@ export function AccountCarousel({
   // Each page is the card plus its gutter, so snapping lands the next card
   // exactly where the current one was.
   const cardWidth = containerWidth > 0 ? containerWidth - bleedRight - PEEK : 0;
-  const pageWidth = cardWidth + homeSpacing.sm;
+  const pageWidth = cardWidth + 12;
 
   const onScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     if (pageWidth <= 0) return;
@@ -76,7 +77,7 @@ export function AccountCarousel({
             style={{
               width: cardWidth || undefined,
               flexGrow: cardWidth ? 0 : 1,
-              marginRight: index === accounts.length - 1 ? 0 : homeSpacing.sm,
+              marginRight: index === accounts.length - 1 ? 0 : 12,
             }}
           >
             <AccountCard account={account} />
@@ -95,7 +96,7 @@ export function AccountCarousel({
               width: index === activeIndex ? 20 : 6,
               borderRadius: 3,
               backgroundColor:
-                index === activeIndex ? account.bankColor || hp.ink : hp.border,
+                index === activeIndex ? account.bankColor || colors.ink : colors.border,
             }}
           />
         ))}

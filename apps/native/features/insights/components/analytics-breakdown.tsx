@@ -49,7 +49,7 @@ export function AnalyticsBreakdown({
     <AnalyticsCard>
       {views.length > 1 ? (
         <Tabs value={view} onValueChange={(next) => setView(next as AnalyticsBreakdownView)}>
-          <Tabs.List className="rounded-pill bg-surface-muted p-1">
+          <Tabs.List className="rounded-pill bg-fill p-1">
             <Tabs.Indicator className="rounded-pill bg-card" />
             {views.map(([value, label]) => (
               <Tabs.Trigger key={value} value={value} className="min-h-9 flex-1">
@@ -73,7 +73,7 @@ export function AnalyticsBreakdown({
           accessibilityRole="button"
           accessibilityLabel="Open subscriptions"
           onPress={onOpenSubscriptions}
-          className="mt-2 min-h-12 flex-row items-center justify-between border-t border-frost pt-3"
+          className="mt-2 min-h-12 flex-row items-center justify-between border-t border-fill pt-3"
         >
           <Text className="text-subtitle font-semibold text-ink">Subscriptions</Text>
           <Text className="text-caption font-bold text-accent-deep">{subscriptionLabel}</Text>

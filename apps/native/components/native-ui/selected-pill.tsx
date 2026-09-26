@@ -12,7 +12,7 @@ const SELECTED_CLASS: Record<SelectedPillVariant, { shell: string; label: string
     muted: "text-on-accent opacity-70",
   },
   ink: {
-    shell: "bg-ink-deep",
+    shell: "bg-ink",
     label: "text-on-ink",
     muted: "text-faint",
   },
@@ -38,7 +38,7 @@ export function SelectedPill({
   disabled?: boolean;
 }) {
   const tone = SELECTED_CLASS[variant];
-  const shellClass = selected ? tone.shell : "border border-border bg-chip";
+  const shellClass = selected ? tone.shell : "border border-border bg-fill";
   const labelClass = selected ? tone.label : "text-ink-soft";
 
   return (
@@ -52,7 +52,7 @@ export function SelectedPill({
     >
       <Text className={`text-meta font-extrabold ${labelClass}`}>{label}</Text>
       {detail ? (
-        <Text className={`text-meta ${selected ? tone.muted : "text-muted-soft"}`}>{detail}</Text>
+        <Text className={`text-meta ${selected ? tone.muted : "text-muted"}`}>{detail}</Text>
       ) : null}
     </Pressable>
   );
@@ -97,7 +97,7 @@ export function CurrencyChipGroup({
   if (currencies.length === 0) return null;
 
   return (
-    <View className="flex-row rounded-pill bg-surface-muted p-0.5">
+    <View className="flex-row rounded-pill bg-fill p-0.5">
       {currencies.map((currencyCode) => {
         const isSelected = currencyCode === selected;
         return (

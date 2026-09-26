@@ -1,6 +1,6 @@
 ﻿import { Tabs } from "heroui-native";
 
-import { hp } from "@/features/home-preview/theme";
+import { useThemeColors } from "@/components/ui/theme";
 
 import type { AnalyticsTab } from "../analytics-scope";
 
@@ -13,6 +13,7 @@ export function AnalyticsDirectionTabs({
   onChange(value: AnalyticsTab): void;
   showBudget: boolean;
 }) {
+  const colors = useThemeColors();
   const tabs: readonly [AnalyticsTab, string][] = showBudget
     ? [
         ["income", "Income"],
@@ -29,13 +30,13 @@ export function AnalyticsDirectionTabs({
       <Tabs.List
         style={{
           borderRadius: 24,
-          backgroundColor: hp.surfaceMuted,
+          backgroundColor: colors.fill,
           borderWidth: 1,
-          borderColor: hp.borderSoft,
+          borderColor: colors.divider,
           padding: 3,
         }}
       >
-        <Tabs.Indicator style={{ borderRadius: 21, backgroundColor: hp.ink }} />
+        <Tabs.Indicator style={{ borderRadius: 21, backgroundColor: colors.ink }} />
         {tabs.map(([tab, label]) => (
           <Tabs.Trigger
             key={tab}
@@ -43,7 +44,7 @@ export function AnalyticsDirectionTabs({
             accessibilityLabel={label}
             style={{ flex: 1, paddingVertical: 10 }}
           >
-            <Tabs.Label style={{ color: value === tab ? hp.onInk : hp.muted }}>{label}</Tabs.Label>
+            <Tabs.Label style={{ color: value === tab ? colors.onInk : colors.muted }}>{label}</Tabs.Label>
           </Tabs.Trigger>
         ))}
       </Tabs.List>

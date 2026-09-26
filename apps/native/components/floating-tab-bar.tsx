@@ -1,13 +1,23 @@
 import * as Haptics from "expo-haptics";
 import type { BottomTabBarProps } from "expo-router/build/layouts/Tabs";
 import { Tabs } from "heroui-native";
+import { useEffect } from "react";
 import { Platform, View } from "react-native";
+import Animated, {
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withSequence,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "@/components/app-text";
 import { AppIcon, type AppIconName } from "@/components/icon";
 import { GlassSurface } from "@/components/native-ui/glass-surface";
-import { useNativeUiColors } from "@/components/native-ui/theme";
+import { snappy } from "@/components/ui/motion";
+import { useThemeColors } from "@/components/ui/theme";
 
 const BAR_RADIUS = 26;
 const BAR_PADDING = 6;
@@ -30,6 +40,23 @@ export function useFloatingTabBarClearance(): number {
   return BAR_VISUAL_HEIGHT + Math.max(12, insets.bottom) + BAR_CONTENT_GAP;
 }
 
+// Selecting a tab gives its icon a small spring pop — dips, then settles —
+// so the switch feels physical, not just recoloured.
+function TabIcon({ name, selected, color }: { name: AppIconName; selected: boolean; color: string }) {
+  const reducedMotion = useReducedMotion();
+  const scale = useSharedValue(1);
+  useEffect(() => {
+    if (!selected || reducedMotion) return;
+    scale.value = withSequence(withTiming(0.86, { duration: 90 }), withSpring(1, snappy));
+  }, [reducedMotion, scale, selected]);
+  const style = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  return (
+    <Animated.View style={style}>
+      <AppIcon name={name} size={23} color={color} strokeWidth={selected ? 2 : 1.7} />
+    </Animated.View>
+  );
+}
+
 const TAB_ICONS: Record<string, AppIconName> = {
   index: "home",
   activity: "rupee-receipt",
@@ -39,7 +66,7 @@ const TAB_ICONS: Record<string, AppIconName> = {
 
 export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
-  const colors = useNativeUiColors();
+  const colors = useThemeColors();
   const activeRoute = state.routes[state.index]?.name ?? "";
 
   const selectTab = (routeName: string) => {
@@ -69,7 +96,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarP
         // instead of the two fighting each other.
         borderRadius: BAR_RADIUS,
         padding: BAR_PADDING,
-        shadowColor: colors.ink,
+        shadowColor: "#000",
         shadowOffset: { width: 0, height: 12 },
         shadowOpacity: 0.14,
         shadowRadius: 24,
@@ -121,19 +148,15 @@ export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarP
                       pointerEvents="none"
                       style={{ alignItems: "center", justifyContent: "center", gap: 4 }}
                     >
-                      <AppIcon
+                      <TabIcon
                         name={icon}
-                        size={26}
-                        color={isSelected ? colors.onSurface : colors.muted}
-                        strokeWidth={isSelected ? 2.2 : 1.8}
+                        selected={isSelected}
+                        color={isSelected ? colors.onInk : colors.muted}
                       />
                       <Text
                         numberOfLines={1}
-                        style={{
-                          fontSize: 11,
-                          fontWeight: "600",
-                          color: isSelected ? colors.onSurface : colors.muted,
-                        }}
+                        className="text-label font-medium"
+                        style={{ color: isSelected ? colors.onInk : colors.muted }}
                       >
                         {label}
                       </Text>

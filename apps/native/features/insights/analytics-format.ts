@@ -13,14 +13,14 @@ export function formatAnalyticsSheetSubtitle(
   tab: AnalyticsTab,
   currency: string,
 ): string {
-  const tabLabel = tab === "income" ? "Income" : tab === "budget" ? "Budget" : "Outcome";
+  const tabLabel = tab === "income" ? "Income" : tab === "budget" ? "Budget" : "Spending";
   return `${formatAnalyticsPeriod(at)} · ${tabLabel} · ${currency}`;
 }
 
 export function analyticsTabChartTitle(tab: AnalyticsTab): string {
   if (tab === "income") return "Income";
   if (tab === "budget") return "Spending";
-  return "Outcome";
+  return "Spending";
 }
 
 export function analyticsOverviewHeadline(tab: AnalyticsTab): string {

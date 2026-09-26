@@ -5,7 +5,7 @@ import { AppIcon } from "@/components/icon";
 import { moneyFontFamily } from "@/lib/fonts";
 
 import type { HomePreviewData } from "../data";
-import { hp } from "../theme";
+import { useThemeColors } from "@/components/ui/theme";
 import { BrandLogo } from "./brand-logo";
 
 const MAX_STRIP_ICONS = 4;
@@ -16,7 +16,7 @@ const MAX_STRIP_ICONS = 4;
 // each other and above the page.
 const tileShadow = Platform.select({
   ios: {
-    shadowColor: hp.ink,
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.06,
     shadowRadius: 16,
@@ -77,7 +77,7 @@ function TileHeading({ children }: { children: string }) {
 }
 
 function TileSub({ children }: { children: string }) {
-  return <Text className="mt-0.5 text-[13px] text-muted-soft">{children}</Text>;
+  return <Text className="mt-0.5 text-[13px] text-muted">{children}</Text>;
 }
 
 // Where the month's money went, as thick proportional bars in each
@@ -135,7 +135,7 @@ function SpendBreakdownTile({
           )}
         </View>
       ) : (
-        <Text className="mt-auto text-[13px] text-muted-soft">Nothing captured yet</Text>
+        <Text className="mt-auto text-[13px] text-muted">Nothing captured yet</Text>
       )}
     </Tile>
   );
@@ -151,6 +151,7 @@ function SubscriptionsTile({
   subscriptions: HomePreviewData["subscriptions"];
   onOpen: () => void;
 }) {
+  const colors = useThemeColors();
   const items = subscriptions.items.slice(0, MAX_STRIP_ICONS);
 
   return (
@@ -178,7 +179,7 @@ function SubscriptionsTile({
                 style={{
                   borderRadius: 21,
                   borderWidth: 2.5,
-                  borderColor: hp.card,
+                  borderColor: colors.card,
                   marginLeft: index === 0 ? 0 : -12,
                 }}
               >
@@ -195,7 +196,7 @@ function SubscriptionsTile({
             ))}
           </View>
         ) : (
-          <Text className="mt-3 text-[13px] text-muted-soft">None detected yet</Text>
+          <Text className="mt-3 text-[13px] text-muted">None detected yet</Text>
         )}
       </View>
     </Tile>
@@ -211,6 +212,7 @@ function WideActionTile({
   sub: string;
   onPress: () => void;
 }) {
+  const colors = useThemeColors();
   return (
     <Tile onPress={onPress} minHeight={84} padding={18} accessibilityLabel={title}>
       <View className="min-h-0 flex-1 flex-row items-center gap-3.5">
@@ -218,11 +220,11 @@ function WideActionTile({
           <Text numberOfLines={1} className="text-base font-bold tracking-tight text-ink">
             {title}
           </Text>
-          <Text numberOfLines={1} className="mt-0.5 text-[13px] text-muted-soft">
+          <Text numberOfLines={1} className="mt-0.5 text-[13px] text-muted">
             {sub}
           </Text>
         </View>
-        <AppIcon name="chevron-right" size={22} color={hp.faint} />
+        <AppIcon name="chevron-right" size={22} color={colors.faint} />
       </View>
     </Tile>
   );

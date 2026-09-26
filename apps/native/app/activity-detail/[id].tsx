@@ -7,10 +7,8 @@
 // carry a null transactionId per lib/dashboard-data.ts's own comment).
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback } from "react";
-import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AppText as Text } from "@/components/app-text";
 
 import { useDetail } from "@/features/home-preview/hooks/use-detail";
 import { financeDataSource } from "@/features/dashboard/dashboard-data-source";
@@ -19,6 +17,7 @@ import {
   activityDetailHeader,
   ProductDetail,
   ProductDetailLoading,
+  ProductDetailMessage,
 } from "@/features/home-preview/components/product-detail";
 import type { ActivityDetail } from "@/lib/dashboard-data";
 
@@ -30,32 +29,26 @@ export default function ActivityDetailRoute() {
   const { status, value: detail, error } = useDetail<ActivityDetail>(id, fetch, "activity");
 
   if (status === "loading") {
-    return <ProductDetailLoading topInset={insets.top} />;
+    return <ProductDetailLoading topInset={insets.top} onBack={() => router.back()} />;
   }
   if (status === "not-found") {
     return (
-      <View
-        className="flex-1 items-center justify-center bg-background px-6"
-        style={{ paddingTop: insets.top }}
-      >
-        <Text className="text-center text-base font-bold text-ink">Activity not found</Text>
-        <Text className="mt-2 text-center text-caption text-muted-soft">
-          It may have been removed since this screen was opened.
-        </Text>
-      </View>
+      <ProductDetailMessage
+        topInset={insets.top}
+        onBack={() => router.back()}
+        title="Activity not found"
+        body="It may have been removed since this screen was opened."
+      />
     );
   }
   if (status === "error" || detail === null) {
     return (
-      <View
-        className="flex-1 items-center justify-center bg-background px-6"
-        style={{ paddingTop: insets.top }}
-      >
-        <Text className="text-center text-base font-bold text-ink">Couldn't load this activity</Text>
-        <Text className="mt-2 text-center text-caption text-muted-soft" numberOfLines={3}>
-          {error ?? "Try going back and reopening the row."}
-        </Text>
-      </View>
+      <ProductDetailMessage
+        topInset={insets.top}
+        onBack={() => router.back()}
+        title="Couldn't load this activity"
+        body={error ?? "Go back and open it again."}
+      />
     );
   }
 

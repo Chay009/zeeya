@@ -58,7 +58,7 @@ export function TransactionsPanel({
               accessibilityRole="button"
               accessibilityLabel={`View details for ${item.name}`}
               onPress={() => onSelect(item)}
-              className={`flex-row items-center gap-3 py-3 ${index === 0 ? "" : "border-t border-frost"}`}
+              className={`flex-row items-center gap-3 py-3 ${index === 0 ? "" : "border-t border-fill"}`}
             >
               <BrandLogo
                 letter={item.letter}

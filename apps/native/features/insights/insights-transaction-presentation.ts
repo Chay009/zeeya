@@ -15,6 +15,10 @@ export interface InsightsTransactionRow {
   tile: string;
   ink: string;
   img: string | null;
+  /** Raw values for <Money>; optional so older boot-cache rows still load. */
+  amountValue?: number | null;
+  currency?: string;
+  direction?: "income" | "expense" | "neutral";
 }
 
 function formatMonthGroup(timestamp: number): string {
@@ -79,5 +83,9 @@ export function mapInsightsTransactionRow(item: TransactionSummary): InsightsTra
     tile: style.tile,
     ink: style.ink,
     img: style.img ?? null,
+    amountValue:
+      item.direction === "neutral" ? null : fromMinorUnits(item.amountMinorUnits, item.currency),
+    currency: item.currency,
+    direction: item.direction,
   };
 }

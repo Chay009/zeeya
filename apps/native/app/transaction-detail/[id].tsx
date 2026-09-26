@@ -6,10 +6,8 @@
 // only the SQL-allowlisted TransactionDetail fields via productDetailSections.
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback } from "react";
-import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AppText as Text } from "@/components/app-text";
 
 import { financeDataSource } from "@/features/dashboard/dashboard-data-source";
 import {
@@ -17,6 +15,7 @@ import {
   transactionDetailHeader,
   ProductDetail,
   ProductDetailLoading,
+  ProductDetailMessage,
 } from "@/features/home-preview/components/product-detail";
 import { useDetail } from "@/features/home-preview/hooks/use-detail";
 import type { TransactionDetail } from "@/lib/dashboard-data";
@@ -32,32 +31,26 @@ export default function TransactionDetailRoute() {
   const { status, value: detail, error } = useDetail<TransactionDetail>(id, fetch, "transaction");
 
   if (status === "loading") {
-    return <ProductDetailLoading topInset={insets.top} />;
+    return <ProductDetailLoading topInset={insets.top} onBack={() => router.back()} />;
   }
   if (status === "not-found") {
     return (
-      <View
-        className="flex-1 items-center justify-center bg-background px-6"
-        style={{ paddingTop: insets.top }}
-      >
-        <Text className="text-center text-base font-bold text-ink">Transaction not found</Text>
-        <Text className="mt-2 text-center text-caption text-muted-soft">
-          It may have been removed since this screen was opened.
-        </Text>
-      </View>
+      <ProductDetailMessage
+        topInset={insets.top}
+        onBack={() => router.back()}
+        title="Transaction not found"
+        body="It may have been removed since this screen was opened."
+      />
     );
   }
   if (status === "error" || detail === null) {
     return (
-      <View
-        className="flex-1 items-center justify-center bg-background px-6"
-        style={{ paddingTop: insets.top }}
-      >
-        <Text className="text-center text-base font-bold text-ink">Couldn't load this transaction</Text>
-        <Text className="mt-2 text-center text-caption text-muted-soft" numberOfLines={3}>
-          {error ?? "Try going back and reopening the row."}
-        </Text>
-      </View>
+      <ProductDetailMessage
+        topInset={insets.top}
+        onBack={() => router.back()}
+        title="Couldn't load this transaction"
+        body={error ?? "Go back and open it again."}
+      />
     );
   }
 

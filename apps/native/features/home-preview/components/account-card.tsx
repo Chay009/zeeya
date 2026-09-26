@@ -14,14 +14,14 @@ import { AppText as Text } from "@/components/app-text";
 import { AppIcon } from "@/components/icon";
 import { moneyFontFamily } from "@/lib/fonts";
 import type { HomeAccount } from "../data";
-import { hp } from "../theme";
+import { useThemeColors } from "@/components/ui/theme";
 import { BrandLogo } from "./brand-logo";
 
 const CARD_ASPECT = 1.586; // ISO/IEC 7810 ID-1 — the physical credit-card ratio.
 
 const cardShadow = Platform.select({
   ios: {
-    shadowColor: hp.ink,
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 18 },
     shadowOpacity: 0.28,
     shadowRadius: 30,
@@ -186,6 +186,7 @@ export function AccountCard({
   // component, no duplicated markup for the two contexts.
   defaultExpanded?: boolean;
 }) {
+  const colors = useThemeColors();
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [width, setWidth] = useState(0);
   const hasSecondaryDetail =
@@ -193,7 +194,7 @@ export function AccountCard({
     Boolean(account.reconciliation) ||
     Boolean(account.unassignedNote);
 
-  const base = surfaceFor(account.bankColor || hp.heroSurface);
+  const base = surfaceFor(account.bankColor || colors.hero);
   const cardHeight = width > 0 ? Math.round(width / CARD_ASPECT) : 208;
 
   return (
@@ -266,7 +267,7 @@ export function AccountCard({
             <Text className="text-[13px] font-bold text-ink">
               {expanded ? "Hide details" : "Details"}
             </Text>
-            <AppIcon name={expanded ? "chevron-up" : "chevron-down"} size={12} color={hp.ink} />
+            <AppIcon name={expanded ? "chevron-up" : "chevron-down"} size={12} color={colors.ink} />
           </Pressable>
 
           {expanded && (
@@ -324,7 +325,7 @@ function CardStat({
 }) {
   return (
     <View className="min-w-0 flex-1">
-      <Text className="text-caption text-muted-soft">{label}</Text>
+      <Text className="text-caption text-muted">{label}</Text>
       <Text numberOfLines={1} className={`mt-0.5 text-[19px] font-extrabold ${tone ?? "text-ink"}`}>
         {value}
       </Text>

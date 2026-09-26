@@ -8,19 +8,20 @@ const sheetsPath = path.join(__dirname, "..", "components", "analytics-detail-sh
 const componentsDir = path.join(__dirname, "..", "components");
 
 describe("Insights screen composition", () => {
-  it("composes preview + hero + detail sheets from useInsightsScreen", () => {
+  it("composes hero + breakdown + detail sheets from useInsightsScreen", () => {
     const source = readFileSync(screenPath, "utf8");
     const sheets = readFileSync(sheetsPath, "utf8");
 
     expect(source).toContain("useInsightsScreen");
-    expect(source).toContain("AnalyticsOverviewCard");
-    expect(source).toContain("AnalyticsControls");
+    expect(source).toContain("AnalyticsHeroCard");
+    expect(source).toContain("AnalyticsBreakdownCard");
+    expect(source).toContain("AnalyticsBudgetCard");
     expect(source).toContain("AnalyticsDetailSheets");
     expect(source).toContain("formatAnalyticsPeriod");
-    expect(source).toContain("AnalyticsCategoriesPreview");
-    expect(source).toContain("AnalyticsTransactionsPreview");
-    expect(source).toContain("AnalyticsVendorsPreview");
+    expect(source).toContain("TransactionRow");
     expect(source).not.toMatch(/^function Panel\(/m);
+    // Spending is the product word; "Outcome" never reaches the UI.
+    expect(source).not.toContain('"Outcome"');
 
     expect(sheets).toContain("AnalyticsCategoriesSheetContent");
     expect(sheets).toContain("AnalyticsTransactionsSheetContent");

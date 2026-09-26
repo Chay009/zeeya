@@ -3,7 +3,7 @@ import { Pressable, View } from "react-native";
 
 import { AppText as Text } from "@/components/app-text";
 import { AppIcon } from "@/components/icon";
-import { hp } from "@/features/home-preview/theme";
+import { useThemeColors } from "@/components/ui/theme";
 
 const steps = [
   "In Shortcuts, create a Personal Automation triggered by Message.",
@@ -12,6 +12,7 @@ const steps = [
 ];
 
 export function ShortcutsSetupCard() {
+  const colors = useThemeColors();
   const openShortcuts = async () => {
     await Linking.openURL("shortcuts://");
   };
@@ -28,20 +29,20 @@ export function ShortcutsSetupCard() {
       }}
     >
       <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-        <AppIcon name="flash" size={22} color={hp.forest} />
-        <Text style={{ color: hp.inkForest, fontSize: 17, fontWeight: "800" }}>
+        <AppIcon name="flash" size={22} color={colors.accentDeep} />
+        <Text style={{ color: colors.ink, fontSize: 17, fontWeight: "800" }}>
           Apple Shortcuts capture
         </Text>
       </View>
-      <Text style={{ color: hp.forestSoft, fontSize: 13, lineHeight: 20, marginTop: 10 }}>
+      <Text style={{ color: colors.inkSoft, fontSize: 13, lineHeight: 20, marginTop: 10 }}>
         iOS does not let apps read your Messages history. A one-time Personal Automation can save
         each new financial message securely for Zeeya; its content remains on this device.
       </Text>
       <View style={{ gap: 9, marginTop: 14 }}>
         {steps.map((step, index) => (
           <View key={step} style={{ flexDirection: "row", gap: 9 }}>
-            <Text style={{ color: hp.forest, fontWeight: "800" }}>{index + 1}.</Text>
-            <Text style={{ color: hp.forestSoft, flex: 1, fontSize: 13, lineHeight: 19 }}>{step}</Text>
+            <Text style={{ color: colors.accentDeep, fontWeight: "800" }}>{index + 1}.</Text>
+            <Text style={{ color: colors.inkSoft, flex: 1, fontSize: 13, lineHeight: 19 }}>{step}</Text>
           </View>
         ))}
       </View>
@@ -49,7 +50,7 @@ export function ShortcutsSetupCard() {
         onPress={() => void openShortcuts()}
         style={{
           alignSelf: "flex-start",
-          backgroundColor: hp.forest,
+          backgroundColor: colors.accentDeep,
           paddingHorizontal: 18,
           paddingVertical: 11,
           borderRadius: 999,

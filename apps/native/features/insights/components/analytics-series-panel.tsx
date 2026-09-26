@@ -3,7 +3,7 @@ import { Pressable, View } from "react-native";
 import { AppText as Text } from "@/components/app-text";
 import { AnimatedMoney } from "@/components/animated-money";
 import { AppIcon } from "@/components/icon";
-import { hp } from "@/features/home-preview/theme";
+import { useThemeColors } from "@/components/ui/theme";
 
 import { scopeLabel, type AnalyticsDirection, type InsightsTimeScope } from "../analytics-scope";
 import type { MonthlySpendComparison, MonthlyValue, SpendingPoint } from "../insights-data";
@@ -20,6 +20,7 @@ function ChartMessage({
   body: string;
   onRetry?: () => void;
 }) {
+  const colors = useThemeColors();
   return (
     <View
       accessible
@@ -29,14 +30,14 @@ function ChartMessage({
         alignItems: "center",
         justifyContent: "center",
         borderRadius: 16,
-        backgroundColor: hp.surfaceMuted,
+        backgroundColor: colors.fill,
         paddingHorizontal: 18,
       }}
     >
-      <AppIcon name={onRetry ? "cloud-off" : "chart"} size={22} color={hp.muted} />
-      <Text style={{ marginTop: 9, fontSize: 13, fontWeight: "800", color: hp.ink }}>{title}</Text>
+      <AppIcon name={onRetry ? "cloud-off" : "chart"} size={22} color={colors.muted} />
+      <Text style={{ marginTop: 9, fontSize: 13, fontWeight: "800", color: colors.ink }}>{title}</Text>
       <Text
-        style={{ marginTop: 4, fontSize: 12, lineHeight: 18, textAlign: "center", color: hp.muted }}
+        style={{ marginTop: 4, fontSize: 12, lineHeight: 18, textAlign: "center", color: colors.muted }}
       >
         {body}
       </Text>
@@ -47,7 +48,7 @@ function ChartMessage({
           onPress={onRetry}
           style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 12 }}
         >
-          <Text style={{ fontSize: 12, fontWeight: "800", color: hp.accent }}>Try again</Text>
+          <Text style={{ fontSize: 12, fontWeight: "800", color: colors.accent }}>Try again</Text>
         </Pressable>
       )}
     </View>
@@ -65,6 +66,7 @@ function DailyChart({
   error: string | null;
   onRetry: () => void;
 }) {
+  const colors = useThemeColors();
   if (error) {
     return <ChartMessage title="Daily chart unavailable" body={error} onRetry={onRetry} />;
   }
@@ -87,7 +89,7 @@ function DailyChart({
         key={direction}
         data={data}
         height={190}
-        lineColor={direction === "income" ? hp.positive : hp.coralBar}
+        lineColor={direction === "income" ? colors.positive : colors.negative}
         areaStartColor={direction === "income" ? "rgba(18,161,80,0.26)" : "rgba(208,91,81,0.24)"}
         areaEndColor="rgba(0,0,0,0)"
       />
@@ -116,6 +118,7 @@ export function AnalyticsSeriesPanel({
   error: string | null;
   onRetry: () => void;
 }) {
+  const colors = useThemeColors();
   const isIncrease = comparison.percentChange !== null && comparison.percentChange > 0;
   const isDecrease = comparison.percentChange !== null && comparison.percentChange < 0;
   const title = direction === "income" ? "Income Analytics" : "Outcome Analytics";
@@ -128,8 +131,8 @@ export function AnalyticsSeriesPanel({
     <InsightsPanel style={{ marginTop: 14 }}>
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-          <Text style={{ fontSize: 16, fontWeight: "800", color: hp.ink }}>{title}</Text>
-          <AppIcon name="info" size={15} color={hp.faint} />
+          <Text style={{ fontSize: 16, fontWeight: "800", color: colors.ink }}>{title}</Text>
+          <AppIcon name="info" size={15} color={colors.faint} />
         </View>
         <View
           accessible
@@ -140,12 +143,12 @@ export function AnalyticsSeriesPanel({
             gap: 5,
             borderRadius: 10,
             borderWidth: 1,
-            borderColor: hp.border,
+            borderColor: colors.border,
             paddingHorizontal: 10,
             paddingVertical: 7,
           }}
         >
-          <Text style={{ fontSize: 11, fontWeight: "700", color: hp.inkSoft }}>
+          <Text style={{ fontSize: 11, fontWeight: "700", color: colors.inkSoft }}>
             {scopeLabel(scope)}
           </Text>
         </View>
@@ -153,7 +156,7 @@ export function AnalyticsSeriesPanel({
 
       <View style={{ marginTop: 17, flexDirection: "row", alignItems: "baseline", gap: 8 }}>
         {isLoading ? (
-          <Text style={{ fontSize: 28, fontWeight: "800", letterSpacing: -1.4, color: hp.ink }}>
+          <Text style={{ fontSize: 28, fontWeight: "800", letterSpacing: -1.4, color: colors.ink }}>
             —
           </Text>
         ) : (
@@ -162,7 +165,7 @@ export function AnalyticsSeriesPanel({
             value={comparison.currentTotal}
             currency={currency}
             animated={false}
-            style={{ fontSize: 28, fontWeight: "800", letterSpacing: -1.4, color: hp.ink }}
+            style={{ fontSize: 28, fontWeight: "800", letterSpacing: -1.4, color: colors.ink }}
           />
         )}
         {comparison.percentChange !== null && (
@@ -170,7 +173,7 @@ export function AnalyticsSeriesPanel({
             style={{
               fontSize: 12,
               fontWeight: "800",
-              color: isIncrease ? hp.coral : isDecrease ? hp.positive : hp.muted,
+              color: isIncrease ? colors.negative : isDecrease ? colors.positive : colors.muted,
             }}
           >
             {isIncrease ? "↗" : isDecrease ? "↘" : "→"}{" "}
@@ -178,13 +181,13 @@ export function AnalyticsSeriesPanel({
           </Text>
         )}
       </View>
-      <Text style={{ marginTop: 3, fontSize: 12, color: hp.muted }}>
+      <Text style={{ marginTop: 3, fontSize: 12, color: colors.muted }}>
         Current month compared with the previous month
       </Text>
 
       <View style={{ marginTop: 15 }}>
-        <Text style={{ fontSize: 13, fontWeight: "800", color: hp.ink }}>{scopeDescription}</Text>
-        <Text style={{ marginTop: 3, fontSize: 11, color: hp.muted }}>
+        <Text style={{ fontSize: 13, fontWeight: "800", color: colors.ink }}>{scopeDescription}</Text>
+        <Text style={{ marginTop: 3, fontSize: 11, color: colors.muted }}>
           {scope === "month"
             ? "A day-by-day view of captured activity"
             : "A bounded trend, not your full transaction history"}

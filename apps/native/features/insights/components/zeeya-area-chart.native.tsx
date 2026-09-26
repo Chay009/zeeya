@@ -11,7 +11,7 @@ import { LinearGradient, vec } from "@shopify/react-native-skia";
 import { AppText as Text } from "@/components/app-text";
 import { formatMoney } from "@/features/dashboard/utils/format";
 import { compactAxisLabel } from "@/features/home-preview/data/flow-chart-scale";
-import { hp } from "@/features/home-preview/theme";
+import { useThemeColors } from "@/components/ui/theme";
 import { moneyFontFamily } from "@/lib/fonts";
 
 import type { SpendingPoint } from "../insights-data";
@@ -73,7 +73,7 @@ export function ZeeyaAreaChart({
   isLoading = false,
   curveType = "natural",
   height = 220,
-  lineColor = hp.accent,
+  lineColor: lineColorProp,
   areaStartColor,
   areaEndColor,
   areaColor,
@@ -81,6 +81,8 @@ export function ZeeyaAreaChart({
   currency = "INR",
   at = new Date(),
 }: ZeeyaAreaChartProps) {
+  const colors = useThemeColors();
+  const lineColor = lineColorProp ?? colors.chartLine;
   const [hasPaintedOnce, setHasPaintedOnce] = useState(false);
   const readyToPaint = !isLoading && data.length > 0;
   useEffect(() => {
@@ -196,8 +198,8 @@ export function ZeeyaAreaChart({
               top: `${peakTop}%`,
               borderRadius: 10,
               borderWidth: 1,
-              borderColor: hp.borderSoft,
-              backgroundColor: hp.card,
+              borderColor: colors.divider,
+              backgroundColor: colors.card,
               paddingHorizontal: 8,
               paddingVertical: 4,
               shadowColor: "#101014",

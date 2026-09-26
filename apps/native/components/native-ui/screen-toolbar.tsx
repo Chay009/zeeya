@@ -5,7 +5,7 @@ import { AppText } from "@/components/app-text";
 import { AppIcon, type AppIconName } from "@/components/icon";
 
 import { GlassButton } from "./glass-button";
-import { useNativeUiColors } from "./theme";
+import { useThemeColors } from "@/components/ui/theme";
 
 export type ScreenToolbarAction = {
   key: string;
@@ -34,7 +34,7 @@ export function ScreenToolbar({
   right?: ReactNode;
   style?: StyleProp<ViewStyle>;
 }) {
-  const colors = useNativeUiColors();
+  const colors = useThemeColors();
 
   return (
     <View style={[{ paddingTop: Math.max(8, topInset), paddingHorizontal: 20 }, style]}>

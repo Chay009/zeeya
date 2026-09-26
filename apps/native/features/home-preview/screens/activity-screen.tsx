@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AppText as Text } from "@/components/app-text";
+import { LargeTitle } from "@/components/ui/header";
+import { ErrorState, SkeletonHero, SkeletonRows } from "@/components/ui/states";
 import { HOME_RECENT_ACTIVITY_MAX_LIMIT } from "@/db/queries-home";
 import { useDashboardSync } from "@/features/dashboard/hooks/dashboard-sync-provider";
 import { useHomeReadModel } from "@/features/dashboard/hooks/home-read-model";
@@ -44,7 +45,6 @@ export function ActivityScreen() {
   const router = useRouter();
   const { status } = useDashboardSync();
   const { model: readModel } = useHomeReadModel("INR");
-  const accountSelectionInitialized = useRef(false);
   const [selectedAccountKey, setSelectedAccountKey] = useState("all");
 
   const homeData = useMemo(
@@ -58,21 +58,12 @@ export function ActivityScreen() {
 
   const activityAccounts = useMemo(() => homeData.accounts, [homeData.accounts]);
 
+  // Default to every account; only fall back to "all" if the chosen account
+  // disappears (e.g. after a resync).
   useEffect(() => {
-    if (activityAccounts.length === 0) {
-      setSelectedAccountKey("all");
-      return;
-    }
-    setSelectedAccountKey((current) => {
-      if (!accountSelectionInitialized.current) {
-        accountSelectionInitialized.current = true;
-        return activityAccounts[0]!.key;
-      }
-      if (current === "all" || activityAccounts.some((account) => account.key === current)) {
-        return current;
-      }
-      return activityAccounts[0]?.key ?? "all";
-    });
+    setSelectedAccountKey((current) =>
+      current === "all" || activityAccounts.some((account) => account.key === current) ? current : "all",
+    );
   }, [activityAccounts]);
 
   const scopedAccountId = resolveScopedAccountId(homeData.accounts, selectedAccountKey);
@@ -102,26 +93,26 @@ export function ActivityScreen() {
   };
 
   if (activityStatus === "loading" && activity.allItems.length === 0) {
-    return <View className="flex-1 bg-card" style={{ paddingTop: Math.max(12, insets.top) }} />;
+    return (
+      <View className="flex-1 bg-background px-4">
+        <LargeTitle title="Transactions" topInset={insets.top} />
+        <View className="mt-6">
+          <SkeletonHero />
+        </View>
+        <View className="mt-6">
+          <SkeletonRows count={5} />
+        </View>
+      </View>
+    );
   }
 
   if (activityStatus === "error") {
     return (
-      <View
-        className="flex-1 items-center justify-center bg-card px-6"
-        style={{ paddingTop: Math.max(12, insets.top) }}
-      >
-        <Text className="text-center text-base font-bold text-ink">Couldn't load transactions</Text>
-        <Text className="mt-2 text-center text-caption text-muted-soft" numberOfLines={3}>
-          {activityError ?? "Try again in a moment."}
-        </Text>
-        <Pressable
-          accessibilityRole="button"
-          onPress={reloadActivity}
-          className="mt-4 rounded-pill bg-accent px-4 py-2"
-        >
-          <Text className="text-caption font-extrabold text-on-accent">Retry</Text>
-        </Pressable>
+      <View className="flex-1 bg-background px-4">
+        <LargeTitle title="Transactions" topInset={insets.top} />
+        <View className="flex-1 justify-center pb-24">
+          <ErrorState title="Couldn't load transactions" body={activityError} onRetry={reloadActivity} />
+        </View>
       </View>
     );
   }

@@ -6,7 +6,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText as Text } from "@/components/app-text";
 import { useFloatingTabBarClearance } from "@/components/floating-tab-bar";
 import { EnterTransition } from "@/components/native-ui/enter-transition";
-import { headingFontFamily, moneyFontFamily } from "@/lib/fonts";
+import { moneyFontFamily } from "@/lib/fonts";
+import { LargeTitle } from "@/components/ui/header";
+import { Section } from "@/components/ui/section";
+import { ErrorState } from "@/components/ui/states";
 
 import { useDashboardSync } from "@/features/dashboard/hooks/dashboard-sync-provider";
 import { useHomeReadModel } from "@/features/dashboard/hooks/home-read-model";
@@ -20,7 +23,6 @@ import {
   scopedHeroBalance,
 } from "../account-scope";
 import { AccountScopeChips } from "../components/account-scope-chips";
-import { AccountEvidenceSection } from "../components/account-evidence-section";
 import { ActivitySection } from "../components/activity-section";
 import { BudgetCard } from "../components/budget-card";
 import { CashflowCard } from "../components/cashflow-card";
@@ -35,16 +37,15 @@ import {
   summarizeNewTransactions,
   type HomeActivityViewItem,
 } from "../data";
-import { homeSpacing, hp } from "../theme";
+import { useThemeColors } from "@/components/ui/theme";
 import { useHomeAccountCashflowScope } from "../hooks/use-home-account-cashflow-scope";
 import { useHomeActivityScope } from "../hooks/use-home-activity-scope";
 import { useHomeHighlights } from "../hooks/use-home-highlights";
 import { useHomeScreenModel } from "../hooks/use-home-screen-model";
 
-// The page gutter. Account chips stay inside it; Cards is opened from More.
-const PAGE_PADDING = 20;
 
 export function HomePreviewScreen() {
+  const colors = useThemeColors();
   const insets = useSafeAreaInsets();
   const tabBarClearance = useFloatingTabBarClearance();
   const router = useRouter();
@@ -273,6 +274,11 @@ export function HomePreviewScreen() {
     reloadReadModel(currency);
   };
 
+  const hasAccounts = homeData.accounts.length > 0;
+  const scopedAccountKey = homeData.accounts.some((account) => account.key === selectedAccountKey)
+    ? selectedAccountKey
+    : ALL_ACCOUNTS_KEY;
+
   return (
     <View className="flex-1 bg-background">
       <ScrollView
@@ -281,143 +287,115 @@ export function HomePreviewScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={hp.accent}
-            colors={[hp.accent]}
+            tintColor={colors.muted}
+            colors={[colors.ink]}
           />
         }
-        contentContainerStyle={{
-          paddingHorizontal: PAGE_PADDING,
-          paddingTop: Math.max(homeSpacing.md, insets.top),
-          paddingBottom: 12 + tabBarClearance,
-        }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8 + tabBarClearance }}
         showsVerticalScrollIndicator={false}
       >
-        {/* One line, not three. "Money overview" and "your latest activity
-            at a glance" both described the screen you were already looking
-            at; the greeting is the only part that says anything. No header
-            buttons either — Profile is a bottom tab already. */}
-        <View className="mt-3">
-          <Text className="text-body text-muted-soft">{homeData.greeting}</Text>
-          <Text
-            numberOfLines={1}
-            className="mt-0.5 text-[32px] font-bold tracking-tight text-ink"
-            style={{ fontFamily: headingFontFamily("bold") }}
-          >
-            {homeData.displayName}
+        <LargeTitle title={homeData.displayName} subtitle={homeData.greeting} topInset={insets.top} />
+
+        {/* Balance hero — the one number Home leads with, with the account
+            scope right under it so "which money is this?" is answered in
+            place. */}
+        <View className="mt-5 rounded-card bg-card px-5 pb-4 pt-5">
+          <Text className="text-caption font-medium text-muted">
+            {scopedAccountKey === ALL_ACCOUNTS_KEY ? "Total balance" : "Balance"}
           </Text>
-          {homeData.accounts.length > 0 ? (
+          {hasAccounts ? (
             <>
-              <Text className="mt-3 text-label font-bold uppercase tracking-wide text-muted">
-                {selectedAccountKey === ALL_ACCOUNTS_KEY ? "Total balance" : "Balance"}
-              </Text>
               <Text
                 numberOfLines={1}
-                className="mt-0.5 text-screen tracking-tight text-ink"
-                style={{ fontFamily: moneyFontFamily("semibold") }}
+                adjustsFontSizeToFit
+                minimumFontScale={0.6}
+                className="mt-1 text-hero text-ink"
+                style={{ fontFamily: moneyFontFamily("bold"), letterSpacing: -1 }}
               >
-                {scopedHeroBalance(homeData.accounts, selectedAccountKey)}
+                {scopedHeroBalance(homeData.accounts, scopedAccountKey)}
               </Text>
               <Text className="mt-0.5 text-caption text-muted">
-                {accountScopeCaption(homeData.accounts, selectedAccountKey)}
+                {accountScopeCaption(homeData.accounts, scopedAccountKey)}
+              </Text>
+              {showDashboardShell && readModel ? (
+                <View className="mt-4">
+                  <AccountScopeChips
+                    accounts={homeData.accounts}
+                    selectedKey={scopedAccountKey}
+                    onSelect={setSelectedAccountKey}
+                    onOpenMore={() => router.push("/cards")}
+                  />
+                </View>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <Text className="mt-1 text-title font-semibold text-ink">No balance yet</Text>
+              <Text className="mt-1 text-caption text-muted">
+                Balances appear once a bank message reports one.
               </Text>
             </>
-          ) : null}
+          )}
         </View>
 
-        <HomePermissionCard status={status} error={error} progress={progress} onConnect={connect} />
+        <HomePermissionCard
+          status={status}
+          error={error}
+          progress={progress}
+          onConnect={connect}
+          hasData={readModel !== null}
+        />
 
-        {showReadModelError && (
-          // Home's own read-model load failed — distinct from
-          // useDashboardSync's own error surface (which can independently
-          // be a permissions/unsupported/sync error above). Without an
-          // explicit message here, a user with a working inbox sync but a
-          // transient SQL failure would see a permanent skeleton with no
-          // indication anything's wrong.
-          <View className="mt-4 rounded-card bg-card p-4">
-            <Text className="text-body font-bold text-ink">Couldn't load the Home view</Text>
-            <Text className="mt-1 text-caption leading-[17px] text-muted-soft" numberOfLines={3}>
-              {readModelError ?? "Try pulling down to refresh."}
-            </Text>
+        {showReadModelError ? (
+          <View className="mt-4 rounded-card bg-card">
+            <ErrorState compact title="Couldn't load Home" body={readModelError} onRetry={() => reloadReadModel(loadCurrency)} />
           </View>
-        )}
+        ) : null}
 
         {showDashboardShell && readModel ? (
           <>
-            <EnterTransition index={0}>
-              {homeData.accounts.length > 0 ? (
-                <AccountScopeChips
-                  accounts={homeData.accounts}
-                  selectedKey={
-                    homeData.accounts.some((account) => account.key === selectedAccountKey)
-                      ? selectedAccountKey
-                      : ALL_ACCOUNTS_KEY
-                  }
-                  onSelect={setSelectedAccountKey}
-                  onOpenMore={() => router.push("/cards")}
-                />
-              ) : (
-                <View className="mt-4 rounded-card bg-card p-4">
-                  <Text className="text-body font-bold text-ink">No bank-reported balance yet</Text>
-                  <Text className="mt-1 text-caption leading-[17px] text-muted-soft">
-                    Detected identities are listed separately on the Cards tab and do not affect
-                    balances.
-                  </Text>
-                </View>
-              )}
-            </EnterTransition>
-
             <HomeHighlightsPanel
               status={highlightsStatus}
               error={highlightsError}
               highlights={highlights}
               afterToday={
                 isCashflowCurrencyReady ? (
-                  <View className="mt-3">
+                  <Section title="This week">
                     <CashflowCard
                       data={displayHomeData.cashflow}
                       selectedCurrency={explicitCurrency ?? displayHomeData.cashflow.selectedCurrency}
                       onSelectCurrency={handleCashflowCurrencyChange}
                       isScopeRefreshing={isCashflowScopeRefreshing}
                     />
-                  </View>
+                  </Section>
                 ) : null
               }
               subscriptionPreviewItems={subscriptionPreviewItems}
-              budget={displayHomeData.budget}
               onRetry={reloadHighlights}
               onSeeActivity={() => router.navigate("/activity")}
-              onOpenUpcoming={() => router.navigate("/insights")}
+              onOpenUpcoming={() => router.push("/subscriptions")}
               onOpenSubscriptions={() => router.push("/subscriptions")}
               onSelectTransaction={openTransactionDetail}
             />
 
-            <EnterTransition index={1}>
-              <View className="mt-3 gap-3">
-                <BudgetCard
-                  {...displayHomeData.budget}
-                  onOpen={() => router.navigate("/insights")}
-                />
-                <ActivitySection
-                  activity={homeDataForSection.activity}
-                  onSeeAll={() => router.navigate("/activity")}
-                  onSelect={openActivityDetail}
-                  selectedFilter={selectedFilter}
-                  onFilterChange={setSelectedFilter}
-                  activityStatus={activityQueryStatus}
-                  activityError={activityQueryError}
-                  onRetry={reloadActivity}
-                />
-              </View>
+            <EnterTransition index={3}>
+              <Section title="Budget">
+                <BudgetCard {...displayHomeData.budget} onOpen={() => router.navigate("/insights")} />
+              </Section>
             </EnterTransition>
 
-            {(homeData.detectedAccounts.length > 0 || homeData.unassignedReadings.length > 0) && (
-              <EnterTransition index={2}>
-                <AccountEvidenceSection
-                  detectedAccounts={homeData.detectedAccounts}
-                  unassignedReadings={homeData.unassignedReadings}
-                />
-              </EnterTransition>
-            )}
+            <EnterTransition index={4}>
+              <ActivitySection
+                activity={homeDataForSection.activity}
+                onSeeAll={() => router.navigate("/activity")}
+                onSelect={openActivityDetail}
+                selectedFilter={selectedFilter}
+                onFilterChange={setSelectedFilter}
+                activityStatus={activityQueryStatus}
+                activityError={activityQueryError}
+                onRetry={reloadActivity}
+              />
+            </EnterTransition>
           </>
         ) : null}
       </ScrollView>

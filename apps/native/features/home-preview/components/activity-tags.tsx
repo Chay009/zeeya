@@ -8,12 +8,12 @@ export const ACTIVITY_TAG_CLASS: Record<
   ActivityPill["tone"],
   { chip: string; label: string }
 > = {
-  recurring: { chip: "bg-recurring-bg", label: "text-recurring-ink" },
-  type: { chip: "bg-chip-bg", label: "text-emerald-deep" },
+  recurring: { chip: "bg-accent-soft", label: "text-accent-deep" },
+  type: { chip: "bg-fill", label: "text-positive" },
   subcategory: { chip: "bg-accent-soft", label: "text-accent-deep" },
-  mandate: { chip: "bg-manual-bg", label: "text-manual-ink" },
-  card: { chip: "bg-chip-bg", label: "text-ink-soft" },
-  bank: { chip: "bg-surface-sage", label: "text-ink-soft" },
+  mandate: { chip: "bg-warning-soft", label: "text-warning" },
+  card: { chip: "bg-fill", label: "text-ink-soft" },
+  bank: { chip: "bg-fill", label: "text-ink-soft" },
 };
 
 export function ActivityTag({

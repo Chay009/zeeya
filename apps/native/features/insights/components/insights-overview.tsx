@@ -6,7 +6,7 @@ import { AnimatedMoney } from "@/components/animated-money";
 import { AppIcon } from "@/components/icon";
 import { BrandLogo } from "@/features/home-preview/components/brand-logo";
 import { SubscriptionSpendValue } from "@/features/home-preview/components/subscription-ui";
-import { hp } from "@/features/home-preview/theme";
+import { useThemeColors } from "@/components/ui/theme";
 import type { SubscriptionSummary } from "@/lib/dashboard-data";
 import { fromMinorUnits } from "@/lib/currency";
 import { formatMoney } from "@/features/dashboard/utils/format";
@@ -20,8 +20,6 @@ const TILE_STYLE = {
   minHeight: 190,
   borderRadius: 22,
   borderWidth: 1,
-  borderColor: hp.border,
-  backgroundColor: hp.card,
   padding: 15,
 } as const;
 
@@ -38,14 +36,15 @@ function SpendingInsightTile({
   error: string | null;
   isLoading: boolean;
 }) {
+  const colors = useThemeColors();
   const hasCurrentSpending = comparison.currentTotal > 0;
   const hasChartData = series.some((point) => point.value > 0);
   const isIncrease = comparison.percentChange !== null && comparison.percentChange > 0;
   const isDecrease = comparison.percentChange !== null && comparison.percentChange < 0;
 
   return (
-    <View style={TILE_STYLE}>
-      <Text numberOfLines={2} style={{ fontSize: 13, color: hp.muted }}>
+    <View style={TILE_STYLE} className="border-border bg-card">
+      <Text numberOfLines={2} style={{ fontSize: 13, color: colors.muted }}>
         Spending this month
       </Text>
       <Text
@@ -54,7 +53,7 @@ function SpendingInsightTile({
           marginTop: 5,
           fontSize: 12,
           fontWeight: "700",
-          color: isIncrease ? hp.coral : isDecrease ? hp.positive : hp.muted,
+          color: isIncrease ? colors.negative : isDecrease ? colors.positive : colors.muted,
         }}
       >
         {comparison.percentChange === null
@@ -67,12 +66,12 @@ function SpendingInsightTile({
             value={comparison.currentTotal}
             currency={currency}
             animated={false}
-            style={{ fontSize: 20, fontWeight: "800", color: hp.ink }}
+            style={{ fontSize: 20, fontWeight: "800", color: colors.ink }}
           />
         ) : (
           <Text
             numberOfLines={1}
-            style={{ fontSize: 20, fontWeight: "800", color: hp.ink }}
+            style={{ fontSize: 20, fontWeight: "800", color: colors.ink }}
           >
             No spending yet
           </Text>
@@ -81,7 +80,7 @@ function SpendingInsightTile({
       <View style={{ flex: 1, justifyContent: "flex-end", marginTop: 8 }}>
         {isLoading ? null : error ? (
           <View style={{ height: 74, justifyContent: "center" }}>
-            <Text style={{ fontSize: 11, lineHeight: 16, color: hp.muted }}>
+            <Text style={{ fontSize: 11, lineHeight: 16, color: colors.muted }}>
               Daily activity is temporarily unavailable.
             </Text>
           </View>
@@ -89,13 +88,13 @@ function SpendingInsightTile({
           <ZeeyaAreaChart
             data={series}
             height={74}
-            lineColor={hp.coralBar}
+            lineColor={colors.negative}
             areaStartColor="rgba(208,91,81,0.24)"
             areaEndColor="rgba(208,91,81,0.0)"
           />
         ) : (
           <View style={{ height: 74, justifyContent: "center" }}>
-            <Text style={{ fontSize: 11, lineHeight: 16, color: hp.muted }}>
+            <Text style={{ fontSize: 11, lineHeight: 16, color: colors.muted }}>
               The chart appears after captured expenses.
             </Text>
           </View>
@@ -117,12 +116,13 @@ function SubscriptionsInsightTile({
   committedMonthlySpend: string | null;
   committedActiveCount: number | null;
 }) {
+  const colors = useThemeColors();
   const activeItems = useMemo(() => subscriptions, [subscriptions]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const selected = activeItems[Math.min(selectedIndex, Math.max(0, activeItems.length - 1))];
 
   return (
-    <View style={TILE_STYLE}>
+    <View style={TILE_STYLE} className="border-border bg-card">
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Open subscriptions"
@@ -132,10 +132,10 @@ function SubscriptionsInsightTile({
         <View
           style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}
         >
-          <Text style={{ fontSize: 13, color: hp.muted }}>Subscriptions</Text>
-          <AppIcon name="chevron-right" size={15} color={hp.muted} />
+          <Text style={{ fontSize: 13, color: colors.muted }}>Subscriptions</Text>
+          <AppIcon name="chevron-right" size={15} color={colors.muted} />
         </View>
-        <Text numberOfLines={1} style={{ marginTop: 5, fontSize: 12, color: hp.muted }}>
+        <Text numberOfLines={1} style={{ marginTop: 5, fontSize: 12, color: colors.muted }}>
           {committedActiveCount === null
             ? "Loading captured subscriptions"
             : `${committedActiveCount} active subscription${committedActiveCount === 1 ? "" : "s"}`}
@@ -167,14 +167,14 @@ function SubscriptionsInsightTile({
                   borderTopRightRadius: 21,
                   borderBottomLeftRadius: 9,
                   borderBottomRightRadius: 9,
-                  backgroundColor: hp.accentSoft,
+                  backgroundColor: colors.accentSoft,
                   opacity: index === selectedIndex ? 1 : 0.78,
                 }}
               >
                 <BrandLogo
                   letter={subscription.merchant.charAt(0).toUpperCase() || "?"}
-                  tile={hp.accentSoft}
-                  ink={hp.accent}
+                  tile={colors.accentSoft}
+                  ink={colors.accent}
                   size={36}
                   radius={18}
                   iconRatio={0.64}
@@ -184,10 +184,10 @@ function SubscriptionsInsightTile({
           </ScrollView>
           {selected && (
             <View style={{ marginTop: 8, minWidth: 0 }}>
-              <Text numberOfLines={1} style={{ fontSize: 11, fontWeight: "800", color: hp.ink }}>
+              <Text numberOfLines={1} style={{ fontSize: 11, fontWeight: "800", color: colors.ink }}>
                 {selected.merchant}
               </Text>
-              <Text numberOfLines={1} style={{ marginTop: 2, fontSize: 10, color: hp.muted }}>
+              <Text numberOfLines={1} style={{ marginTop: 2, fontSize: 10, color: colors.muted }}>
                 {formatMoney(
                   fromMinorUnits(selected.amountMinorUnits, selected.currency),
                   selected.currency,
@@ -198,7 +198,7 @@ function SubscriptionsInsightTile({
           )}
         </>
       ) : (
-        <Text style={{ marginTop: 14, fontSize: 11, lineHeight: 16, color: hp.muted }}>
+        <Text style={{ marginTop: 14, fontSize: 11, lineHeight: 16, color: colors.muted }}>
           No active subscriptions captured.
         </Text>
       )}
@@ -227,9 +227,10 @@ export function InsightsOverview({
   committedMonthlySpend: string | null;
   committedActiveCount: number | null;
 }) {
+  const colors = useThemeColors();
   return (
     <View style={{ marginTop: 20 }}>
-      <Text style={{ fontSize: 22, fontWeight: "800", letterSpacing: -0.8, color: hp.ink }}>
+      <Text style={{ fontSize: 22, fontWeight: "800", letterSpacing: -0.8, color: colors.ink }}>
         Insights
       </Text>
       <View style={{ marginTop: 12, flexDirection: "row", gap: 12 }}>

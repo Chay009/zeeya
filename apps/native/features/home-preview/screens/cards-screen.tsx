@@ -1,20 +1,20 @@
 import { useMemo } from "react";
-import { Platform, ScrollView, View } from "react-native";
+import { useRouter } from "expo-router";
+import { ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "@/components/app-text";
-import { useFloatingTabBarClearance } from "@/components/floating-tab-bar";
+import { NavBar } from "@/components/ui/header";
+import { Section } from "@/components/ui/section";
+import { EmptyState } from "@/components/ui/states";
 import { useDashboardSync } from "@/features/dashboard/hooks/dashboard-sync-provider";
 import { useHomeReadModel } from "@/features/dashboard/hooks/home-read-model";
-import { headingFontFamily, moneyFontFamily } from "@/lib/fonts";
+import { moneyFontFamily } from "@/lib/fonts";
 
 import { AccountCard } from "../components/account-card";
 import { AccountEvidenceSection } from "../components/account-evidence-section";
 import { HomePermissionCard } from "../components/home-permission-card";
 import { createHomePreviewDataFromReadModel } from "../data";
-import { homeRadius, homeSpacing, hp } from "../theme";
-
-const PAGE_PADDING = 20;
 
 const EMPTY_READ_MODEL = {
   currency: "INR",
@@ -37,23 +37,9 @@ const EMPTY_READ_MODEL = {
   totalActivityCount: 0,
 };
 
-// The sheet the cards sit on. Two planes — tinted page above, white sheet
-// below — is what separates "here is the summary" from "here are the
-// things", without a heading having to say so.
-const sheetShadow = Platform.select({
-  ios: {
-    shadowColor: hp.ink,
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 20,
-  },
-  android: { elevation: 3 },
-  default: {},
-});
-
 export function CardsScreen() {
   const insets = useSafeAreaInsets();
-  const tabBarClearance = useFloatingTabBarClearance();
+  const router = useRouter();
   const { status, error, progress, connect } = useDashboardSync();
   const { model: readModel } = useHomeReadModel("INR");
   const homeData = useMemo(
@@ -68,119 +54,67 @@ export function CardsScreen() {
   const netAcross = homeData.accounts[0]?.netAcross ?? null;
 
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: hp.background }}
-      contentContainerStyle={{ paddingBottom: tabBarClearance }}
-      showsVerticalScrollIndicator={false}
-    >
-      <View
-        style={{
-          paddingHorizontal: PAGE_PADDING,
-          paddingTop: Math.max(20, insets.top),
-          paddingBottom: homeSpacing.lg,
-        }}
+    <View className="flex-1 bg-background">
+      <NavBar title="Accounts" onBack={() => router.back()} topInset={insets.top} />
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }}
+        showsVerticalScrollIndicator={false}
       >
-        <Text style={{ fontSize: 14, color: hp.mutedSoft }}>Your accounts</Text>
-
-        <View style={{ marginTop: 4, flexDirection: "row", alignItems: "baseline", gap: 8 }}>
-          <Text
-            style={{
-              fontFamily: headingFontFamily("bold"),
-              fontSize: 34,
-              letterSpacing: -0.8,
-              color: hp.ink,
-            }}
-          >
-            Cards
+        <View className="mt-2 rounded-card bg-card p-5">
+          <Text className="text-caption font-medium text-muted">
+            {count > 0 ? `Across ${count} account${count === 1 ? "" : "s"}` : "Accounts"}
           </Text>
-          {count > 0 && (
+          {netAcross && netAcross !== "—" ? (
             <Text
-              style={{
-                fontFamily: headingFontFamily("bold"),
-                fontSize: 34,
-                letterSpacing: -0.8,
-                color: hp.faint,
-              }}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.6}
+              className="mt-1 text-hero text-ink"
+              style={{ fontFamily: moneyFontFamily("bold"), letterSpacing: -1 }}
             >
-              ({count})
+              {netAcross}
             </Text>
-          )}
-        </View>
-
-        {netAcross && netAcross !== "—" && (
-          <Text
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={0.6}
-            style={{
-              marginTop: 10,
-              fontFamily: moneyFontFamily("semibold"),
-              fontSize: 30,
-              letterSpacing: -0.6,
-              color: hp.ink,
-            }}
-          >
-            {netAcross}
-          </Text>
-        )}
-
-        <HomePermissionCard status={status} error={error} progress={progress} onConnect={connect} />
-      </View>
-
-      {status === "ready" && (
-        <View
-          style={{
-            backgroundColor: hp.card,
-            borderTopLeftRadius: homeRadius.hero,
-            borderTopRightRadius: homeRadius.hero,
-            paddingHorizontal: PAGE_PADDING,
-            paddingTop: homeSpacing.md,
-            paddingBottom: homeSpacing.lg,
-            minHeight: 420,
-            ...sheetShadow,
-          }}
-        >
-          <View
-            style={{
-              alignSelf: "center",
-              width: 38,
-              height: 4,
-              borderRadius: 2,
-              backgroundColor: hp.track,
-            }}
-          />
-
-          {count > 0 ? (
-            <View style={{ marginTop: homeSpacing.lg, gap: homeSpacing.md }}>
-              {homeData.accounts.map((account) => (
-                <AccountCard key={account.key} account={account} defaultExpanded />
-              ))}
-            </View>
           ) : (
-            <View style={{ marginTop: homeSpacing.lg, alignItems: "center", paddingVertical: 28 }}>
-              <Text style={{ fontSize: 16, fontWeight: "700", color: hp.ink }}>
-                No bank-reported balance yet
-              </Text>
-              <Text
-                style={{
-                  marginTop: 6,
-                  fontSize: 13,
-                  lineHeight: 19,
-                  textAlign: "center",
-                  color: hp.mutedSoft,
-                }}
-              >
-                Detected identities are listed below and do not affect balances.
-              </Text>
-            </View>
+            <Text className="mt-1 text-body text-muted">No bank-reported balance yet</Text>
           )}
-
-          <AccountEvidenceSection
-            detectedAccounts={homeData.detectedAccounts}
-            unassignedReadings={homeData.unassignedReadings}
-          />
         </View>
-      )}
-    </ScrollView>
+
+        <HomePermissionCard
+          status={status}
+          error={error}
+          progress={progress}
+          onConnect={connect}
+          hasData={readModel !== null}
+        />
+
+        {status === "ready" ? (
+          <>
+            {count > 0 ? (
+              <Section title="Cards">
+                <View className="gap-4">
+                  {homeData.accounts.map((account) => (
+                    <AccountCard key={account.key} account={account} defaultExpanded />
+                  ))}
+                </View>
+              </Section>
+            ) : (
+              <View className="mt-6 rounded-card bg-card">
+                <EmptyState
+                  icon="card"
+                  title="No confirmed accounts yet"
+                  body="An account appears once a bank message reports its balance."
+                />
+              </View>
+            )}
+
+            <AccountEvidenceSection
+              detectedAccounts={homeData.detectedAccounts}
+              unassignedReadings={homeData.unassignedReadings}
+            />
+          </>
+        ) : null}
+      </ScrollView>
+    </View>
   );
 }

@@ -11,8 +11,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 
-import { AppText as Text } from "@/components/app-text";
-import { CurrencyChipGroup, SelectedPill } from "@/components/native-ui/selected-pill";
+import { Segmented, SelectPill } from "@/components/ui/controls";
 
 import type { HomePreviewData } from "../data";
 import { ThisWeekCalendarTab } from "./this-week-calendar-tab";
@@ -143,32 +142,28 @@ export function CashflowCard({
   }));
 
   return (
-    <Surface asChild className="overflow-hidden rounded-card bg-card p-4">
+    <Surface asChild className="overflow-hidden rounded-card bg-card p-5">
       <View>
-        <View className="flex-row items-center justify-between">
-          <Text className="text-base font-bold text-ink">Activity</Text>
-          {data.availableCurrencies.length > 0 ? (
-            <CurrencyChipGroup
-              currencies={data.availableCurrencies}
-              selected={activeCurrency}
-              onSelect={(currencyCode) => onSelectCurrency?.(currencyCode)}
+        <View className="flex-row items-center justify-between gap-3">
+          <Segmented
+            value={CHART_LABELS[chartIndex]!}
+            options={CHART_LABELS.map((label) => ({ value: label, label }))}
+            onChange={(label) => setChartIndex(CHART_LABELS.indexOf(label))}
+            size="sm"
+            className="min-w-0 flex-1"
+          />
+          {data.availableCurrencies.length > 1 ? (
+            <SelectPill
+              value={activeCurrency}
+              options={data.availableCurrencies.map((code) => ({ value: code, label: code }))}
+              onChange={(code) => onSelectCurrency?.(code)}
+              accessibilityLabel="Currency"
+              tone="fill"
             />
           ) : null}
         </View>
 
-        <View className="mt-3 flex-row gap-1">
-          {CHART_LABELS.map((label, i) => (
-            <SelectedPill
-              key={label}
-              selected={i === chartIndex}
-              label={label}
-              onPress={() => setChartIndex(i)}
-              className="px-3 py-1.5"
-            />
-          ))}
-        </View>
-
-        <Animated.View className="relative mt-4" style={panelStyle}>
+        <Animated.View className="relative mt-5" style={panelStyle}>
           {isScopeRefreshing ? (
             <View
               pointerEvents="none"

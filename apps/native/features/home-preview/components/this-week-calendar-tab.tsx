@@ -7,7 +7,7 @@ import { AppIcon } from "@/components/icon";
 
 import type { HomePreviewData } from "../data";
 import { DayDetailSheet } from "./day-detail-sheet";
-import { hp } from "../theme";
+import { useThemeColors } from "@/components/ui/theme";
 
 const CALENDAR_DAY_HEIGHT = 48;
 
@@ -92,6 +92,7 @@ const HomeCalendarDay = memo(function HomeCalendarDay({
   state,
   testID,
 }: CalendarDayProps & { month?: CalendarMonth }) {
+  const colors = useThemeColors();
   const isDisabled = state === "disabled";
   const net = date && month && !isDisabled ? month.nets[date.day] ?? month.nets[Number(date.day)] : undefined;
   const displayNet = net ? compactCalendarNet(net) : undefined;
@@ -117,7 +118,7 @@ const HomeCalendarDay = memo(function HomeCalendarDay({
         className="h-[26px] w-[26px] items-center justify-center rounded-full"
         style={{
           backgroundColor: isToday
-            ? hp.accent
+            ? colors.accent
             : hasNet
               ? income
                 ? "rgba(18,161,80,0.14)"
@@ -128,12 +129,12 @@ const HomeCalendarDay = memo(function HomeCalendarDay({
         <Text
           className={`text-subtitle font-bold ${
             isDisabled
-              ? "text-sage-disabled"
+              ? "text-faint"
               : isToday
                 ? "text-on-accent"
                 : hasNet
                   ? "text-ink"
-                  : "text-sage-muted"
+                  : "text-faint"
           }`}
         >
           {date?.day}
@@ -142,7 +143,7 @@ const HomeCalendarDay = memo(function HomeCalendarDay({
       {displayNet ? (
         <Text
           numberOfLines={1}
-          className={`mt-1 text-label font-extrabold ${income ? "text-positive" : "text-coral"}`}
+          className={`mt-1 text-label font-semibold ${income ? "text-positive" : "text-muted"}`}
         >
           {displayNet}
         </Text>
@@ -160,6 +161,7 @@ export function ThisWeekCalendarTab({
   currency: string;
   isActive?: boolean;
 }) {
+  const colors = useThemeColors();
   // calendarMonths (db/queries-home.ts's monthKeys) is built oldest-first —
   // the newest/current month is the LAST element, not the first — so the
   // initial index must start there, not at 0 (which was showing whatever
@@ -247,10 +249,10 @@ export function ThisWeekCalendarTab({
     <View>
       <View className="flex-row items-center justify-between gap-2">
         <View className="min-w-0 flex-1">
-          <Text numberOfLines={1} className="text-[19px] font-extrabold tracking-tight text-ink">
+          <Text numberOfLines={1} className="text-subtitle font-semibold text-ink">
             {month.spent}
           </Text>
-          <Text numberOfLines={1} className="mt-0.5 text-caption text-sage-soft">
+          <Text numberOfLines={1} className="mt-0.5 text-caption text-muted">
             spent · income {month.income}
           </Text>
         </View>
@@ -260,14 +262,14 @@ export function ThisWeekCalendarTab({
               accessibilityLabel="Show older month"
               disabled={calendarIndex === 0}
               onPress={() => setCalendarIndex((j) => Math.max(j - 1, 0))}
-              className={`h-8 w-8 items-center justify-center rounded-full bg-chip ${
+              className={`h-8 w-8 items-center justify-center rounded-full bg-fill ${
                 calendarIndex === 0 ? "opacity-35" : "opacity-100"
               }`}
             >
-              <AppIcon name="chevron-left" size={18} color={hp.inkSoft} />
+              <AppIcon name="chevron-left" size={18} color={colors.inkSoft} />
             </Pressable>
           ) : null}
-          <View className="rounded-pill bg-chip px-3 py-1.5">
+          <View className="rounded-pill bg-fill px-3 py-1.5">
             <Text className="text-label font-bold text-ink-soft">{month.label}</Text>
           </View>
           {months.length > 1 ? (
@@ -275,11 +277,11 @@ export function ThisWeekCalendarTab({
               accessibilityLabel="Show newer month"
               disabled={calendarIndex >= months.length - 1}
               onPress={() => setCalendarIndex((j) => Math.min(j + 1, months.length - 1))}
-              className={`h-8 w-8 items-center justify-center rounded-full bg-chip ${
+              className={`h-8 w-8 items-center justify-center rounded-full bg-fill ${
                 calendarIndex >= months.length - 1 ? "opacity-35" : "opacity-100"
               }`}
             >
-              <AppIcon name="chevron-right" size={18} color={hp.inkSoft} />
+              <AppIcon name="chevron-right" size={18} color={colors.inkSoft} />
             </Pressable>
           ) : null}
         </View>
@@ -288,7 +290,7 @@ export function ThisWeekCalendarTab({
       <View className="mt-4 flex-row">
         {["M", "T", "W", "T", "F", "S", "S"].map((d, index) => (
           <View key={`${d}-${index}`} className="flex-1 items-center">
-            <Text className="text-[9px] font-bold tracking-widest text-sage-muted">{d}</Text>
+            <Text className="text-label font-medium text-faint">{d}</Text>
           </View>
         ))}
       </View>
@@ -314,16 +316,16 @@ export function ThisWeekCalendarTab({
 
       <View className="mt-3 flex-row justify-between">
         <View className="flex-row items-center gap-1.5">
-          <View className="h-1.5 w-1.5 rounded-full bg-coral-bar" />
-          <Text className="text-label font-bold text-sage-soft">− Expense</Text>
+          <View className="h-1.5 w-1.5 rounded-full bg-negative" />
+          <Text className="text-label font-bold text-muted">− Expense</Text>
         </View>
         <View className="flex-row items-center gap-1.5">
-          <View className="h-1.5 w-1.5 rounded-full bg-emerald" />
-          <Text className="text-label font-bold text-sage-soft">+ Income</Text>
+          <View className="h-1.5 w-1.5 rounded-full bg-positive" />
+          <Text className="text-label font-bold text-muted">+ Income</Text>
         </View>
         <View className="flex-row items-center gap-1.5">
-          <View className="h-2.5 w-2.5 rounded-full border border-emerald/45 bg-emerald/20" />
-          <Text className="text-label font-bold text-sage-soft">Today</Text>
+          <View className="h-2.5 w-2.5 rounded-full border border-positive/45 bg-positive/20" />
+          <Text className="text-label font-bold text-muted">Today</Text>
         </View>
       </View>
 

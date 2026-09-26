@@ -24,7 +24,7 @@ function summary(overrides: Partial<TransactionSummary> = {}): TransactionSummar
 }
 
 describe("mapInsightsTransactionRow", () => {
-  it("maps only the fields TransactionsPanel renders", () => {
+  it("maps only the fields the transaction rows render", () => {
     const row = mapInsightsTransactionRow(summary());
     expect(row).toMatchObject({
       key: "txn-1",
@@ -33,9 +33,12 @@ describe("mapInsightsTransactionRow", () => {
       monthGroup: "September 2026",
       category: "food",
       letter: "S",
+      amountValue: 420,
+      currency: "INR",
+      direction: "expense",
     });
     expect(row).not.toHaveProperty("raw");
-    expect(row).not.toHaveProperty("direction");
+    expect(row).not.toHaveProperty("trxTypeRich");
   });
 
   it("formats income rows with a positive prefix", () => {

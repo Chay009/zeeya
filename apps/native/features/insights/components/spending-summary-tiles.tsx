@@ -4,12 +4,12 @@ import { Platform, View } from "react-native";
 import { AppText as Text } from "@/components/app-text";
 import { AppIcon, type AppIconName } from "@/components/icon";
 import { formatMoney } from "@/features/dashboard/utils/format";
-import { hp } from "@/features/home-preview/theme";
+import { useThemeColors } from "@/components/ui/theme";
 import type { MonthlySpendComparison, TopCategory } from "../insights-data";
 
 const tileShadow = Platform.select({
   ios: {
-    shadowColor: hp.shadowForest,
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.06,
     shadowRadius: 14,
@@ -48,6 +48,7 @@ function MonthComparisonTile({
   comparison: MonthlySpendComparison;
   currency: string;
 }) {
+  const colors = useThemeColors();
   const { currentTotal, percentChange } = comparison;
   const isIncrease = percentChange !== null && percentChange > 0;
   const isDecrease = percentChange !== null && percentChange < 0;
@@ -58,21 +59,21 @@ function MonthComparisonTile({
       style={{ flex: 1, borderRadius: 20, backgroundColor: "white", padding: 16, ...tileShadow }}
     >
       <View>
-        <Text style={{ fontSize: 12, color: hp.sage }}>Spending this month</Text>
+        <Text style={{ fontSize: 12, color: colors.muted }}>Spending this month</Text>
         {percentChange !== null && (
           <Text
             style={{
               marginTop: 6,
               fontSize: 13,
               fontWeight: "700",
-              color: isIncrease ? hp.danger : isDecrease ? hp.positive : hp.sage,
+              color: isIncrease ? colors.negative : isDecrease ? colors.positive : colors.muted,
             }}
           >
             {isIncrease ? "+" : ""}
             {percentChange.toFixed(0)}% vs last month
           </Text>
         )}
-        <Text style={{ marginTop: 6, fontSize: 22, fontWeight: "800", color: hp.inkForest }}>
+        <Text style={{ marginTop: 6, fontSize: 22, fontWeight: "800", color: colors.ink }}>
           {formatMoney(currentTotal, currency)}
         </Text>
       </View>
@@ -81,6 +82,7 @@ function MonthComparisonTile({
 }
 
 function TopCategoryTile({ category }: { category: TopCategory | null }) {
+  const colors = useThemeColors();
   const icon = category ? iconForCategory(category.label) : null;
   return (
     <Surface
@@ -100,10 +102,10 @@ function TopCategoryTile({ category }: { category: TopCategory | null }) {
         >
         {icon && category ? <AppIcon name={icon} size={17} color={category.color} /> : null}
         </View>
-        <Text style={{ marginTop: 10, fontSize: 12, color: hp.sage }}>Top category</Text>
+        <Text style={{ marginTop: 10, fontSize: 12, color: colors.muted }}>Top category</Text>
         <Text
           numberOfLines={1}
-          style={{ marginTop: 2, fontSize: 15, fontWeight: "800", color: hp.inkForest }}
+          style={{ marginTop: 2, fontSize: 15, fontWeight: "800", color: colors.ink }}
         >
           {category?.label ?? "No spending yet"}
         </Text>

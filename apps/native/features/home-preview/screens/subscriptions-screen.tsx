@@ -1,8 +1,9 @@
 import { useRouter } from "expo-router";
-import { Pressable, View } from "react-native";
+import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AppText as Text } from "@/components/app-text";
+import { NavBar } from "@/components/ui/header";
+import { ErrorState, SkeletonHero, SkeletonRows } from "@/components/ui/states";
 import { SubscriptionsList } from "../components/subscriptions-list";
 import { useSubscriptionsCatalog } from "../hooks/use-subscriptions-catalog";
 import type { PreviewSub } from "../data";
@@ -17,26 +18,26 @@ export function SubscriptionsScreen() {
   };
 
   if (status === "loading" && subscriptions.items.length === 0) {
-    return <View className="flex-1 bg-background" style={{ paddingTop: insets.top }} />;
+    return (
+      <View className="flex-1 bg-background">
+        <NavBar title="Subscriptions" onBack={() => router.back()} topInset={insets.top} />
+        <View className="px-4 pt-2">
+          <SkeletonHero />
+          <View className="mt-6">
+            <SkeletonRows count={4} />
+          </View>
+        </View>
+      </View>
+    );
   }
 
   if (status === "error") {
     return (
-      <View
-        className="flex-1 items-center justify-center bg-background px-6"
-        style={{ paddingTop: insets.top }}
-      >
-        <Text className="text-center text-base font-bold text-ink">Couldn't load subscriptions</Text>
-        <Text className="mt-2 text-center text-caption text-muted-soft" numberOfLines={3}>
-          {error ?? "Try again in a moment."}
-        </Text>
-        <Pressable
-          accessibilityRole="button"
-          onPress={reload}
-          className="mt-4 rounded-pill bg-ink-deep px-4 py-2"
-        >
-          <Text className="text-caption font-extrabold text-on-ink">Retry</Text>
-        </Pressable>
+      <View className="flex-1 bg-background">
+        <NavBar title="Subscriptions" onBack={() => router.back()} topInset={insets.top} />
+        <View className="flex-1 justify-center pb-24">
+          <ErrorState title="Couldn't load subscriptions" body={error} onRetry={reload} />
+        </View>
       </View>
     );
   }

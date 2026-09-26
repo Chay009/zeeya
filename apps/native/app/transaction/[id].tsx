@@ -15,7 +15,7 @@ function DeveloperOnlyNotice({ topInset }: { topInset: number }) {
       style={{ paddingTop: topInset }}
     >
       <Text className="text-center text-base font-bold text-ink">Developer route only</Text>
-      <Text className="mt-2 text-center text-caption text-muted-soft">
+      <Text className="mt-2 text-center text-caption text-muted">
         Product navigation uses the SQL-backed transaction detail screen instead.
       </Text>
     </View>
@@ -44,7 +44,7 @@ function LegacyTransactionParserDumpBody({
         style={{ paddingTop: topInset }}
       >
         <Text className="text-center text-base font-bold text-ink">Transaction not found</Text>
-        <Text className="mt-2 text-center text-caption text-muted-soft">
+        <Text className="mt-2 text-center text-caption text-muted">
           It may have been removed since this screen was opened.
         </Text>
       </View>

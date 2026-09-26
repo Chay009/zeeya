@@ -3,7 +3,7 @@ import { View } from "react-native";
 import { AppText as Text } from "@/components/app-text";
 import { AnimatedMoney } from "@/components/animated-money";
 import { AppIcon } from "@/components/icon";
-import { hp } from "@/features/home-preview/theme";
+import { useThemeColors } from "@/components/ui/theme";
 
 import type { AnalyticsDirection } from "../analytics-scope";
 import type { MonthlySpendComparison, MonthlyValue } from "../insights-data";
@@ -23,6 +23,7 @@ export function AnalyticsSummary({
   monthlySeries: MonthlyValue[];
   isLoading: boolean;
 }) {
+  const colors = useThemeColors();
   const isIncrease = comparison.percentChange !== null && comparison.percentChange > 0;
   const isDecrease = comparison.percentChange !== null && comparison.percentChange < 0;
   const title = direction === "income" ? "Income Analytics" : "Outcome Analytics";
@@ -31,8 +32,8 @@ export function AnalyticsSummary({
     <InsightsPanel style={{ marginTop: 14 }}>
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-          <Text style={{ fontSize: 16, fontWeight: "800", color: hp.ink }}>{title}</Text>
-          <AppIcon name="info" size={15} color={hp.faint} />
+          <Text style={{ fontSize: 16, fontWeight: "800", color: colors.ink }}>{title}</Text>
+          <AppIcon name="info" size={15} color={colors.faint} />
         </View>
         <View
           style={{
@@ -41,18 +42,18 @@ export function AnalyticsSummary({
             gap: 5,
             borderRadius: 10,
             borderWidth: 1,
-            borderColor: hp.border,
+            borderColor: colors.border,
             paddingHorizontal: 10,
             paddingVertical: 7,
           }}
         >
-          <Text style={{ fontSize: 11, fontWeight: "700", color: hp.inkSoft }}>6 months</Text>
+          <Text style={{ fontSize: 11, fontWeight: "700", color: colors.inkSoft }}>6 months</Text>
         </View>
       </View>
 
       <View style={{ marginTop: 17, flexDirection: "row", alignItems: "baseline", gap: 8 }}>
         {isLoading ? (
-          <Text style={{ fontSize: 28, fontWeight: "800", letterSpacing: -1.4, color: hp.ink }}>
+          <Text style={{ fontSize: 28, fontWeight: "800", letterSpacing: -1.4, color: colors.ink }}>
             —
           </Text>
         ) : (
@@ -61,7 +62,7 @@ export function AnalyticsSummary({
             value={comparison.currentTotal}
             currency={currency}
             animated={false}
-            style={{ fontSize: 28, fontWeight: "800", letterSpacing: -1.4, color: hp.ink }}
+            style={{ fontSize: 28, fontWeight: "800", letterSpacing: -1.4, color: colors.ink }}
           />
         )}
         {comparison.percentChange !== null && (
@@ -69,7 +70,7 @@ export function AnalyticsSummary({
             style={{
               fontSize: 12,
               fontWeight: "800",
-              color: isIncrease ? hp.coral : isDecrease ? hp.positive : hp.muted,
+              color: isIncrease ? colors.negative : isDecrease ? colors.positive : colors.muted,
             }}
           >
             {isIncrease ? "↗" : isDecrease ? "↘" : "→"}{" "}
@@ -78,7 +79,7 @@ export function AnalyticsSummary({
         )}
       </View>
       {comparison.percentChange !== null && (
-        <Text style={{ marginTop: 3, fontSize: 12, color: hp.muted }}>
+        <Text style={{ marginTop: 3, fontSize: 12, color: colors.muted }}>
           compared with the previous month
         </Text>
       )}

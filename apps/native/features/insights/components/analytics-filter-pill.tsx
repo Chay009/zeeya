@@ -23,7 +23,7 @@ export function AnalyticsFilterPill({
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
-      className={`min-h-11 flex-1 flex-row items-center justify-between rounded-pill border border-border-soft bg-card px-3.5 ${
+      className={`min-h-11 flex-1 flex-row items-center justify-between rounded-pill border border-divider bg-card px-3.5 ${
         disabled ? "opacity-55" : ""
       }`}
     >

@@ -1,7 +1,10 @@
 import type { ReactNode } from "react";
-import { Pressable, View } from "react-native";
+import { PressableFeedback, Skeleton } from "heroui-native";
+import { View } from "react-native";
 
 import { AppText as Text } from "@/components/app-text";
+import { AppIcon } from "@/components/icon";
+import { useThemeColors } from "@/components/ui/theme";
 import { MoneyText } from "@/components/native-ui/money-text";
 import { formatMoney } from "@/features/dashboard/utils/format";
 import { fromMinorUnits } from "@/lib/currency";
@@ -9,8 +12,8 @@ import { moneyTextStyle } from "@/lib/fonts";
 
 import { BrandLogo } from "../brand-logo";
 
-export const PAIR_CARD_MIN_HEIGHT = 168;
-export const PAIR_LOGO_SIZE = 34;
+export const PAIR_CARD_MIN_HEIGHT = 176;
+export const PAIR_LOGO_SIZE = 28;
 export const PAIR_VISIBLE_COUNT = 2;
 export const PAIR_SUMMARY_COUNT_SIZE = 30;
 
@@ -37,16 +40,17 @@ export function relativeDueLabel(ms: number): string {
 }
 
 export function GhostLine({ width, height = 10 }: { width: number; height?: number }) {
-  return <View className="rounded-full bg-track" style={{ width, height }} />;
+  return <Skeleton className="rounded-sm" style={{ width, height }} />;
 }
 
 function PairCardHeader({ title }: { title: string }) {
+  const colors = useThemeColors();
   return (
     <View className="flex-row items-center justify-between gap-2">
-      <Text numberOfLines={1} className="min-w-0 flex-1 text-[15px] font-semibold text-ink">
+      <Text numberOfLines={1} className="min-w-0 flex-1 text-caption font-semibold text-muted">
         {title}
       </Text>
-      <Text className="text-[16px] leading-4 text-faint">›</Text>
+      <AppIcon name="chevron-right" size={14} color={colors.faint} />
     </View>
   );
 }
@@ -61,16 +65,17 @@ export function PairCardShell({
   children: ReactNode;
 }) {
   return (
-    <Pressable
+    <PressableFeedback
       accessibilityRole="button"
       accessibilityLabel={title}
       onPress={onPress}
-      className="h-full w-full flex-1 rounded-card bg-card p-4"
+      className="h-full w-full flex-1 overflow-hidden rounded-card bg-card p-4"
       style={{ minHeight: PAIR_CARD_MIN_HEIGHT }}
     >
+      <PressableFeedback.Highlight />
       <PairCardHeader title={title} />
       {children}
-    </Pressable>
+    </PressableFeedback>
   );
 }
 
@@ -84,20 +89,15 @@ export function PairSummaryHero({
   totalLabel: string;
 }) {
   return (
-    <View className="mt-3 flex-row items-baseline gap-1.5">
-      <MoneyText
-        weight="bold"
-        className="text-ink"
-        style={{
-          fontSize: PAIR_SUMMARY_COUNT_SIZE,
-          lineHeight: PAIR_SUMMARY_COUNT_SIZE + 2,
-          ...moneyTextStyle,
-        }}
-      >
-        {count}
-      </MoneyText>
-      <Text className="text-caption text-muted">
-        {label} · {totalLabel}
+    <View className="mt-2">
+      <View className="flex-row items-baseline gap-1.5">
+        <MoneyText weight="bold" className="text-title tracking-tight text-ink" style={moneyTextStyle}>
+          {count}
+        </MoneyText>
+        <Text className="text-caption text-muted">{label}</Text>
+      </View>
+      <Text numberOfLines={1} className="text-caption font-medium text-ink-soft">
+        {totalLabel}
       </Text>
     </View>
   );
@@ -111,7 +111,6 @@ export function PairMerchantRow({
   name,
   subtitle,
   amountLabel,
-  faded = false,
 }: {
   letter: string;
   tile: string;
@@ -123,10 +122,7 @@ export function PairMerchantRow({
   faded?: boolean;
 }) {
   return (
-    <View
-      className="flex-row items-center gap-2.5"
-      style={faded ? { opacity: 0.88 } : undefined}
-    >
+    <View className="flex-row items-center gap-2.5">
       <BrandLogo
         letter={letter}
         tile={tile}
@@ -134,26 +130,21 @@ export function PairMerchantRow({
         img={img}
         size={PAIR_LOGO_SIZE}
         radius={PAIR_LOGO_SIZE / 2}
-        iconRatio={0.62}
+        iconRatio={0.6}
       />
       <View className="min-w-0 flex-1">
-        <Text numberOfLines={1} className="text-body font-semibold text-ink">
+        <Text numberOfLines={1} className="text-meta font-semibold text-ink">
           {name}
         </Text>
-        {subtitle ? (
-          <Text numberOfLines={1} className="mt-0.5 text-label text-muted">
-            {subtitle}
-          </Text>
-        ) : null}
+        <Text numberOfLines={1} className="text-label text-muted">
+          {subtitle ? `${amountLabel} · ${subtitle}` : amountLabel}
+        </Text>
       </View>
-      <MoneyText numberOfLines={1} weight="semibold" className="shrink-0 text-body font-semibold text-ink">
-        {amountLabel}
-      </MoneyText>
     </View>
   );
 }
 
 export function PairOverflowHint({ count }: { count: number }) {
   if (count <= 0) return null;
-  return <Text className="text-label font-semibold text-accent-deep">+{count} more</Text>;
+  return <Text className="text-meta font-medium text-muted">+{count} more</Text>;
 }

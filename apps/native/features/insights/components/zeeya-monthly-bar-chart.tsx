@@ -1,7 +1,7 @@
 import { Pressable, View } from "react-native";
 
 import { AppText as Text } from "@/components/app-text";
-import { hp } from "@/features/home-preview/theme";
+import { useThemeColors } from "@/components/ui/theme";
 
 import type { MonthlyValue } from "../insights-data";
 
@@ -41,7 +41,7 @@ export function ZeeyaMonthlyBarChart({
   currency,
   isLoading = false,
   onSelect,
-  activeBarColor = hp.accent,
+  activeBarColor: activeBarColorProp,
   dark = false,
 }: {
   data: MonthlyValue[];
@@ -51,11 +51,13 @@ export function ZeeyaMonthlyBarChart({
   activeBarColor?: string;
   dark?: boolean;
 }) {
+  const colors = useThemeColors();
+  const activeBarColor = activeBarColorProp ?? colors.chartLine;
   const maxValue = Math.max(...data.map((point) => point.value), 0);
   const axisMax = axisMaxFor(maxValue);
-  const labelColor = dark ? "rgba(255,255,255,0.45)" : hp.muted;
-  const gridColor = dark ? "rgba(255,255,255,0.08)" : hp.borderSoft;
-  const baselineColor = dark ? "rgba(255,255,255,0.12)" : hp.border;
+  const labelColor = dark ? "rgba(255,255,255,0.45)" : colors.muted;
+  const gridColor = dark ? "rgba(255,255,255,0.08)" : colors.divider;
+  const baselineColor = dark ? "rgba(255,255,255,0.12)" : colors.border;
   const inactiveBarColor = dark ? "rgba(255,255,255,0.14)" : "#e4e4e7";
 
   if (axisMax === 0) {

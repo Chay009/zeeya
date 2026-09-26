@@ -5,7 +5,7 @@ import { AppText as Text } from "@/components/app-text";
 import { AppIcon } from "@/components/icon";
 
 import type { HomePreviewData, PreviewSub } from "../data";
-import { hp } from "../theme";
+import { useThemeColors } from "@/components/ui/theme";
 import { BrandLogo } from "./brand-logo";
 import { SubscriptionSpendValue } from "./subscription-ui";
 
@@ -23,6 +23,7 @@ function SwipeableSubscriptionIcons({
   selectedIndex: number;
   onSelect: (index: number) => void;
 }) {
+  const colors = useThemeColors();
   const swipeX = useRef(new Animated.Value(0)).current;
   const visibleItems = items.slice(0, Math.min(STACK_VISIBLE_COUNT, items.length));
   const remainingCount = Math.max(0, items.length - visibleItems.length);
@@ -124,8 +125,8 @@ function SwipeableSubscriptionIcons({
                 height: STACK_ICON_SIZE + 4,
                 borderRadius: (STACK_ICON_SIZE + 4) / 2,
                 borderWidth: isSelected ? 2 : 1,
-                borderColor: isSelected ? hp.emerald : hp.background,
-                backgroundColor: hp.background,
+                borderColor: isSelected ? colors.positive : colors.background,
+                backgroundColor: colors.background,
                 alignItems: "center",
                 justifyContent: "center",
               }}
@@ -154,12 +155,12 @@ function SwipeableSubscriptionIcons({
             borderRadius: 14,
             alignItems: "center",
             justifyContent: "center",
-            backgroundColor: hp.chipBg,
+            backgroundColor: colors.fill,
             borderWidth: 1,
-            borderColor: hp.border,
+            borderColor: colors.border,
           }}
         >
-          <Text style={{ fontSize: 10, fontWeight: "800", color: hp.emeraldDeep }}>
+          <Text style={{ fontSize: 10, fontWeight: "800", color: colors.positive }}>
             +{remainingCount}
           </Text>
         </View>
@@ -175,6 +176,7 @@ export function SubscriptionsSummaryCard({
   onOpen?: () => void;
   subscriptions: HomePreviewData["subscriptions"];
 }) {
+  const colors = useThemeColors();
   const [selectedKey, setSelectedKey] = useState("");
   const items = subscriptions.items;
   const selectedItem = items.find((item) => item.key === selectedKey) ?? items[0];
@@ -196,7 +198,7 @@ export function SubscriptionsSummaryCard({
         minHeight: 116,
         borderRadius: 27,
         borderWidth: 1,
-        borderColor: hp.border,
+        borderColor: colors.border,
         backgroundColor: "rgba(255,255,255,0.8)",
         padding: 12,
       }}
@@ -204,17 +206,17 @@ export function SubscriptionsSummaryCard({
       <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
         <View style={{ flex: 1, minWidth: 0 }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-            <Text style={{ fontSize: 10, fontWeight: "700", letterSpacing: 1.8, color: hp.muted }}>
+            <Text style={{ fontSize: 10, fontWeight: "700", letterSpacing: 1.8, color: colors.muted }}>
               SUBSCRIPTIONS
             </Text>
-            <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: hp.emerald }} />
+            <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: colors.positive }} />
           </View>
           <Text
             style={{
               marginTop: 6,
               fontSize: 14,
               fontWeight: "800",
-              color: hp.ink,
+              color: colors.ink,
             }}
           >
             {items.length} {items.length === 1 ? "Subscription" : "Subscriptions"}
@@ -222,7 +224,7 @@ export function SubscriptionsSummaryCard({
           {items.length > 0 ? (
             <SubscriptionSpendValue value={subscriptions.monthlySpend} size={28} />
           ) : (
-            <Text style={{ marginTop: 8, fontSize: 12, color: hp.muted }}>
+            <Text style={{ marginTop: 8, fontSize: 12, color: colors.muted }}>
               No subscriptions detected
             </Text>
           )}
@@ -247,11 +249,11 @@ export function SubscriptionsSummaryCard({
                 alignItems: "center",
                 justifyContent: "center",
                 borderWidth: 1,
-                borderColor: hp.border,
-                backgroundColor: hp.background,
+                borderColor: colors.border,
+                backgroundColor: colors.background,
               }}
             >
-              <AppIcon name="chevron-right" size={14} color={hp.emeraldDeep} />
+              <AppIcon name="chevron-right" size={14} color={colors.positive} />
             </Pressable>
           </View>
         )}
@@ -270,16 +272,16 @@ export function SubscriptionsSummaryCard({
             <Text
               numberOfLines={1}
               ellipsizeMode="tail"
-              style={{ fontSize: 11, fontWeight: "700", color: hp.emeraldDeep }}
+              style={{ fontSize: 11, fontWeight: "700", color: colors.positive }}
             >
               {selectedItem.name}
-              <Text style={{ fontWeight: "500", color: hp.muted }}>
+              <Text style={{ fontWeight: "500", color: colors.muted }}>
                 {" · "}
                 {selectedItem.typeLabel} · {selectedItem.dateLabel}
               </Text>
             </Text>
           </View>
-          <Text numberOfLines={1} style={{ fontSize: 12, fontWeight: "800", color: hp.ink }}>
+          <Text numberOfLines={1} style={{ fontSize: 12, fontWeight: "800", color: colors.ink }}>
             {selectedItem.amount}
           </Text>
         </View>

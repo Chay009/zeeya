@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "@/components/app-text";
 import { type CapabilityPreference, useCapabilities } from "@/features/capabilities/provider";
-import { FLOATING_TAB_BAR_CLEARANCE } from "@/features/home-preview/theme";
+import { useFloatingTabBarClearance } from "@/components/floating-tab-bar";
 import { ShortcutsSetupCard } from "@/features/shortcuts/components/shortcuts-setup-card";
 import { deviceMessagePolicy } from "@/lib/device-message-policy";
 
@@ -19,7 +19,7 @@ interface PreferenceRowProps {
 
 function PreferenceRow({ title, description, value, disabled, onChange }: PreferenceRowProps) {
   return (
-    <View className="flex-row gap-4 border-b border-separator py-4">
+    <View className="flex-row gap-4 border-b border-divider py-4">
       <View className="flex-1">
         <Text className="text-body font-bold text-foreground">{title}</Text>
         <Text className="mt-1 text-caption leading-5 text-muted">{description}</Text>
@@ -30,6 +30,7 @@ function PreferenceRow({ title, description, value, disabled, onChange }: Prefer
 }
 
 export function PrivacySettingsScreen() {
+  const tabBarClearance = useFloatingTabBarClearance();
   const insets = useSafeAreaInsets();
   const { settings, error, setPreference } = useCapabilities();
   const [pending, setPending] = useState<CapabilityPreference | null>(null);
@@ -49,7 +50,7 @@ export function PrivacySettingsScreen() {
       contentContainerStyle={{
         padding: 22,
         paddingTop: Math.max(insets.top, 24),
-        paddingBottom: 48 + FLOATING_TAB_BAR_CLEARANCE,
+        paddingBottom: 24 + tabBarClearance,
       }}
     >
       <Text className="text-screen font-extrabold text-foreground">Privacy & automation</Text>
@@ -59,8 +60,8 @@ export function PrivacySettingsScreen() {
       </Text>
 
       {error ? (
-        <Surface variant="secondary" className="mt-4 rounded-tile bg-danger/10 p-4">
-          <Text className="text-caption text-danger">{error}</Text>
+        <Surface variant="secondary" className="mt-4 rounded-tile bg-negative/10 p-4">
+          <Text className="text-caption text-negative">{error}</Text>
         </Surface>
       ) : null}
 

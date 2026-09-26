@@ -3,7 +3,7 @@ import { View } from "react-native";
 
 import { AppText as Text } from "@/components/app-text";
 import { AppIcon } from "@/components/icon";
-import { hp } from "@/features/home-preview/theme";
+import { useThemeColors } from "@/components/ui/theme";
 
 import type { AnalyticsTab } from "../analytics-scope";
 export function AnalyticsFilterSelect({
@@ -23,6 +23,7 @@ export function AnalyticsFilterSelect({
   onChange: (value: string) => void;
   compact?: boolean;
 }) {
+  const colors = useThemeColors();
   const selected = options.find((option) => option.value === value) ?? options[0]!;
 
   return (
@@ -41,16 +42,16 @@ export function AnalyticsFilterSelect({
         className={
           compact
             ? "min-h-9 flex-row items-center gap-1.5 rounded-pill bg-card px-3"
-            : "min-h-12 w-full flex-row items-center justify-between rounded-pill bg-surface-muted px-4"
+            : "min-h-12 w-full flex-row items-center justify-between rounded-pill bg-fill px-4"
         }
       >
         <View className="min-w-0 flex-1 flex-row items-center gap-2">
-          <AppIcon name={icon} size={15} color={hp.muted} />
+          <AppIcon name={icon} size={15} color={colors.muted} />
           <Text numberOfLines={1} className="text-caption font-bold text-ink">
             {label}
           </Text>
         </View>
-        <Select.TriggerIndicator iconProps={{ color: hp.muted, size: 14 }} />
+        <Select.TriggerIndicator iconProps={{ color: colors.muted, size: 14 }} />
       </Select.Trigger>
       <Select.Portal>
         <Select.Overlay />

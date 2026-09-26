@@ -3,7 +3,7 @@ import { View } from "react-native";
 import { AppText as Text } from "@/components/app-text";
 import { AppIcon } from "@/components/icon";
 import { LimeActionPill } from "@/components/native-ui/selected-pill";
-import { hp } from "@/features/home-preview/theme";
+import { useThemeColors } from "@/components/ui/theme";
 
 import { AnalyticsCard } from "./analytics-card";
 
@@ -18,6 +18,7 @@ export function AnalyticsPreviewSection({
   bare?: boolean;
   children: React.ReactNode;
 }) {
+  const colors = useThemeColors();
   if (bare) return <View>{children}</View>;
 
   return (
@@ -27,7 +28,7 @@ export function AnalyticsPreviewSection({
         {onSeeAll ? (
           <LimeActionPill accessibilityLabel={`See all ${title}`} onPress={onSeeAll}>
             <Text className="text-caption font-extrabold text-on-accent">See all</Text>
-            <AppIcon name="arrow-up-right" size={14} color={hp.onAccent} />
+            <AppIcon name="arrow-up-right" size={14} color={colors.onAccent} />
           </LimeActionPill>
         ) : null}
       </View>

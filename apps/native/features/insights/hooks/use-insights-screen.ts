@@ -196,7 +196,7 @@ export function useInsightsScreen() {
     !isLoading && comparison.percentChange !== null && Math.abs(comparison.percentChange) >= 20
       ? effectiveTab === "income"
         ? "Income changed materially compared with the previous month."
-        : "Outcome changed materially compared with the previous month."
+        : "Spending changed materially compared with the previous month."
       : null;
 
   return {

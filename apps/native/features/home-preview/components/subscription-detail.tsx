@@ -1,18 +1,17 @@
-import { Pressable, ScrollView, View } from "react-native";
+import { ScrollView, View } from "react-native";
 
 import { AppText as Text } from "@/components/app-text";
-import { AppIcon } from "@/components/icon";
+import { NavBar } from "@/components/ui/header";
+import { DetailRow, RowGroup } from "@/components/ui/list";
+import { Section } from "@/components/ui/section";
+import { headingFontFamily, moneyFontFamily } from "@/lib/fonts";
 
 import type { PreviewSub } from "../data";
-import { hp } from "../theme";
 import { BrandLogo } from "./brand-logo";
-import {
-  previewCircleButtonStyle,
-  previewEyebrowStyle,
-  previewScreenTitleStyle,
-  SubscriptionStatusBadge,
-  SubscriptionTypeBadge,
-} from "./subscription-ui";
+import { SubscriptionStatusBadge, SubscriptionTypeBadge } from "./subscription-ui";
+
+// Subscription detail: the same receipt-style hero as a transaction, the
+// key facts as grouped rows, then a quiet timeline of status changes.
 
 export function SubscriptionDetail({
   subscription,
@@ -23,166 +22,77 @@ export function SubscriptionDetail({
   onBack: () => void;
   topInset: number;
 }) {
-  return (
-    <ScrollView
-      style={{ flex: 1 }}
-      contentContainerStyle={{
-        paddingHorizontal: 20,
-        paddingTop: Math.max(12, topInset),
-        paddingBottom: 32,
-      }}
-      showsVerticalScrollIndicator={false}
-    >
-      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-        <Pressable
-          onPress={onBack}
-          accessibilityLabel="Back to subscriptions"
-          style={previewCircleButtonStyle}
-        >
-          <AppIcon name="chevron-left" size={20} color={hp.inkSoft} />
-        </Pressable>
-        <View style={{ minWidth: 0, alignItems: "center", flex: 1, paddingHorizontal: 12 }}>
-          <Text style={previewEyebrowStyle}>SUBSCRIPTION</Text>
-          <Text numberOfLines={1} style={previewScreenTitleStyle}>
-            {subscription.name}
-          </Text>
-        </View>
-        <View style={{ width: 42 }} />
-      </View>
+  const nextOrLast = subscription.dateLabel.replace(/^(Last seen|Updated) /, "");
 
-      <View
-        style={{
-          marginTop: 24,
-          borderRadius: 27,
-          borderWidth: 1,
-          borderColor: hp.border,
-          backgroundColor: hp.card,
-          padding: 20,
-        }}
+  return (
+    <View className="flex-1 bg-background">
+      <NavBar title="Subscription" onBack={onBack} topInset={topInset} />
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }}
+        showsVerticalScrollIndicator={false}
       >
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+        <View className="items-center pb-2 pt-4">
           <BrandLogo
             letter={subscription.letter}
             tile={subscription.tile}
             ink={subscription.ink}
             img={subscription.img}
-            size={48}
-            radius={16}
-            iconRatio={0.66}
+            size={64}
+            radius={32}
+            iconRatio={0.6}
           />
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text numberOfLines={1} style={{ fontSize: 17, fontWeight: "800", color: hp.ink }}>
-              {subscription.name}
-            </Text>
-            <View
-              style={{
-                flexDirection: "row",
-                flexWrap: "wrap",
-                alignItems: "center",
-                gap: 6,
-                marginTop: 6,
-              }}
-            >
-              <SubscriptionTypeBadge subscription={subscription} />
-              <SubscriptionStatusBadge subscription={subscription} contained />
-            </View>
-          </View>
-        </View>
-        <View
-          style={{
-            flexDirection: "row",
-            marginTop: 20,
-            paddingTop: 16,
-            borderTopWidth: 1,
-            borderTopColor: hp.surfaceSageAlt,
-          }}
-        >
-          <View style={{ flex: 1 }}>
-            <Text style={metricLabel}>AMOUNT</Text>
-            <Text style={metricValue}>
-              {subscription.amount}
-              {subscription.amountValue !== null && (
-                <Text style={{ fontSize: 10, fontWeight: "500", color: hp.mutedSoft }}>
-                  {" "}
-                  / month
-                </Text>
-              )}
-            </Text>
-          </View>
-          <View
-            style={{ flex: 1, borderLeftWidth: 1, borderLeftColor: hp.surfaceSageAlt, paddingLeft: 16 }}
+          <Text
+            numberOfLines={2}
+            className="mt-4 text-center text-subtitle font-semibold text-ink"
+            style={{ fontFamily: headingFontFamily("semibold") }}
           >
-            <Text style={metricLabel}>{subscription.dateLabelTitle}</Text>
-            <Text style={metricValue}>
-              {subscription.dateLabel.replace(/^(Last seen|Updated) /, "")}
+            {subscription.name}
+          </Text>
+          <View className="mt-2 flex-row items-baseline">
+            <Text className="text-display text-ink" style={{ fontFamily: moneyFontFamily("bold"), letterSpacing: -1.2 }}>
+              {subscription.amount}
             </Text>
+            {subscription.amountValue !== null ? (
+              <Text className="ml-1 text-body text-muted">/ month</Text>
+            ) : null}
+          </View>
+          <View className="mt-4 flex-row gap-2">
+            <SubscriptionTypeBadge subscription={subscription} />
+            <SubscriptionStatusBadge subscription={subscription} />
           </View>
         </View>
-      </View>
 
-      <View style={{ marginTop: 28, paddingBottom: 8 }}>
-        <Text style={previewEyebrowStyle}>STATUS HISTORY</Text>
-        <Text
-          style={{
-            marginTop: 4,
-            fontSize: 23,
-            fontWeight: "800",
-            letterSpacing: -1.4,
-            color: hp.ink,
-          }}
-        >
-          Timeline
-        </Text>
-        <View style={{ marginTop: 20 }}>
-          {subscription.timeline.map((event, index) => (
-            <View
-              key={`${event.label}-${event.time}-${index}`}
-              style={{ flexDirection: "row", minHeight: 62 }}
-            >
-              <View style={{ width: 28, alignItems: "center" }}>
-                <View
-                  style={{
-                    width: 10,
-                    height: 10,
-                    marginTop: 4,
-                    borderRadius: 5,
-                    backgroundColor: event.dot,
-                    borderWidth: 2,
-                    borderColor: hp.background,
-                  }}
-                />
-                {index < subscription.timeline.length - 1 && (
-                  <View
-                    style={{ width: 1, flex: 1, marginVertical: 3, backgroundColor: hp.border }}
-                  />
-                )}
-              </View>
-              <View style={{ flex: 1, paddingBottom: 16 }}>
-                <Text style={{ fontSize: 14, fontWeight: "800", color: hp.ink }}>
-                  {event.label}
-                </Text>
-                <Text style={{ marginTop: 3, fontSize: 12, color: hp.mutedSoft }}>
-                  {event.time}
-                </Text>
-              </View>
+        <Section>
+          <RowGroup inset={16}>
+            <DetailRow label={subscription.dateLabelTitle} value={nextOrLast} />
+            <DetailRow label="Charged via" value={subscription.typeLabel} />
+            {subscription.meta ? <DetailRow label="Details" value={subscription.meta} /> : null}
+          </RowGroup>
+        </Section>
+
+        {subscription.timeline.length > 0 ? (
+          <Section title="History">
+            <View className="rounded-card bg-card px-4 pb-2 pt-4">
+              {subscription.timeline.map((event, index) => {
+                const last = index === subscription.timeline.length - 1;
+                return (
+                  <View key={`${event.label}-${event.time}-${index}`} className="flex-row" style={{ minHeight: 56 }}>
+                    <View className="w-6 items-center">
+                      <View className="mt-1.5 h-2.5 w-2.5 rounded-full" style={{ backgroundColor: event.dot }} />
+                      {!last ? <View className="my-1 w-px flex-1 bg-divider" /> : null}
+                    </View>
+                    <View className="flex-1 pb-4 pl-2">
+                      <Text className="text-body font-medium text-ink">{event.label}</Text>
+                      <Text className="mt-0.5 text-caption text-muted">{event.time}</Text>
+                    </View>
+                  </View>
+                );
+              })}
             </View>
-          ))}
-        </View>
-      </View>
-    </ScrollView>
+          </Section>
+        ) : null}
+      </ScrollView>
+    </View>
   );
 }
-
-const metricLabel = {
-  fontSize: 10,
-  fontWeight: "700" as const,
-  letterSpacing: 1.6,
-  color: hp.mutedSoft,
-};
-const metricValue = {
-  marginTop: 4,
-  fontSize: 22,
-  fontWeight: "800" as const,
-  letterSpacing: -1.1,
-  color: hp.ink,
-};

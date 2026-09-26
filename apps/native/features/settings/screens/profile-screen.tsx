@@ -8,7 +8,7 @@ import { AppText as Text } from "@/components/app-text";
 import { AppIcon, type AppIconName } from "@/components/icon";
 import { useFloatingTabBarClearance } from "@/components/floating-tab-bar";
 import { useDashboardSync } from "@/features/dashboard/hooks/dashboard-sync-provider";
-import { hp } from "@/features/home-preview/theme";
+import { useThemeColors } from "@/components/ui/theme";
 import { seedSampleTransactions } from "@/db/dev-seed";
 import { useAccountScopeCounts } from "../hooks/use-account-scope-counts";
 
@@ -20,6 +20,7 @@ type SettingsLink = {
 };
 
 function SettingsGroup({ title, links }: { title: string; links: SettingsLink[] }) {
+  const colors = useThemeColors();
   return (
     <View className="mt-6">
       <Text className="mb-2 text-caption font-bold text-foreground">{title}</Text>
@@ -27,7 +28,7 @@ function SettingsGroup({ title, links }: { title: string; links: SettingsLink[] 
         {links.map((link) => (
           <ListGroup.Item key={link.title} onPress={link.onPress} accessibilityLabel={link.title}>
             <ListGroup.ItemPrefix>
-              <AppIcon name={link.icon} size={19} color={hp.ink} />
+              <AppIcon name={link.icon} size={19} color={colors.ink} />
             </ListGroup.ItemPrefix>
             <ListGroup.ItemContent>
               <ListGroup.ItemTitle>{link.title}</ListGroup.ItemTitle>
@@ -44,6 +45,7 @@ function SettingsGroup({ title, links }: { title: string; links: SettingsLink[] 
 }
 
 export function ProfileScreen() {
+  const colors = useThemeColors();
   const insets = useSafeAreaInsets();
   const tabBarClearance = useFloatingTabBarClearance();
   const router = useRouter();
@@ -91,8 +93,8 @@ export function ProfileScreen() {
         <RefreshControl
           refreshing={refreshing}
           onRefresh={onRefresh}
-          tintColor={hp.accent}
-          colors={[hp.accent]}
+          tintColor={colors.accent}
+          colors={[colors.accent]}
         />
       }
       contentContainerStyle={{
@@ -112,14 +114,14 @@ export function ProfileScreen() {
           accessibilityLabel="Refresh profile data"
           onPress={() => void onRefresh()}
         >
-          <AppIcon name="reload" size={19} color={hp.ink} />
+          <AppIcon name="reload" size={19} color={colors.ink} />
         </Button>
       </View>
 
       <View className="mt-6 items-center">
         <Avatar size="lg">
           <Avatar.Fallback>
-            <AppIcon name="user" size={30} color={hp.ink} />
+            <AppIcon name="user" size={30} color={colors.ink} />
           </Avatar.Fallback>
         </Avatar>
         <Text className="mt-3 text-title font-extrabold text-foreground">Your profile</Text>
@@ -186,7 +188,7 @@ export function ProfileScreen() {
       />
 
       <Surface variant="secondary" className="mt-6 flex-row items-start gap-2 rounded-tile p-3">
-        <AppIcon name="lock" size={17} color={hp.inkSoft} />
+        <AppIcon name="lock" size={17} color={colors.inkSoft} />
         <Text className="flex-1 text-meta leading-4 text-muted">
           Your financial data is derived from the messages available on this device. Zeeya does not
           invent balances or activity when evidence is missing.

@@ -2,7 +2,7 @@ import { Pressable, View } from "react-native";
 
 import { AppText as Text } from "@/components/app-text";
 import { BrandLogo } from "@/features/home-preview/components/brand-logo";
-import { hp } from "@/features/home-preview/theme";
+import { useThemeColors } from "@/components/ui/theme";
 import { moneyFontFamily } from "@/lib/fonts";
 
 import type { AnalyticsDirection } from "../analytics-scope";
@@ -20,6 +20,7 @@ export function AnalyticsTransactionRow({
   direction: AnalyticsDirection;
   onPress: () => void;
 }) {
+  const colors = useThemeColors();
   const income = direction === "income";
 
   return (
@@ -33,7 +34,7 @@ export function AnalyticsTransactionRow({
         columnGap: 12,
         paddingVertical: 12,
         borderTopWidth: index === 0 ? 0 : 1,
-        borderTopColor: hp.borderSoft,
+        borderTopColor: colors.divider,
       }}
     >
       <BrandLogo
@@ -58,12 +59,12 @@ export function AnalyticsTransactionRow({
             borderRadius: 999,
             paddingHorizontal: 10,
             paddingVertical: 4,
-            backgroundColor: income ? hp.accentSoft : hp.expenseBg,
+            backgroundColor: income ? colors.accentSoft : colors.negativeSoft,
           }}
         >
           <Text
             numberOfLines={1}
-            className={`text-caption font-bold ${income ? "text-positive" : "text-coral"}`}
+            className={`text-caption font-bold ${income ? "text-positive" : "text-negative"}`}
             style={{ fontFamily: moneyFontFamily("semibold") }}
           >
             {item.amount}

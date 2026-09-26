@@ -39,9 +39,9 @@ export function DueSoonCard({
   const billLabel = totalCount === 1 ? "bill" : "bills";
 
   return (
-    <PairCardShell title="Due soon" onPress={onOpen}>
+    <PairCardShell title="Upcoming" onPress={onOpen}>
       {totalCount === 0 ? (
-        <Text className="mt-1 text-caption text-muted">Nothing due soon</Text>
+        <Text className="mt-1 text-caption text-muted">Nothing due</Text>
       ) : (
         <>
           <PairSummaryHero
@@ -99,7 +99,7 @@ export function SubscriptionsPairCard({
   return (
     <PairCardShell title="Subscriptions" onPress={onOpen}>
       {recurringCount === 0 ? (
-        <Text className="mt-1 text-caption text-muted">No subscriptions yet</Text>
+        <Text className="mt-1 text-caption text-muted">None detected yet</Text>
       ) : (
         <>
           <PairSummaryHero

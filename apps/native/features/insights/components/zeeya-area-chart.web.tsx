@@ -1,5 +1,5 @@
 import { Text, View } from "react-native";
-import { hp } from "@/features/home-preview/theme";
+import { useThemeColors } from "@/components/ui/theme";
 import type { SpendingPoint } from "../insights-data";
 
 export interface ZeeyaAreaChartProps {
@@ -14,13 +14,14 @@ export interface ZeeyaAreaChartProps {
 }
 
 export function ZeeyaAreaChart({ isLoading, height = 220 }: ZeeyaAreaChartProps) {
+  const colors = useThemeColors();
   return (
     <View
       style={{
         height,
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: hp.surfaceMintAlt,
+        backgroundColor: colors.fill,
         borderRadius: 18,
       }}
     >

@@ -4,7 +4,7 @@ import { Pressable, View } from "react-native";
 import { AppText as Text } from "@/components/app-text";
 import { AppIcon } from "@/components/icon";
 
-import { hp } from "../../theme";
+import { useThemeColors } from "@/components/ui/theme";
 
 export type InsightsBudget = {
   monthLabel: string;
@@ -31,6 +31,7 @@ function InsightsRow({
   onPress?: () => void;
   isFirst: boolean;
 }) {
+  const colors = useThemeColors();
   return (
     <Pressable
       accessibilityRole={onPress ? "button" : undefined}
@@ -53,12 +54,13 @@ function InsightsRow({
           {subtitle}
         </Text>
       </View>
-      {onPress ? <AppIcon name="chevron-right" size={16} color={hp.faint} /> : null}
+      {onPress ? <AppIcon name="chevron-right" size={16} color={colors.faint} /> : null}
     </Pressable>
   );
 }
 
 export function InsightsCard({ budget }: { budget: InsightsBudget }) {
+  const colors = useThemeColors();
   const hasBudget = budget.limit !== null && budget.usedPercent !== null;
 
   const rows: Array<{
@@ -87,8 +89,8 @@ export function InsightsCard({ budget }: { budget: InsightsBudget }) {
           <InsightsRow
             key={row.key}
             icon={row.icon}
-            tile={hp.accentSoft}
-            ink={hp.accent}
+            tile={colors.accentSoft}
+            ink={colors.accent}
             title={row.title}
             subtitle={row.subtitle}
             isFirst={index === 0}

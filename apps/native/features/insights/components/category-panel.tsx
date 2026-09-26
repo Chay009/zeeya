@@ -26,7 +26,7 @@ export function CategoryPanel({
       {isLoading ? (
         <View className="mt-4 gap-3.5">
           {[0, 1, 2].map((row) => (
-            <View key={row} className="h-11 rounded-xl bg-frost" />
+            <View key={row} className="h-11 rounded-xl bg-fill" />
           ))}
         </View>
       ) : categories.length === 0 || total <= 0 ? (
@@ -43,7 +43,7 @@ export function CategoryPanel({
             return (
               <View
                 key={category.label}
-                className={`py-3 ${index === 0 ? "" : "border-t border-frost"}`}
+                className={`py-3 ${index === 0 ? "" : "border-t border-fill"}`}
               >
                 <View className="flex-row items-baseline gap-2.5">
                   <Text numberOfLines={1} className="flex-1 text-subtitle font-semibold text-ink">
@@ -56,7 +56,7 @@ export function CategoryPanel({
                     {formatMoney(category.value, currency)}
                   </Text>
                 </View>
-                <View className="mt-2 h-1.5 overflow-hidden rounded-pill bg-frost-strong">
+                <View className="mt-2 h-1.5 overflow-hidden rounded-pill bg-fill-strong">
                   <View
                     className="h-full rounded-pill"
                     style={{
