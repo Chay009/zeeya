@@ -48,4 +48,26 @@ export const localQueryKeys = {
   ) => ["local", "detail", scope, id, syncRevision] as const,
   series: (name: string, syncRevision: number, deps: readonly unknown[]) =>
     ["local", "series", name, syncRevision, ...deps] as const,
+  // Scope (category · account · limit) sits at a fixed index so hooks can
+  // compare it against a previous key without parsing.
+  recentActivity: (
+    scope: { category?: string; accountId?: string; limit?: number },
+    syncRevision: number,
+  ) =>
+    [
+      "local",
+      "recent-activity",
+      `${scope.category ?? "all"}:${scope.accountId ?? "all-accounts"}:${scope.limit ?? "default"}`,
+      syncRevision,
+    ] as const,
+  activityScope: (accountId: string, syncRevision: number) =>
+    ["local", "activity-scope", accountId, syncRevision] as const,
+  accountCashflowScope: (accountId: string, currency: string, at: number, syncRevision: number) =>
+    ["local", "account-cashflow-scope", accountId, currency, at, syncRevision] as const,
+  subscriptionsCatalog: (syncRevision: number) =>
+    ["local", "subscriptions-catalog", syncRevision] as const,
+  dashboardCurrencies: (syncRevision: number) =>
+    ["local", "dashboard-currencies", syncRevision] as const,
+  dayTransactions: (dayStartMs: number, currency: string, syncRevision: number) =>
+    ["local", "day-transactions", dayStartMs, currency, syncRevision] as const,
 };

@@ -11,17 +11,29 @@ export interface UseLocalQueryResult<T> {
 }
 
 /**
- * TanStack Query wrapper for on-device SQLite reads.
- * Keeps the last snapshot visible while a new projection revision loads.
+ * Whether the previous result may stay on screen while the new key loads.
+ *  - true (default): always — right for the same view re-reading after a sync.
+ *  - false: never — the new key means different content.
+ *  - function: decide from the previous key, e.g. keep only when the filter
+ *    scope is unchanged so one category's rows never show under another.
+ */
+export type KeepPrevious = boolean | ((previousKey: readonly unknown[]) => boolean);
+
+/**
+ * TanStack Query wrapper for on-device SQLite reads. Results are cached per
+ * key for the session (staleTime ∞; keys carry the sync revision, so a new
+ * sync is a new key), which is what makes revisiting a tab instant.
  */
 export function useLocalQuery<T>({
   queryKey,
   queryFn,
   enabled = true,
+  keepPrevious = true,
 }: {
   queryKey: readonly unknown[];
   queryFn: () => Promise<T>;
   enabled?: boolean;
+  keepPrevious?: KeepPrevious;
 }): UseLocalQueryResult<T> {
   const result = useQuery({
     queryKey,
@@ -29,7 +41,13 @@ export function useLocalQuery<T>({
     enabled,
     staleTime: Number.POSITIVE_INFINITY,
     gcTime: 30 * 60 * 1000,
-    placeholderData: keepPreviousData,
+    placeholderData:
+      keepPrevious === true
+        ? keepPreviousData
+        : keepPrevious === false
+          ? undefined
+          : (previous, previousQuery) =>
+              previousQuery && keepPrevious(previousQuery.queryKey) ? previous : undefined,
     retry: 1,
     refetchOnMount: false,
     refetchOnWindowFocus: false,

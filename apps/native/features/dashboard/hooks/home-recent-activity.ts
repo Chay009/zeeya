@@ -1,13 +1,18 @@
 // Fetches the bounded, filter-scoped HomeActivityItem[] used by Home's
-// category pills. The request key is part of the returned lifecycle state so
-// a category transition cannot render the previous category's rows for one
-// paint before its effect has had a chance to clear them.
+// category pills and the Transactions tab. Cached per (scope, sync revision)
+// so revisiting the tab is instant instead of a fresh SQLCipher read.
+//
+// The previous rows stay visible only while the SAME scope revalidates
+// (pull-to-refresh / new sync). A category or account change never shows the
+// old scope's rows under the new label — it reports loading with no items.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
 
 import { financeDataSource } from "@/features/dashboard/dashboard-data-source";
 import { useDashboardSync } from "@/features/dashboard/hooks/dashboard-sync-provider";
 import type { ActivityCategory, HomeActivityItem } from "@/lib/dashboard-data";
+import { localQueryKeys } from "@/lib/local-query-keys";
+import { useLocalQuery } from "@/lib/use-local-query";
 
 export type HomeRecentActivityStatus = "loading" | "ready" | "error";
 
@@ -23,38 +28,7 @@ export interface UseHomeRecentActivityResult extends HomeRecentActivityState {
   reload: () => void;
 }
 
-interface InternalHomeRecentActivityState extends HomeRecentActivityState {
-  requestKey: string;
-}
-
-function scopeKey(
-  category: ActivityCategory | undefined,
-  accountId: string | undefined,
-  limit: number | undefined,
-): string {
-  return `${category ?? "all"}:${accountId ?? "all-accounts"}:${limit ?? "default"}`;
-}
-
-function requestKey(
-  category: ActivityCategory | undefined,
-  accountId: string | undefined,
-  limit: number | undefined,
-  enabled: boolean,
-  syncRevision: number,
-  reloadGeneration: number,
-): string {
-  if (!enabled) return "disabled";
-  return `${scopeKey(category, accountId, limit)}:${syncRevision}:${reloadGeneration}`;
-}
-
-function disabledState(requestKeyValue: string): InternalHomeRecentActivityState {
-  return { status: "ready", error: null, items: [], requestKey: requestKeyValue };
-}
-
-function scopeKeyFromRequestKey(requestKeyValue: string): string | null {
-  if (requestKeyValue === "disabled") return null;
-  return requestKeyValue.split(":").slice(0, 3).join(":");
-}
+const EMPTY: HomeActivityItem[] = [];
 
 export function useHomeRecentActivity(
   category: ActivityCategory | undefined,
@@ -66,71 +40,29 @@ export function useHomeRecentActivity(
   accountId?: string,
 ): UseHomeRecentActivityResult {
   const { syncRevision } = useDashboardSync();
-  const [reloadGeneration, setReloadGeneration] = useState(0);
-  const currentRequestKey = requestKey(
-    category,
-    accountId,
-    limit,
-    enabled,
-    syncRevision,
-    reloadGeneration,
-  );
-  const currentScopeKey = scopeKey(category, accountId, limit);
-  const [state, setState] = useState<InternalHomeRecentActivityState>(() =>
-    enabled
-      ? { status: "loading", error: null, items: [], requestKey: currentRequestKey }
-      : disabledState(currentRequestKey),
-  );
+  const queryKey = localQueryKeys.recentActivity({ category, accountId, limit }, syncRevision);
+  const scope = queryKey[2];
 
-  useEffect(() => {
-    if (!enabled) {
-      setState(disabledState(currentRequestKey));
-      return;
-    }
-    let cancelled = false;
-    // Clear items when the filter scope changes so old rows never appear under
-    // a new label. Pull-to-refresh only bumps syncRevision — keep the last
-    // good list visible while the scoped query revalidates.
-    setState((previous) => {
-      const keepItems =
-        scopeKeyFromRequestKey(previous.requestKey) === currentScopeKey ? previous.items : [];
-      return { status: "loading", error: null, items: keepItems, requestKey: currentRequestKey };
-    });
-    void financeDataSource.home
-      .loadRecentActivity({ category, accountId, limit, at: Date.now() })
-      .then((items) => {
-        if (cancelled) return;
-        setState({ status: "ready", error: null, items, requestKey: currentRequestKey });
-      })
-      .catch((cause: unknown) => {
-        if (cancelled) return;
-        setState({
-          status: "error",
-          error: cause instanceof Error ? cause.message : String(cause),
-          items: [],
-          requestKey: currentRequestKey,
-        });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [accountId, category, currentRequestKey, enabled, limit]);
+  const { data, error, isInitialLoading, refetch } = useLocalQuery({
+    queryKey,
+    queryFn: () => financeDataSource.home.loadRecentActivity({ category, accountId, limit, at: Date.now() }),
+    enabled,
+    keepPrevious: (previousKey) => previousKey[1] === "recent-activity" && previousKey[2] === scope,
+  });
 
   const reload = useCallback(() => {
-    if (enabled) setReloadGeneration((generation) => generation + 1);
-  }, [enabled]);
+    if (enabled) void refetch();
+  }, [enabled, refetch]);
 
-  // React runs effects after rendering. If the query inputs changed, expose
-  // the new request's loading state immediately instead of returning the
-  // previous request's rows during that gap. Disabled "all" remains ready
-  // and empty regardless of sync revisions or reload generations.
-  const visibleState = !enabled
-    ? disabledState(currentRequestKey)
-    : state.requestKey === currentRequestKey
-      ? state
-      : scopeKeyFromRequestKey(state.requestKey) === currentScopeKey
-        ? { status: "loading" as const, error: null, items: state.items }
-        : { status: "loading" as const, error: null, items: [] };
+  if (!enabled) return { status: "ready", error: null, items: EMPTY, reload };
 
-  return { ...visibleState, reload };
+  const status: HomeRecentActivityStatus = isInitialLoading
+    ? "loading"
+    : error && !data
+      ? "error"
+      : data
+        ? "ready"
+        : "loading";
+
+  return { status, error: status === "error" ? error : null, items: data ?? EMPTY, reload };
 }

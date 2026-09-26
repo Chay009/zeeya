@@ -3,12 +3,14 @@
 // model. SQL aggregates (monthlySpend, active/cancelled counts) still come
 // from the bounded Home read model; only the item rows are loaded in full
 // via FinanceDataSource.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
 
 import { financeDataSource } from "@/features/dashboard/dashboard-data-source";
 import { useDashboardSync } from "@/features/dashboard/hooks/dashboard-sync-provider";
 import { useHomeReadModel } from "@/features/dashboard/hooks/home-read-model";
 import type { MandateCursor, MandateSummary } from "@/lib/dashboard-data";
+import { localQueryKeys } from "@/lib/local-query-keys";
+import { useLocalQuery } from "@/lib/use-local-query";
 
 import {
   createHomePreviewDataFromReadModel,
@@ -58,52 +60,50 @@ function mandateReactivated(
   return mandate.status === "active" && events.some((event) => event.status === "cancelled");
 }
 
+// Every subscription + mandate row with its event history. Exported so the
+// boot cache can warm it; cached per sync revision so reopening the
+// Subscriptions screen doesn't redo the per-mandate event reads.
+export async function loadSubscriptionsCatalog(): Promise<PreviewSub[]> {
+  const at = Date.now();
+  const [subscriptions, mandates] = await Promise.all([
+    financeDataSource.subscriptions.list({ at }),
+    loadAllMandates(),
+  ]);
+  // One batched read for every mandate's recent history (was one query per
+  // mandate).
+  const eventsByMandate = await financeDataSource.mandates.listRecentEventsFor(
+    mandates.map((mandate) => mandate.mandateId),
+    30,
+  );
+  const mandateItems = mandates.map((mandate) => {
+    const events = eventsByMandate.get(mandate.mandateId) ?? [];
+    return previewSubFromMandateSummary(mandate, events, mandateReactivated(mandate, events));
+  });
+  const subscriptionItems = subscriptions.map(previewSubFromSubscriptionSummary);
+  return [...mandateItems, ...subscriptionItems].sort((left, right) =>
+    right.key.localeCompare(left.key),
+  );
+}
+
+const EMPTY_ITEMS: PreviewSub[] = [];
+
 export function useSubscriptionsCatalog() {
   const { status: syncStatus, syncRevision } = useDashboardSync();
   const { model: readModel } = useHomeReadModel("INR");
-  const [items, setItems] = useState<PreviewSub[]>([]);
-  const [status, setStatus] = useState<SubscriptionsCatalogStatus>("loading");
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    setStatus("loading");
-    setError(null);
-    try {
-      const at = Date.now();
-      const [subscriptions, mandates] = await Promise.all([
-        financeDataSource.subscriptions.list({ at }),
-        loadAllMandates(),
-      ]);
-      const mandateItems = await Promise.all(
-        mandates.map(async (mandate) => {
-          const events = await financeDataSource.mandates.listEvents({
-            mandateId: mandate.mandateId,
-            limit: 30,
-          });
-          return previewSubFromMandateSummary(
-            mandate,
-            events.items,
-            mandateReactivated(mandate, events.items),
-          );
-        }),
-      );
-      const subscriptionItems = subscriptions.map(previewSubFromSubscriptionSummary);
-      setItems(
-        [...mandateItems, ...subscriptionItems].sort((left, right) =>
-          right.key.localeCompare(left.key),
-        ),
-      );
-      setStatus("ready");
-    } catch (cause: unknown) {
-      setItems([]);
-      setStatus("error");
-      setError(cause instanceof Error ? cause.message : String(cause));
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load, syncRevision]);
+  const { data, error: queryError, isInitialLoading, refetch } = useLocalQuery({
+    queryKey: localQueryKeys.subscriptionsCatalog(syncRevision),
+    queryFn: loadSubscriptionsCatalog,
+  });
+  const items = data ?? EMPTY_ITEMS;
+  const status: SubscriptionsCatalogStatus = isInitialLoading
+    ? "loading"
+    : queryError && !data
+      ? "error"
+      : "ready";
+  const error = status === "error" ? queryError : null;
+  const load = useCallback(() => {
+    void refetch();
+  }, [refetch]);
 
   const overview = createHomePreviewDataFromReadModel(
     readModel ?? EMPTY_READ_MODEL,

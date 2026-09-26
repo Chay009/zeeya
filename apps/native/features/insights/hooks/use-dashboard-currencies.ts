@@ -1,13 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback } from "react";
 
 import { financeDataSource } from "@/features/dashboard/dashboard-data-source";
 import { useDashboardSync } from "@/features/dashboard/hooks/dashboard-sync-provider";
+import { localQueryKeys } from "@/lib/local-query-keys";
+import { useLocalQuery } from "@/lib/use-local-query";
 
-import {
-  createDashboardCurrenciesController,
-  type DashboardCurrenciesController,
-  type DashboardCurrenciesState,
-} from "./dashboard-currencies-controller";
+import type { DashboardCurrenciesState } from "./dashboard-currencies-controller";
 
 export type {
   DashboardCurrenciesState,
@@ -18,20 +16,20 @@ export interface UseDashboardCurrenciesResult extends DashboardCurrenciesState {
   reload: () => void;
 }
 
+const EMPTY: string[] = [];
+
+// Currencies with activity, cached per sync revision (was re-read on every
+// Analytics mount). The last list stays visible while a new revision loads.
 export function useDashboardCurrencies(): UseDashboardCurrenciesResult {
   const { syncRevision } = useDashboardSync();
-  const controllerRef = useRef<DashboardCurrenciesController | null>(null);
-  if (controllerRef.current === null) {
-    controllerRef.current = createDashboardCurrenciesController({
-      load: () => financeDataSource.dashboard.listCurrencies(),
-    });
-  }
-  const controller = controllerRef.current;
-  const [state, setState] = useState<DashboardCurrenciesState>(() => controller.getState());
+  const { data, error, isInitialLoading, refetch } = useLocalQuery({
+    queryKey: localQueryKeys.dashboardCurrencies(syncRevision),
+    queryFn: () => financeDataSource.dashboard.listCurrencies(),
+  });
+  const reload = useCallback(() => {
+    void refetch();
+  }, [refetch]);
 
-  useEffect(() => controller.subscribe(setState), [controller]);
-  useEffect(() => controller.sync(syncRevision), [controller, syncRevision]);
-
-  const reload = useCallback(() => controller.reload(), [controller]);
-  return { ...state, reload };
+  const status = isInitialLoading ? "loading" : error && !data ? "error" : "ready";
+  return { status, error: status === "error" ? error : null, currencies: data ?? EMPTY, reload };
 }

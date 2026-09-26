@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { useDashboardSync } from "@/features/dashboard/hooks/dashboard-sync-provider";
 import { formatMoney } from "@/features/dashboard/utils/format";
 import { fromMinorUnits } from "@/lib/currency";
+import { useSyncAnchor } from "@/lib/sync-anchor";
 
 import {
   elapsedDaysInCurrentMonth,
@@ -53,7 +54,9 @@ export function useInsightsScreen() {
     selectedCurrency && currencies.includes(selectedCurrency)
       ? selectedCurrency
       : (currencies[0] ?? "INR");
-  const at = useMemo(() => Date.now(), [syncRevision]);
+  // Shared per-revision anchor: stable cache keys across mounts, and the same
+  // `at` the boot cache prefetched with.
+  const at = useSyncAnchor(syncRevision);
   const overviewQuery = useMemo(() => ({ currency, at }), [at, currency]);
   const {
     status: overviewStatus,

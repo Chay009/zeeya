@@ -7,6 +7,8 @@ import { AppText as Text } from "@/components/app-text";
 import { useFloatingTabBarClearance } from "@/components/floating-tab-bar";
 import { EnterTransition } from "@/components/native-ui/enter-transition";
 import { moneyFontFamily } from "@/lib/fonts";
+import { rememberedPrimaryCurrency, rememberPrimaryCurrency } from "@/lib/currency-preference";
+import { useSyncAnchor } from "@/lib/sync-anchor";
 import { LargeTitle } from "@/components/ui/header";
 import { Section } from "@/components/ui/section";
 import { ErrorState } from "@/components/ui/states";
@@ -86,7 +88,10 @@ export function HomePreviewScreen() {
   // chart's currency selector). The model's own primary currency, once
   // it lands, is adopted via a separate one-shot secondary load below —
   // not by re-running the original effect.
-  const initialLoadCurrency = explicitCurrency ?? cashflowCurrencySticky ?? "INR";
+  // Start from the primary currency this session already learned (INR on a
+  // cold start), so re-mounting Home doesn't load INR and then reload.
+  const [sessionPrimary] = useState(rememberedPrimaryCurrency);
+  const initialLoadCurrency = explicitCurrency ?? cashflowCurrencySticky ?? sessionPrimary;
   const {
     model: readModel,
     status: readModelStatus,
@@ -107,10 +112,13 @@ export function HomePreviewScreen() {
     cashflowCurrencySticky ??
     readModel?.availableCurrencies[0] ??
     initialLoadCurrency;
-  const highlightsAt = useMemo(() => Date.now(), [syncRevision]);
+  const highlightsAt = useSyncAnchor(syncRevision);
   const [selectedFilter, setSelectedFilter] = useState<ActivityCategoryFilter>("all");
   const [selectedAccountKey, setSelectedAccountKey] = useState(ALL_ACCOUNTS_KEY);
   const modelPrimary = readModel?.availableCurrencies[0];
+  useEffect(() => {
+    rememberPrimaryCurrency(modelPrimary);
+  }, [modelPrimary]);
   const adoptedPrimary =
     !hasAdoptedPrimary.current &&
     explicitCurrency == null &&
