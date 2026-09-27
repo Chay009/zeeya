@@ -1,36 +1,18 @@
-import { useEffect } from "react";
 import { View } from "react-native";
-import Animated, {
-  useAnimatedStyle,
-  useReducedMotion,
-  useSharedValue,
-  withDelay,
-  withSpring,
-} from "react-native-reanimated";
-
-import { settle } from "@/components/ui/motion";
+import Animated, { useReducedMotion } from "react-native-reanimated";
 
 // One horizontal bar split into rounded segments with hairline gaps — how
 // the category mix reads at a glance. Replaces the donut: it's easier to
-// compare lengths than angles, and it fits a phone's width. Segments grow
-// in left-to-right on mount and re-settle when the mix changes.
+// compare lengths than angles, and it fits a phone's width.
+//
+// Declarative Reanimated CSS, no effects: the bar sweeps in from the left
+// once on mount (static keyframes), and each segment's share transitions
+// when the mix changes.
 
-function Segment({ share, color, height, index }: { share: number; color: string; height: number; index: number }) {
-  const reducedMotion = useReducedMotion();
-  const grow = useSharedValue(reducedMotion ? share : 0);
-
-  useEffect(() => {
-    grow.value = reducedMotion ? share : withDelay(80 + index * 45, withSpring(share, settle));
-  }, [grow, index, reducedMotion, share]);
-
-  const style = useAnimatedStyle(() => ({ flexGrow: grow.value, flexBasis: 0 }));
-
-  return (
-    <Animated.View
-      style={[style, { minWidth: height, height, borderRadius: height / 2, backgroundColor: color }]}
-    />
-  );
-}
+const SWEEP_IN = {
+  from: { transform: [{ scaleX: 0 }] },
+  to: { transform: [{ scaleX: 1 }] },
+};
 
 export function ShareBar({
   segments,
@@ -39,22 +21,41 @@ export function ShareBar({
   segments: readonly { key: string; value: number; color: string }[];
   height?: number;
 }) {
+  const reducedMotion = useReducedMotion();
   const total = segments.reduce((sum, segment) => sum + Math.max(0, segment.value), 0);
   if (total <= 0) return <View className="rounded-pill bg-fill" style={{ height }} />;
 
   return (
-    <View className="flex-row gap-[3px]" style={{ height }}>
+    <Animated.View
+      className="flex-row gap-[3px]"
+      style={{
+        height,
+        transformOrigin: "left",
+        animationName: reducedMotion ? "none" : SWEEP_IN,
+        animationDuration: 560,
+        animationDelay: 80,
+        animationTimingFunction: "ease-out",
+        animationFillMode: "backwards",
+      }}
+    >
       {segments
         .filter((segment) => segment.value > 0)
-        .map((segment, index) => (
-          <Segment
+        .map((segment) => (
+          <Animated.View
             key={segment.key}
-            share={segment.value / total}
-            color={segment.color}
-            height={height}
-            index={index}
+            style={{
+              flexGrow: segment.value / total,
+              flexBasis: 0,
+              minWidth: height,
+              height,
+              borderRadius: height / 2,
+              backgroundColor: segment.color,
+              transitionProperty: "flexGrow",
+              transitionDuration: reducedMotion ? 0 : 420,
+              transitionTimingFunction: "ease-out",
+            }}
           />
         ))}
-    </View>
+    </Animated.View>
   );
 }

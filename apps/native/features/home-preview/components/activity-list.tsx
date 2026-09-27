@@ -1,6 +1,5 @@
-import { useCallback, useMemo, useRef } from "react";
+import { memo, useCallback, useMemo, useRef } from "react";
 import { Pressable, SectionList, View } from "react-native";
-import Animated from "react-native-reanimated";
 
 import { AppText as Text } from "@/components/app-text";
 import { ShareBar } from "@/components/charts/share-bar";
@@ -10,7 +9,7 @@ import { AppIcon } from "@/components/icon";
 import { Segmented, SelectPill } from "@/components/ui/controls";
 import { LargeTitle } from "@/components/ui/header";
 import { Money } from "@/components/ui/money";
-import { rowEnter, rowLayout, tick } from "@/components/ui/motion";
+import { tick } from "@/components/ui/motion";
 import { EmptyState } from "@/components/ui/states";
 import { useThemeColors } from "@/components/ui/theme";
 import { fromMinorUnits } from "@/lib/currency";
@@ -57,18 +56,28 @@ function dayKey(timestampMs: number): string {
   return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
 }
 
+// Built once: every Date#toLocale*String call constructs a fresh Intl
+// formatter, which is slow on Hermes — and these run for every row.
+const DAY_TITLE_FORMAT = new Intl.DateTimeFormat("en-IN", {
+  weekday: "short",
+  day: "numeric",
+  month: "short",
+});
+const TIME_FORMAT = new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-digit" });
+const MONTH_YEAR_FORMAT = new Intl.DateTimeFormat("en-IN", { month: "long", year: "numeric" });
+const MONTH_FORMAT = new Intl.DateTimeFormat("en-IN", { month: "long" });
+
 function dayTitle(timestampMs: number): string {
-  const date = new Date(timestampMs);
   const today = new Date();
   const yesterday = new Date();
   yesterday.setDate(today.getDate() - 1);
   if (dayKey(timestampMs) === dayKey(today.getTime())) return "Today";
   if (dayKey(timestampMs) === dayKey(yesterday.getTime())) return "Yesterday";
-  return date.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" });
+  return DAY_TITLE_FORMAT.format(timestampMs);
 }
 
 function timeLabel(timestampMs: number): string {
-  return new Date(timestampMs).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
+  return TIME_FORMAT.format(timestampMs);
 }
 
 function amountOf(item: HomeActivityViewItem): number | null {
@@ -77,6 +86,10 @@ function amountOf(item: HomeActivityViewItem): number | null {
 }
 
 type DaySection = {
+  // SectionList keys cells by section key + item key. Without a stable
+  // section key it falls back to the section INDEX, so a filter that removes
+  // one day would re-key (remount) every row after it.
+  key: string;
   dayKey: string;
   title: string;
   spent: number;
@@ -90,7 +103,7 @@ function groupByDay(items: HomeActivityViewItem[]): DaySection[] {
     const key = dayKey(item.date);
     let group = groups.get(key);
     if (!group) {
-      group = { dayKey: key, title: dayTitle(item.date), spent: 0, currency: item.currency ?? "INR", data: [], timestamp: item.date };
+      group = { key, dayKey: key, title: dayTitle(item.date), spent: 0, currency: item.currency ?? "INR", data: [], timestamp: item.date };
       groups.set(key, group);
     }
     group.data.push(item);
@@ -100,8 +113,61 @@ function groupByDay(items: HomeActivityViewItem[]): DaySection[] {
 }
 
 function monthLabel(timestampMs: number): string {
-  return new Date(timestampMs).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+  return MONTH_YEAR_FORMAT.format(timestampMs);
 }
+
+// One list cell. Memoized with stable props, so a parent re-render (a store
+// change, a live data refresh) doesn't re-render every mounted row. No
+// entering/layout animation: on a virtualized list those replay for every
+// cell mounted during a scroll and animate every cell on any height change.
+const ActivityRowCell = memo(function ActivityRowCell({
+  item,
+  first,
+  last,
+  onSelect,
+}: {
+  item: HomeActivityViewItem;
+  first: boolean;
+  last: boolean;
+  onSelect?: (item: HomeActivityViewItem) => void;
+}) {
+  const onPress = useCallback(() => onSelect?.(item), [onSelect, item]);
+  return (
+    <View
+      className={`overflow-hidden bg-card ${first ? "rounded-t-card" : ""} ${last ? "rounded-b-card" : ""}`}
+    >
+      {!first ? <View className="ml-[68px] h-px bg-divider" /> : null}
+      <TransactionRow
+        name={item.name}
+        subtitle={categoryLabel(item)}
+        meta={timeLabel(item.date)}
+        logo={item}
+        amount={amountOf(item)}
+        amountLabel={item.amount}
+        currency={item.currency}
+        direction={isTransfer(item) ? "neutral" : item.direction}
+        onPress={onSelect ? onPress : undefined}
+      />
+    </View>
+  );
+});
+
+const keyExtractor = (item: HomeActivityViewItem) => item.key;
+
+function DaySectionHeader({ section }: { section: DaySection }) {
+  return (
+    <View className="flex-row items-baseline justify-between px-1 pb-2 pt-6">
+      <Text className="text-caption font-semibold text-ink-soft">{section.title}</Text>
+      {section.spent > 0 ? (
+        <Money value={section.spent} currency={section.currency} size="caption" tone="muted" />
+      ) : null}
+    </View>
+  );
+}
+
+const renderSectionHeader = ({ section }: { section: DaySection }) => (
+  <DaySectionHeader section={section} />
+);
 
 function MonthSwitcher({
   monthStart,
@@ -170,7 +236,7 @@ function MonthSummary({ items, monthStart }: { items: HomeActivityViewItem[]; mo
   }, [items]);
 
   if (summary.spent === 0 && summary.earned === 0) return null;
-  const month = new Date(monthStart).toLocaleDateString("en-IN", { month: "long" });
+  const month = MONTH_FORMAT.format(monthStart);
 
   return (
     <View className="mt-4 rounded-card bg-card p-5">
@@ -316,6 +382,18 @@ export function ActivityList({
     [bankAccounts],
   );
 
+  const renderItem = useCallback(
+    ({ item, index, section }: { item: HomeActivityViewItem; index: number; section: DaySection }) => (
+      <ActivityRowCell
+        item={item}
+        first={index === 0}
+        last={index === section.data.length - 1}
+        onSelect={onSelect}
+      />
+    ),
+    [onSelect],
+  );
+
   const header = (
     <View>
       <LargeTitle
@@ -357,7 +435,7 @@ export function ActivityList({
       <SectionList
         ref={listRef}
         sections={sections}
-        keyExtractor={(item) => item.key}
+        keyExtractor={keyExtractor}
         stickySectionHeadersEnabled={false}
         onContentSizeChange={scrollToDaySection}
         onScrollToIndexFailed={onScrollToIndexFailed}
@@ -371,40 +449,16 @@ export function ActivityList({
             />
           </View>
         }
-        renderSectionHeader={({ section }) => (
-          <View className="flex-row items-baseline justify-between px-1 pb-2 pt-6">
-            <Text className="text-caption font-semibold text-ink-soft">{section.title}</Text>
-            {section.spent > 0 ? (
-              <Money value={section.spent} currency={section.currency} size="caption" tone="muted" />
-            ) : null}
-          </View>
-        )}
-        renderItem={({ item, index, section }) => {
-          const first = index === 0;
-          const last = index === section.data.length - 1;
-          return (
-            <Animated.View
-              entering={rowEnter}
-              layout={rowLayout}
-              className={`overflow-hidden bg-card ${first ? "rounded-t-card" : ""} ${last ? "rounded-b-card" : ""}`}
-            >
-              {!first ? <View className="ml-[68px] h-px bg-divider" /> : null}
-              <TransactionRow
-                name={item.name}
-                subtitle={categoryLabel(item)}
-                meta={timeLabel(item.date)}
-                logo={item}
-                amount={amountOf(item)}
-                amountLabel={item.amount}
-                currency={item.currency}
-                direction={isTransfer(item) ? "neutral" : item.direction}
-                onPress={onSelect ? () => onSelect(item) : undefined}
-              />
-            </Animated.View>
-          );
-        }}
+        renderSectionHeader={renderSectionHeader}
+        renderItem={renderItem}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: tabBarClearance }}
         showsVerticalScrollIndicator={false}
+        // Rows are a fixed ~60pt: render what fills the screen, keep a small
+        // window, and let Android drop offscreen views from the hierarchy.
+        initialNumToRender={12}
+        maxToRenderPerBatch={8}
+        windowSize={7}
+        removeClippedSubviews
       />
     </View>
   );

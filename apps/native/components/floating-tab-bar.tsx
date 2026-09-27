@@ -1,22 +1,13 @@
 import * as Haptics from "expo-haptics";
 import type { BottomTabBarProps } from "expo-router/build/layouts/Tabs";
 import { Tabs } from "heroui-native";
-import { useEffect } from "react";
 import { Platform, View } from "react-native";
-import Animated, {
-  useAnimatedStyle,
-  useReducedMotion,
-  useSharedValue,
-  withSequence,
-  withSpring,
-  withTiming,
-} from "react-native-reanimated";
+import Animated, { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "@/components/app-text";
 import { AppIcon, type AppIconName } from "@/components/icon";
 import { GlassSurface } from "@/components/native-ui/glass-surface";
-import { snappy } from "@/components/ui/motion";
 import { useThemeColors } from "@/components/ui/theme";
 
 const BAR_RADIUS = 26;
@@ -40,18 +31,27 @@ export function useFloatingTabBarClearance(): number {
   return BAR_VISUAL_HEIGHT + Math.max(12, insets.bottom) + BAR_CONTENT_GAP;
 }
 
-// Selecting a tab gives its icon a small spring pop — dips, then settles —
-// so the switch feels physical, not just recoloured.
+// Selecting a tab gives its icon a small pop — dips, overshoots, settles —
+// so the switch feels physical, not just recoloured. Declarative: the
+// keyframes are attached only while selected, so becoming selected plays
+// them once. No shared value, no effect.
+const TAB_POP = {
+  "0%": { transform: [{ scale: 1 }] },
+  "30%": { transform: [{ scale: 0.86 }] },
+  "70%": { transform: [{ scale: 1.05 }] },
+  "100%": { transform: [{ scale: 1 }] },
+};
+
 function TabIcon({ name, selected, color }: { name: AppIconName; selected: boolean; color: string }) {
   const reducedMotion = useReducedMotion();
-  const scale = useSharedValue(1);
-  useEffect(() => {
-    if (!selected || reducedMotion) return;
-    scale.value = withSequence(withTiming(0.86, { duration: 90 }), withSpring(1, snappy));
-  }, [reducedMotion, scale, selected]);
-  const style = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
   return (
-    <Animated.View style={style}>
+    <Animated.View
+      style={{
+        animationName: selected && !reducedMotion ? TAB_POP : "none",
+        animationDuration: 320,
+        animationTimingFunction: "ease-out",
+      }}
+    >
       <AppIcon name={name} size={23} color={color} strokeWidth={selected ? 2 : 1.7} />
     </Animated.View>
   );

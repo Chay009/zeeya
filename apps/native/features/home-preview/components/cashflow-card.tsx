@@ -1,15 +1,7 @@
 import { Surface } from "heroui-native";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { View, type LayoutChangeEvent } from "react-native";
-import Animated, {
-  Easing,
-  interpolate,
-  type SharedValue,
-  useAnimatedStyle,
-  useReducedMotion,
-  useSharedValue,
-  withTiming,
-} from "react-native-reanimated";
+import Animated, { useReducedMotion } from "react-native-reanimated";
 
 import { Segmented, SelectPill } from "@/components/ui/controls";
 
@@ -22,33 +14,12 @@ const CHART_LABELS = ["Cashflow", "Categories", "Calendar"] as const;
 const TAB_COUNT = CHART_LABELS.length;
 const MORPH_DURATION_MS = 280;
 
-const HEIGHT_TIMING = {
-  duration: MORPH_DURATION_MS,
-  easing: Easing.out(Easing.cubic),
-};
-
-function useMorphTabStyle(opacity: SharedValue<number>) {
-  return useAnimatedStyle(() => ({
-    opacity: opacity.value,
-    transform: [{ translateY: interpolate(opacity.value, [0, 1], [8, 0]) }],
-  }));
-}
-
-function useTabOpacities(activeIndex: number, reducedMotion: boolean | null) {
-  const opacity0 = useSharedValue(1);
-  const opacity1 = useSharedValue(0);
-  const opacity2 = useSharedValue(0);
-  const opacities = [opacity0, opacity1, opacity2];
-
-  useEffect(() => {
-    opacities.forEach((opacity, index) => {
-      const target = index === activeIndex ? 1 : 0;
-      opacity.value = reducedMotion ? target : withTiming(target, { duration: MORPH_DURATION_MS });
-    });
-  }, [activeIndex, opacity0, opacity1, opacity2, reducedMotion]);
-
-  return opacities;
-}
+// Tabs crossfade (with a small rise) and the panel morphs to the incoming
+// tab's measured height — all declarative Reanimated CSS transitions, so a
+// tab switch is one state change and zero effects. When the incoming tab is
+// shorter, the height holds briefly so the outgoing content fades before it
+// would be clipped.
+const SHRINK_HOLD_MS = Math.round(MORPH_DURATION_MS * 0.45);
 
 export function CashflowCard({
   data,
@@ -62,68 +33,42 @@ export function CashflowCard({
   /** Subtle overlay while a per-account SQL scope is in flight — chart stays mounted. */
   isScopeRefreshing?: boolean;
 }) {
-  const [chartIndex, setChartIndex] = useState(0);
+  // The previous tab rides along with the current one so the height
+  // transition knows whether it is shrinking — set in the change handler.
+  const [chart, setChart] = useState({ index: 0, previous: 0 });
+  const chartIndex = chart.index;
+  // Panels mount the first time they're opened (then stay, so switching back
+  // is instant). Mounting all three up front paid for a full
+  // react-native-calendars month — ~35 day cells and a bottom sheet — plus
+  // the categories list on Home's first paint and every re-render.
+  const [visited, setVisited] = useState<ReadonlySet<number>>(() => new Set([0]));
   const [tabHeights, setTabHeights] = useState<Partial<Record<number, number>>>({});
   const reducedMotion = useReducedMotion();
   const activeCurrency = selectedCurrency ?? data.selectedCurrency;
-  const animatedHeight = useSharedValue(0);
-  const hasInitialHeight = useRef(false);
-  const tabOpacities = useTabOpacities(chartIndex, reducedMotion);
-  const cashflowStyle = useMorphTabStyle(tabOpacities[0]!);
-  const categoriesStyle = useMorphTabStyle(tabOpacities[1]!);
-  const calendarStyle = useMorphTabStyle(tabOpacities[2]!);
 
-  const applyHeight = useCallback(
-    (height: number, animate: boolean) => {
-      if (height <= 0) return;
-      if (!animate || reducedMotion) {
-        animatedHeight.value = height;
-        return;
-      }
-      animatedHeight.value = withTiming(height, HEIGHT_TIMING);
-    },
-    [animatedHeight, reducedMotion],
-  );
+  // A just-opened panel has no measured height yet: hold the previous one
+  // for that frame instead of collapsing the card.
+  const panelHeight = tabHeights[chartIndex] ?? tabHeights[chart.previous];
+  const outgoingHeight = tabHeights[chart.previous];
+  const shrinking = panelHeight !== undefined && outgoingHeight !== undefined && panelHeight < outgoingHeight;
+  const morphMs = reducedMotion ? 0 : MORPH_DURATION_MS;
 
-  const morphToHeight = useCallback(
-    (height: number, fromIndex: number, toIndex: number) => {
-      if (height <= 0) return;
-      const fromHeight = tabHeights[fromIndex] ?? animatedHeight.value;
-      const shrinking = fromHeight > 0 && height < fromHeight;
+  const selectChart = (index: number) => {
+    setChart((current) => (current.index === index ? current : { index, previous: current.index }));
+    setVisited((current) => (current.has(index) ? current : new Set(current).add(index)));
+  };
 
-      if (!hasInitialHeight.current) {
-        hasInitialHeight.current = true;
-        animatedHeight.value = height;
-        return;
-      }
-
-      if (!shrinking || reducedMotion) {
-        applyHeight(height, true);
-        return;
-      }
-
-      // Hold the outgoing tab's height until it fades out, then shrink to the
-      // incoming tab so content is not clipped mid-crossfade.
-      animatedHeight.value = withTiming(
-        fromHeight,
-        { duration: Math.round(MORPH_DURATION_MS * 0.45), easing: Easing.out(Easing.cubic) },
-        (finished) => {
-          if (!finished) return;
-          animatedHeight.value = withTiming(height, HEIGHT_TIMING);
-        },
-      );
-    },
-    [animatedHeight, applyHeight, reducedMotion, tabHeights],
-  );
-
-  const previousChartIndex = useRef(chartIndex);
-  useEffect(() => {
-    const nextHeight = tabHeights[chartIndex];
-    if (nextHeight) {
-      morphToHeight(nextHeight, previousChartIndex.current, chartIndex);
-    }
-    previousChartIndex.current = chartIndex;
-  }, [chartIndex, morphToHeight, tabHeights]);
+  const renderPanel = (index: number) => {
+    if (index === 0) return <ThisWeekCashflowTab data={data} />;
+    if (index === 1) return <ThisWeekCategoriesTab data={data} />;
+    return (
+      <ThisWeekCalendarTab
+        months={data.calendarMonths}
+        currency={activeCurrency}
+        isActive={chartIndex === 2}
+      />
+    );
+  };
 
   const onTabLayout = useCallback(
     (index: number) => (event: LayoutChangeEvent) => {
@@ -136,11 +81,6 @@ export function CashflowCard({
     [],
   );
 
-  const panelStyle = useAnimatedStyle(() => ({
-    height: animatedHeight.value > 0 ? animatedHeight.value : undefined,
-    overflow: "hidden" as const,
-  }));
-
   return (
     <Surface asChild className="overflow-hidden rounded-card bg-card p-5">
       <View>
@@ -148,7 +88,7 @@ export function CashflowCard({
           <Segmented
             value={CHART_LABELS[chartIndex]!}
             options={CHART_LABELS.map((label) => ({ value: label, label }))}
-            onChange={(label) => setChartIndex(CHART_LABELS.indexOf(label))}
+            onChange={(label) => selectChart(CHART_LABELS.indexOf(label))}
             size="sm"
             className="min-w-0 flex-1"
           />
@@ -163,7 +103,17 @@ export function CashflowCard({
           ) : null}
         </View>
 
-        <Animated.View className="relative mt-5" style={panelStyle}>
+        <Animated.View
+          className="relative mt-5"
+          style={{
+            height: panelHeight,
+            overflow: "hidden",
+            transitionProperty: "height",
+            transitionDuration: morphMs,
+            transitionDelay: shrinking ? Math.min(morphMs, SHRINK_HOLD_MS) : 0,
+            transitionTimingFunction: "ease-out",
+          }}
+        >
           {isScopeRefreshing ? (
             <View
               pointerEvents="none"
@@ -171,27 +121,24 @@ export function CashflowCard({
             />
           ) : null}
           {Array.from({ length: TAB_COUNT }, (_, index) => {
-            const styles = [cashflowStyle, categoriesStyle, calendarStyle];
-            const panels = [
-              <ThisWeekCashflowTab key="cashflow" data={data} />,
-              <ThisWeekCategoriesTab key="categories" data={data} />,
-              <ThisWeekCalendarTab
-                key="calendar"
-                months={data.calendarMonths}
-                currency={activeCurrency}
-                isActive={chartIndex === 2}
-              />,
-            ];
-
+            if (!visited.has(index)) return null;
+            const active = chartIndex === index;
             return (
               <Animated.View
                 key={CHART_LABELS[index]}
                 className="absolute inset-x-0 top-0"
-                style={[styles[index], { zIndex: chartIndex === index ? 2 : 1 }]}
+                style={{
+                  zIndex: active ? 2 : 1,
+                  opacity: active ? 1 : 0,
+                  transform: [{ translateY: active ? 0 : 8 }],
+                  transitionProperty: ["opacity", "transform"],
+                  transitionDuration: morphMs,
+                  transitionTimingFunction: "ease-out",
+                }}
                 onLayout={onTabLayout(index)}
-                pointerEvents={chartIndex === index ? "auto" : "none"}
+                pointerEvents={active ? "auto" : "none"}
               >
-                {panels[index]}
+                {renderPanel(index)}
               </Animated.View>
             );
           })}

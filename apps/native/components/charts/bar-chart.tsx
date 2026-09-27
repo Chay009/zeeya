@@ -1,17 +1,8 @@
-import { useEffect } from "react";
 import { Pressable, View } from "react-native";
-import Animated, {
-  interpolateColor,
-  useAnimatedStyle,
-  useReducedMotion,
-  useSharedValue,
-  withDelay,
-  withSpring,
-  withTiming,
-} from "react-native-reanimated";
+import Animated, { useReducedMotion } from "react-native-reanimated";
 
 import { AppText as Text } from "@/components/app-text";
-import { duration, settle, tick } from "@/components/ui/motion";
+import { duration, tick } from "@/components/ui/motion";
 import { useThemeColors } from "@/components/ui/theme";
 
 // Column chart for period comparisons (last 6 months). Bars are soft
@@ -25,6 +16,15 @@ export interface BarDatum {
   value: number;
 }
 
+// Grows up from the baseline once, on mount. Static keyframes, so a data
+// change never restarts it — changes are the height transition's job.
+const GROW_IN = {
+  from: { transform: [{ scaleY: 0 }] },
+  to: { transform: [{ scaleY: 1 }] },
+};
+
+// Declarative Reanimated CSS: the bar states its target height/colour and the
+// transition animates between renders — no shared values, no effects.
 function Bar({
   ratio,
   selected,
@@ -41,29 +41,34 @@ function Bar({
   height: number;
 }) {
   const reducedMotion = useReducedMotion();
-  const progress = useSharedValue(reducedMotion ? ratio : 0);
-  const active = useSharedValue(selected ? 1 : 0);
-
-  useEffect(() => {
-    progress.value = reducedMotion ? ratio : withDelay(index * 40, withSpring(ratio, settle));
-  }, [index, progress, ratio, reducedMotion]);
-
-  useEffect(() => {
-    active.value = reducedMotion ? (selected ? 1 : 0) : withTiming(selected ? 1 : 0, { duration: duration.base });
-  }, [active, reducedMotion, selected]);
-
-  // Selection crossfades the fill and lifts the bar a hair — the chosen
-  // month reads as "picked up", not just recoloured.
-  const style = useAnimatedStyle(() => ({
-    height: Math.max(6, progress.value * height),
-    backgroundColor: interpolateColor(active.value, [0, 1], [mutedColor, color]),
-    transform: [{ scaleX: 1 + active.value * 0.06 }],
-  }));
-
   return (
     <Animated.View
-      style={[style, { width: "100%", maxWidth: 34, borderRadius: 10, borderCurve: "continuous" }]}
-    />
+      style={{
+        width: "100%",
+        maxWidth: 34,
+        transformOrigin: "bottom",
+        animationName: reducedMotion ? "none" : GROW_IN,
+        animationDuration: 520,
+        animationDelay: index * 40,
+        animationTimingFunction: "ease-out",
+        animationFillMode: "backwards",
+      }}
+    >
+      {/* Selection recolours and lifts the bar a hair — the chosen month
+          reads as "picked up", not just recoloured. */}
+      <Animated.View
+        style={{
+          height: Math.max(6, ratio * height),
+          backgroundColor: selected ? color : mutedColor,
+          transform: [{ scaleX: selected ? 1.06 : 1 }],
+          borderRadius: 10,
+          borderCurve: "continuous",
+          transitionProperty: ["height", "backgroundColor", "transform"],
+          transitionDuration: reducedMotion ? 0 : [420, duration.base, duration.base],
+          transitionTimingFunction: "ease-out",
+        }}
+      />
+    </Animated.View>
   );
 }
 

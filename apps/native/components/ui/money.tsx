@@ -1,10 +1,10 @@
-import { NumberFlow } from "number-flow-react-native";
+import { useState } from "react";
 import { View } from "react-native";
+import Animated, { useReducedMotion } from "react-native-reanimated";
 
 import { AppText as Text } from "@/components/app-text";
 import { moneyFontFamily, moneyTextStyle } from "@/lib/fonts";
-
-import { useThemeColors, type ThemeColors } from "./theme";
+import { numberFormat } from "@/lib/intl-format";
 
 // The one way an amount is drawn. Spending renders in ink — only income is
 // coloured — and the whole number carries the weight while the symbol and
@@ -23,14 +23,6 @@ const SIZE: Record<MoneySize, { main: number; minor: number; line: number; weigh
   caption: { main: 13, minor: 11, line: 18, weight: "semibold" },
 };
 
-const TONE_COLOR: Record<MoneyTone, keyof ThemeColors> = {
-  default: "ink",
-  income: "positive",
-  muted: "muted",
-  negative: "negative",
-  onHero: "onHero",
-};
-
 const TONE: Record<MoneyTone, { main: string; minor: string }> = {
   default: { main: "text-ink", minor: "text-muted" },
   income: { main: "text-positive", minor: "text-positive" },
@@ -47,14 +39,19 @@ export function currencySymbol(currency: string): string {
   return `${currency} `;
 }
 
+// Built once — this runs for every amount on screen.
+const MONEY_WHOLE = numberFormat("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+const MONEY_WITH_FRACTION = numberFormat("en-IN", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+const MONEY_NO_FRACTION = numberFormat("en-IN", { maximumFractionDigits: 0 });
+
 export function splitMoney(value: number, currency: string) {
   const abs = Math.abs(value);
   const hasFraction = Math.round(abs * 100) % 100 !== 0;
-  const [whole, fraction] = abs
-    .toLocaleString("en-IN", {
-      minimumFractionDigits: hasFraction ? 2 : 0,
-      maximumFractionDigits: 2,
-    })
+  const [whole, fraction] = (hasFraction ? MONEY_WITH_FRACTION : MONEY_WHOLE)
+    .format(abs)
     .split(".");
   return { symbol: currencySymbol(currency), whole: whole ?? "0", fraction: fraction ?? null };
 }
@@ -111,7 +108,12 @@ export function Money({
           {symbol.trim()}
           {symbol.endsWith(" ") ? " " : ""}
         </Text>
-        <RollingNumber value={Math.abs(value)} showFraction={showFraction} style={main} tone={tone} />
+        <RollingNumber
+          value={Math.abs(value)}
+          showFraction={showFraction}
+          style={main}
+          toneClass={colors.main}
+        />
       </View>
     );
   }
@@ -139,27 +141,49 @@ export function Money({
   );
 }
 
-// Split out so only animated hero numbers subscribe to theme colours;
-// the hundreds of static list amounts stay className-only.
+// A hero number that eases into a new value: ONE Text node, re-keyed on the
+// formatted value so a change mounts a fresh node that rises and fades in
+// (a static CSS keyframe — no shared values, no per-digit views). It
+// replaced number-flow's per-digit rolling, which built ~135 native views
+// per instance (14 stacked digits per slot), measured glyphs on mount, and
+// restarted 900ms rolls on every chart scrub step. Unchanged values keep
+// their node (same key), so a re-render never re-animates; the first mount
+// doesn't animate either (the keyframe starts from the resting state's
+// neighbour, so it reads as settling, not flashing).
+const VALUE_IN = {
+  from: { opacity: 0, transform: [{ translateY: 6 }] },
+  to: { opacity: 1, transform: [{ translateY: 0 }] },
+};
+
 function RollingNumber({
   value,
   showFraction,
   style,
-  tone,
+  toneClass,
 }: {
   value: number;
   showFraction: boolean;
   style: Record<string, unknown>;
-  tone: MoneyTone;
+  toneClass: string;
 }) {
-  const themeColors = useThemeColors();
+  const reducedMotion = useReducedMotion();
+  const text = (showFraction ? MONEY_WHOLE : MONEY_NO_FRACTION).format(value);
+  // The first value renders at rest; only later values animate in.
+  const [firstText] = useState(text);
+  const animate = !reducedMotion && text !== firstText;
   return (
-    <NumberFlow
-      value={value}
-      locales="en-IN"
-      format={{ minimumFractionDigits: 0, maximumFractionDigits: showFraction ? 2 : 0 }}
-      respectMotionPreference
-      style={{ ...style, color: themeColors[TONE_COLOR[tone]] as string }}
-    />
+    <Animated.Text
+      key={text}
+      numberOfLines={1}
+      className={toneClass}
+      style={[
+        style,
+        animate
+          ? { animationName: VALUE_IN, animationDuration: 220, animationTimingFunction: "ease-out" }
+          : null,
+      ]}
+    >
+      {text}
+    </Animated.Text>
   );
 }

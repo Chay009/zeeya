@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { memo, Suspense, use, useState } from "react";
 import { Image, View } from "react-native";
+import { SvgXml } from "react-native-svg";
 
 import { AppText as Text } from "@/components/app-text";
-import { SvgUri } from "react-native-svg";
 import { markLogoDomainFailed } from "../../../lib/logo-dev";
 
 // img.logo.dev/{domain}?token=...&... — pull the domain segment back out
@@ -22,25 +22,46 @@ function logoDevDomain(uri: string): string | null {
 
 // cdn.simpleicons.org (every curated brand/bank entry in
 // features/home-preview/data.ts's knownBrandStyles/knownBankStyles) serves
-// SVG with no raster option — confirmed no remote logo has ever rendered in
-// this app despite the URLs themselves working fine in a browser (which
-// rasterizes SVG natively): React Native's own `Image` has never supported
-// decoding image/svg+xml at all, on either platform, so every one of these
-// was silently failing onError and falling back to the letter tile the
-// whole time. `react-native-svg`'s `SvgUri` (already a dependency, used
-// elsewhere in this same feature) fetches and renders SVG XML directly, so
-// it's used for this specific source instead of forcing raster decoding on
-// a format that was never going to work.
+// SVG with no raster option, and React Native's `Image` can't decode
+// image/svg+xml on either platform — so those are fetched as XML and drawn
+// with react-native-svg.
 const SVG_ONLY_HOSTS = ["cdn.simpleicons.org"];
 
 function isKnownSvgSource(uri: string): boolean {
   return SVG_ONLY_HOSTS.some((host) => uri.includes(host));
 }
 
+// One fetch per logo URL for the whole session. SvgUri re-fetched and
+// re-parsed the XML on the JS thread every time a row mounted — and a
+// virtualized list remounts rows constantly while scrolling. The promise is
+// cached (not just the result) so concurrent rows share one request; a
+// failure resolves to null so it is never retried.
+const svgXmlCache = new Map<string, Promise<string | null>>();
+
+function loadSvgXml(uri: string): Promise<string | null> {
+  let pending = svgXmlCache.get(uri);
+  if (!pending) {
+    pending = fetch(uri)
+      .then((response) => (response.ok ? response.text() : null))
+      .then((xml) => (xml && xml.includes("<svg") ? xml : null))
+      .catch(() => null);
+    svgXmlCache.set(uri, pending);
+  }
+  return pending;
+}
+
+// Suspends (showing nothing — the letter tile underneath stays) until the
+// XML is cached, then renders synchronously on every later mount.
+function RemoteSvg({ uri, size }: { uri: string; size: number }) {
+  const xml = use(loadSvgXml(uri));
+  if (!xml) return null;
+  return <SvgXml xml={xml} width={size} height={size} style={{ position: "absolute" }} />;
+}
+
 // Letter tile with a remote brand mark layered on top; if the image fails
 // (offline, blocked CDN, malformed SVG), it drops out and the letter
 // remains — same idea as the prototype's `onerror="this.remove()"`.
-export function BrandLogo({
+export const BrandLogo = memo(function BrandLogo({
   letter,
   tile,
   ink,
@@ -80,18 +101,14 @@ export function BrandLogo({
       <Text style={{ color: ink, fontWeight: "800", fontSize: Math.round(size * 0.36) }}>
         {letter}
       </Text>
-      {!failed && img && isKnownSvgSource(img) && (
-        <SvgUri
-          uri={img}
-          onError={onImageError}
-          width={iconSize}
-          height={iconSize}
-          style={{ position: "absolute" }}
-        />
-      )}
+      {img && isKnownSvgSource(img) ? (
+        <Suspense fallback={null}>
+          <RemoteSvg uri={img} size={iconSize} />
+        </Suspense>
+      ) : null}
       {!failed && img && !isKnownSvgSource(img) && (
         <Image
-          source={{ uri: img }}
+          source={{ uri: img, cache: "force-cache" }}
           onError={onImageError}
           style={{ position: "absolute", width: iconSize, height: iconSize }}
           resizeMode="contain"
@@ -99,4 +116,4 @@ export function BrandLogo({
       )}
     </View>
   );
-}
+});

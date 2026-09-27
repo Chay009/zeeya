@@ -22,9 +22,13 @@ export const unstable_settings = {
   initialRouteName: "(tabs)",
 };
 
+const STACK_SCREEN_OPTIONS = { freezeOnBlur: true } as const;
+
 function StackLayout() {
   return (
-    <Stack screenOptions={{}}>
+    // freezeOnBlur: the screens underneath a pushed detail screen (the whole
+    // tab tree) stop re-rendering until they're visible again.
+    <Stack screenOptions={STACK_SCREEN_OPTIONS}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen
         name="activity-detail/[id]"

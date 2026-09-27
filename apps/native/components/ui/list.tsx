@@ -1,4 +1,4 @@
-import { Children, Fragment, isValidElement, type ReactNode } from "react";
+import { Children, Fragment, isValidElement, useState, type ReactNode } from "react";
 import { View } from "react-native";
 import { ListGroup, PressableFeedback, Separator } from "heroui-native";
 import Animated from "react-native-reanimated";
@@ -32,6 +32,12 @@ export function RowGroup({
   animated?: boolean;
 }) {
   const items = Children.toArray(children).filter(isValidElement);
+  // Rows present on the first render don't fade in — on a pushed screen that
+  // competed with the stack transition, a dozen entering animations at once.
+  // Only rows that appear LATER (a filter adding them) animate in.
+  const [initialKeys] = useState(
+    () => new Set(items.map((child, index) => String(child.key ?? index))),
+  );
   return (
     <ListGroup variant={variant} className={`overflow-hidden rounded-card ${className}`}>
       {items.map((child, index) => {
@@ -41,8 +47,14 @@ export function RowGroup({
             {child}
           </>
         );
+        const key = child.key ?? index;
         return animated ? (
-          <Animated.View key={child.key ?? index} entering={rowEnter} exiting={rowExit} layout={rowLayout}>
+          <Animated.View
+            key={key}
+            entering={initialKeys.has(String(key)) ? undefined : rowEnter}
+            exiting={rowExit}
+            layout={rowLayout}
+          >
             {content}
           </Animated.View>
         ) : (

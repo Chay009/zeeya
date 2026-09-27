@@ -1,19 +1,11 @@
 import { Chip, Select, Tabs } from "heroui-native";
-import { useEffect } from "react";
 import { View } from "react-native";
-import Animated, {
-  FadeIn,
-  useAnimatedStyle,
-  useReducedMotion,
-  useSharedValue,
-  withDelay,
-  withSpring,
-} from "react-native-reanimated";
+import Animated, { FadeIn, useReducedMotion } from "react-native-reanimated";
 
 import { AppText as Text } from "@/components/app-text";
 import { AppIcon, type AppIconName } from "@/components/icon";
 
-import { duration, settle, tick } from "./motion";
+import { duration, tick } from "./motion";
 import { useThemeColors } from "./theme";
 
 // ── Segmented control ────────────────────────────────────────────────────
@@ -202,22 +194,33 @@ export function ProgressBar({
   const colors = useThemeColors();
   const reducedMotion = useReducedMotion();
   const pct = Math.max(0, Math.min(1, value));
-  const progress = useSharedValue(reducedMotion ? pct : 0);
 
-  useEffect(() => {
-    progress.value = reducedMotion ? pct : withDelay(120, withSpring(pct, settle));
-  }, [pct, progress, reducedMotion]);
-
-  const fillStyle = useAnimatedStyle(() => ({
-    width: `${progress.value * 100}%`,
-  }));
-
+  // Declarative: fills from empty once on mount (keyframes), then the width
+  // transitions whenever the value changes — no shared value, no effect.
   return (
     <View className={`overflow-hidden rounded-pill bg-fill ${className}`} style={{ height }}>
       <Animated.View
         className="h-full rounded-pill"
-        style={[fillStyle, { minWidth: pct > 0 ? height : 0, backgroundColor: color ?? colors.ink }]}
+        style={{
+          width: `${pct * 100}%`,
+          minWidth: pct > 0 ? height : 0,
+          backgroundColor: color ?? colors.ink,
+          transformOrigin: "left",
+          animationName: reducedMotion ? "none" : FILL_IN,
+          animationDuration: 600,
+          animationDelay: 120,
+          animationTimingFunction: "ease-out",
+          animationFillMode: "backwards",
+          transitionProperty: "width",
+          transitionDuration: reducedMotion ? 0 : 420,
+          transitionTimingFunction: "ease-out",
+        }}
       />
     </View>
   );
 }
+
+const FILL_IN = {
+  from: { transform: [{ scaleX: 0 }] },
+  to: { transform: [{ scaleX: 1 }] },
+};

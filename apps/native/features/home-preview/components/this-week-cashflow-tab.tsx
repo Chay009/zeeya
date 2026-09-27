@@ -1,12 +1,5 @@
-import { useEffect } from "react";
 import { View } from "react-native";
-import Animated, {
-  useAnimatedStyle,
-  useReducedMotion,
-  useSharedValue,
-  withDelay,
-  withSpring,
-} from "react-native-reanimated";
+import Animated, { useReducedMotion } from "react-native-reanimated";
 
 import { AppText as Text } from "@/components/app-text";
 import { MoneyText } from "@/components/native-ui/money-text";
@@ -22,16 +15,34 @@ import { hasFlowChartActivity } from "../data/flow-chart-scale";
 
 const PLOT_HEIGHT = 112;
 
+// Grows up from the baseline once on mount (static keyframes); later value
+// changes glide via the height transition. Declarative — no effect.
+const GROW_IN = {
+  from: { transform: [{ scaleY: 0 }] },
+  to: { transform: [{ scaleY: 1 }] },
+};
+
 function Capsule({ ratio, color, delay }: { ratio: number; color: string; delay: number }) {
   const reducedMotion = useReducedMotion();
-  const progress = useSharedValue(reducedMotion ? ratio : 0);
-  useEffect(() => {
-    progress.value = reducedMotion ? ratio : withDelay(delay, withSpring(ratio, { damping: 18, stiffness: 170 }));
-  }, [delay, progress, ratio, reducedMotion]);
-  const style = useAnimatedStyle(() => ({ height: Math.max(4, progress.value * PLOT_HEIGHT) }));
   return (
     <Animated.View
-      style={[style, { width: 9, borderRadius: 5, borderCurve: "continuous", backgroundColor: color, opacity: ratio > 0 ? 1 : 0.35 }]}
+      style={{
+        width: 9,
+        height: Math.max(4, ratio * PLOT_HEIGHT),
+        borderRadius: 5,
+        borderCurve: "continuous",
+        backgroundColor: color,
+        opacity: ratio > 0 ? 1 : 0.35,
+        transformOrigin: "bottom",
+        animationName: reducedMotion ? "none" : GROW_IN,
+        animationDuration: 480,
+        animationDelay: delay,
+        animationTimingFunction: "ease-out",
+        animationFillMode: "backwards",
+        transitionProperty: "height",
+        transitionDuration: reducedMotion ? 0 : 380,
+        transitionTimingFunction: "ease-out",
+      }}
     />
   );
 }

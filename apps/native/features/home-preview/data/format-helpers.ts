@@ -1,4 +1,5 @@
 import { formatDate, formatMoney } from "../../dashboard/utils/format";
+import { dateFormat } from "../../../lib/intl-format";
 import { titleCase } from "../../../lib/transaction-category";
 
 const SUBCATEGORY_LABELS: Record<string, string> = {
@@ -25,18 +26,18 @@ export function formatCurrencyTotals(record: Record<string, number>, visible: bo
 }
 
 export function formatMonthLabel(date: Date): string {
-  return date.toLocaleDateString("en-IN", { month: "short", year: "numeric" });
+  return dateFormat("en-IN", { month: "short", year: "numeric" }).format(date);
 }
 
 export function formatActivityDate(timestamp: number): string {
-  return `${formatDate(timestamp)} · ${new Date(timestamp).toLocaleTimeString("en-IN", {
+  return `${formatDate(timestamp)} · ${dateFormat("en-IN", {
     hour: "2-digit",
     minute: "2-digit",
-  })}`;
+  }).format(timestamp)}`;
 }
 
 export function formatDateHeading(date: Date): string {
-  return date.toLocaleDateString("en-IN", { day: "numeric", month: "short" }).toUpperCase();
+  return dateFormat("en-IN", { day: "numeric", month: "short" }).format(date).toUpperCase();
 }
 
 export function formatSignedAmount(amount: number, currency: string): string {

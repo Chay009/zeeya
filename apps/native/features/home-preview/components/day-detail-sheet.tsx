@@ -1,5 +1,5 @@
 import { CalendarProvider, WeekCalendar } from "react-native-calendars";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { ScrollView, View } from "react-native";
 
 import { AppText as Text } from "@/components/app-text";
@@ -86,9 +86,15 @@ export function DayDetailSheet({
   // open, the week strip can move the user to a different day without the
   // parent calendar tab needing to know or re-render for it.
   const [shownDayMs, setShownDayMs] = useState(dayStartMs);
-  useEffect(() => {
+  // Every opening starts on the tapped day. React's "adjust state while
+  // rendering" pattern, not an effect: the reset happens before this render
+  // commits, so the previous opening's day never paints (and it also covers
+  // a parent-driven close, which fires no onOpenChange).
+  const [wasOpen, setWasOpen] = useState(isOpen);
+  if (isOpen !== wasOpen) {
+    setWasOpen(isOpen);
     if (isOpen) setShownDayMs(dayStartMs);
-  }, [isOpen, dayStartMs]);
+  }
 
   const { status, items } = useDayTransactions(isOpen ? shownDayMs : null, currency);
 

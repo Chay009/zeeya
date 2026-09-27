@@ -108,14 +108,16 @@ export function AnalyticsDetailSheets({
         snapPoints={["88%"]}
       >
         <ScrollView showsVerticalScrollIndicator={false}>
+          {/* A new focus request (focusKey) starts a fresh search: keyed
+              remount, so the content initialises from `focus` directly. */}
           <AnalyticsTransactionsSheetContent
+            key={transactionFocusKey}
             direction={direction}
             items={transactions}
             status={transactionsStatus}
             error={transactionsError}
             onRetry={onReloadTransactions}
             focus={transactionFocus}
-            focusKey={transactionFocusKey}
             onSelect={(item) => {
               close();
               onSelectTransaction(item);

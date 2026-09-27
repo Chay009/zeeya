@@ -1,5 +1,5 @@
 import { BottomSheet as HeroBottomSheet } from "heroui-native";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useReducedMotion } from "react-native-reanimated";
 import { Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -35,6 +35,13 @@ export function NativeBottomSheet({
   const colors = useThemeColors();
   const insets = useSafeAreaInsets();
   const reducedMotion = useReducedMotion();
+  // HeroUI's portal mounts the (closed) Gorhom sheet up front, content and
+  // all — so a screen with several sheets rendered every list inside them on
+  // first paint and on every re-render. Content renders only once the sheet
+  // has been opened (then stays, so closing animates with content intact).
+  // Set while rendering, not in an effect, so the opening frame has it.
+  const [hasOpened, setHasOpened] = useState(isOpen);
+  if (isOpen && !hasOpened) setHasOpened(true);
 
   return (
     <HeroBottomSheet
@@ -119,7 +126,7 @@ export function NativeBottomSheet({
                 <AppIcon name="close" size={20} color={colors.ink} />
               </Pressable>
             </View>
-            <View style={{ flex: 1, paddingTop: 12 }}>{children}</View>
+            <View style={{ flex: 1, paddingTop: 12 }}>{hasOpened ? children : null}</View>
           </View>
         </HeroBottomSheet.Content>
       </HeroBottomSheet.Portal>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Pressable, View } from "react-native";
 
 import { AppText as Text } from "@/components/app-text";
@@ -32,13 +32,10 @@ export function AnalyticsBreakdown({
   merchants: React.ReactNode;
   activity: React.ReactNode;
 }) {
-  const [view, setView] = useState<AnalyticsBreakdownView>(
-    mode === "income" ? "activity" : "categories",
-  );
-
-  useEffect(() => {
-    if (mode === "income") setView("activity");
-  }, [mode]);
+  const [pickedView, setView] = useState<AnalyticsBreakdownView>("categories");
+  // Income has only an activity view — derived, so it is right on the very
+  // first render, and the outcome pick survives a round trip through income.
+  const view: AnalyticsBreakdownView = mode === "income" ? "activity" : pickedView;
 
   const views = mode === "income" ? ([["activity", "Activity"]] as const) : OUTCOME_VIEWS;
   const active = view === "categories" ? categories : view === "merchants" ? merchants : activity;

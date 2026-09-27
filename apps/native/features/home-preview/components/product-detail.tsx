@@ -1,16 +1,14 @@
 import { Chip } from "heroui-native";
 import { ScrollView, View } from "react-native";
-import Animated, { FadeInDown, ZoomIn } from "react-native-reanimated";
 
 import { AppText as Text } from "@/components/app-text";
-import { ZoomTransition } from "@/components/native-ui/zoom-transition";
 import { NavBar } from "@/components/ui/header";
 import { DetailRow, RowGroup } from "@/components/ui/list";
 import { Money } from "@/components/ui/money";
-import { duration, easeOut, snappy } from "@/components/ui/motion";
 import { Section } from "@/components/ui/section";
 import { Delayed, EmptyState, SkeletonBlock } from "@/components/ui/states";
 import { headingFontFamily } from "@/lib/fonts";
+import { dateFormat } from "@/lib/intl-format";
 
 import { formatMoney } from "@/features/dashboard/utils/format";
 import { fromMinorUnits } from "@/lib/currency";
@@ -23,9 +21,6 @@ import { BrandLogo } from "./brand-logo";
 // found, error) keeps the back button, so there is no dead end.
 
 export { productDetailSections };
-
-/** Receipt hero stagger: each line settles in 60ms after the previous one. */
-const heroStep = (step: number) => FadeInDown.duration(duration.slow).delay(step * 60).easing(easeOut);
 
 export interface ProductDetailHeader {
   title: string;
@@ -100,8 +95,11 @@ export function ProductDetail({
   const isIncome = header.direction === "income";
   const visibleSections = sections.filter((section) => section.rows.length > 0);
 
+  // No entrance choreography of its own: the stack's native transition is
+  // the entrance. A full-screen zoom + logo spring + staggered fades used to
+  // play on top of it, on the same frames the screen was mounting.
   return (
-    <ZoomTransition style={{ flex: 1 }}>
+    <View style={{ flex: 1 }}>
       <View className="flex-1 bg-background">
         <NavBar topInset={topInset} onBack={onBack} title={eyebrow} />
         <ScrollView
@@ -110,46 +108,40 @@ export function ProductDetail({
           showsVerticalScrollIndicator={false}
         >
           <View className="items-center px-4 pb-2 pt-4">
-            <Animated.View entering={ZoomIn.springify().damping(snappy.damping).stiffness(snappy.stiffness)}>
-              <BrandLogo
-                letter={header.letter}
-                tile={header.tile}
-                ink={header.ink}
-                img={header.img}
-                size={64}
-                radius={32}
-                iconRatio={0.6}
-              />
-            </Animated.View>
-            <Animated.View entering={heroStep(1)} className="items-center">
-              <Text
-                numberOfLines={2}
-                className="mt-4 text-center text-subtitle font-semibold text-ink"
-                style={{ fontFamily: headingFontFamily("semibold") }}
-              >
-                {header.title}
-              </Text>
-            </Animated.View>
+            <BrandLogo
+              letter={header.letter}
+              tile={header.tile}
+              ink={header.ink}
+              img={header.img}
+              size={64}
+              radius={32}
+              iconRatio={0.6}
+            />
+            <Text
+              numberOfLines={2}
+              className="mt-4 text-center text-subtitle font-semibold text-ink"
+              style={{ fontFamily: headingFontFamily("semibold") }}
+            >
+              {header.title}
+            </Text>
             {header.amountValue !== null && header.currency ? (
-              <Animated.View entering={heroStep(2)}>
-                <Money
-                  value={header.amountValue}
-                  currency={header.currency}
-                  size="display"
-                  tone={isIncome ? "income" : "default"}
-                  sign={isIncome ? "income" : "none"}
-                  className="mt-2"
-                />
-              </Animated.View>
+              <Money
+                value={header.amountValue}
+                currency={header.currency}
+                size="display"
+                tone={isIncome ? "income" : "default"}
+                sign={isIncome ? "income" : "none"}
+                className="mt-2"
+              />
             ) : null}
-            <Animated.View entering={heroStep(3)} className="items-center">
+            <View className="items-center">
               <Text className="mt-2 text-caption text-muted">{header.sub}</Text>
               {header.category ? (
                 <Chip variant="secondary" size="sm" className="mt-4 rounded-pill px-3">
                   <Text className="text-meta font-semibold text-ink-soft">{header.category}</Text>
                 </Chip>
               ) : null}
-            </Animated.View>
+            </View>
           </View>
 
           {header.overview.length > 0 ? (
@@ -173,7 +165,7 @@ export function ProductDetail({
           ))}
         </ScrollView>
       </View>
-    </ZoomTransition>
+    </View>
   );
 }
 
@@ -185,13 +177,12 @@ function titleCase(value: string): string {
 }
 
 function whenLabel(ms: number): string {
-  const date = new Date(ms);
-  return `${date.toLocaleDateString("en-IN", {
+  return `${dateFormat("en-IN", {
     weekday: "short",
     day: "numeric",
     month: "short",
     year: "numeric",
-  })} · ${date.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}`;
+  }).format(ms)} · ${dateFormat("en-IN", { hour: "numeric", minute: "2-digit" }).format(ms)}`;
 }
 
 function signedAmount(

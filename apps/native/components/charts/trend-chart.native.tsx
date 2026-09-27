@@ -1,15 +1,18 @@
-import { Circle, DashPathEffect, LinearGradient, Line as SkiaLine, vec } from "@shopify/react-native-skia";
-import { useEffect, useMemo, useState } from "react";
+import {
+  Circle,
+  DashPathEffect,
+  LinearGradient,
+  Line as SkiaLine,
+  vec,
+} from "@shopify/react-native-skia";
+import { useMemo, useState } from "react";
 import { View, type LayoutChangeEvent } from "react-native";
 import Animated, {
-  Easing,
   useAnimatedReaction,
   useAnimatedStyle,
   useDerivedValue,
   useReducedMotion,
   useSharedValue,
-  withRepeat,
-  withSequence,
   withTiming,
   type SharedValue,
 } from "react-native-reanimated";
@@ -57,23 +60,17 @@ function ScrubMarker({
   );
 }
 
-/** "Now" marker: a solid dot with a halo that slowly breathes. */
+/**
+ * "Now" marker: a solid dot with a static halo. It used to breathe, but any
+ * never-ending animation keeps the Skia canvas redrawing every frame on the
+ * UI thread for as long as the chart is mounted — including while the tab is
+ * hidden (freezeOnBlur freezes React, not native frame callbacks) — taxing
+ * every other screen's scrolling.
+ */
 function NowMarker({ cx, cy, color, halo }: { cx: number; cy: number; color: string; halo: string }) {
-  const reducedMotion = useReducedMotion();
-  const pulse = useSharedValue(8);
-  useEffect(() => {
-    if (reducedMotion) return;
-    pulse.value = withRepeat(
-      withSequence(
-        withTiming(11, { duration: 1100, easing: Easing.inOut(Easing.quad) }),
-        withTiming(8, { duration: 1100, easing: Easing.inOut(Easing.quad) }),
-      ),
-      -1,
-    );
-  }, [pulse, reducedMotion]);
   return (
     <>
-      <Circle cx={cx} cy={cy} r={pulse} color={halo} />
+      <Circle cx={cx} cy={cy} r={10} color={halo} />
       <Circle cx={cx} cy={cy} r={4} color={color} />
     </>
   );
@@ -89,21 +86,23 @@ export function TrendChart({
   const colors = useThemeColors();
   const stroke = color ?? colors.chartLine;
   const { state, isActive } = useChartPressState(INIT);
-  const [painted, setPainted] = useState(false);
   const reducedMotion = useReducedMotion();
   const [width, setWidth] = useState(0);
   const reveal = useSharedValue(reducedMotion ? 1 : 0);
+  // The first data set is drawn by the reveal wipe; only later data changes
+  // morph the line. Derived during render — no "painted" effect.
+  const [initialData] = useState(data);
+  const animateChanges = data !== initialData;
 
-  useEffect(() => {
-    if (data.length > 0) setPainted(true);
-  }, [data.length]);
-
-  // First paint draws the line in from the left, like a pen stroke.
-  useEffect(() => {
-    if (width > 0 && !reducedMotion) {
+  // First paint draws the line in from the left, like a pen stroke. Started
+  // by the layout event that first gives the chart a width.
+  const onLayout = (event: LayoutChangeEvent) => {
+    const next = event.nativeEvent.layout.width;
+    if (width === 0 && next > 0 && !reducedMotion) {
       reveal.value = withTiming(1, { duration: 900, easing: easeOut });
     }
-  }, [reducedMotion, reveal, width]);
+    setWidth(next);
+  };
 
   const revealStyle = useAnimatedStyle(() => ({
     width: width > 0 ? width * reveal.value : "100%",
@@ -125,10 +124,7 @@ export function TrendChart({
 
   return (
     <View>
-      <View
-        style={{ height }}
-        onLayout={(event: LayoutChangeEvent) => setWidth(event.nativeEvent.layout.width)}
-      >
+      <View style={{ height }} onLayout={onLayout}>
         <Animated.View style={[{ height, overflow: "hidden" }, revealStyle]}>
         <View style={{ height, width: width > 0 ? width : "100%" }}>
         <CartesianChart
@@ -154,7 +150,7 @@ export function TrendChart({
                   points={points.value}
                   y0={chartBounds.bottom}
                   curveType="monotoneX"
-                  animate={painted ? { type: "timing", duration: 450 } : undefined}
+                  animate={animateChanges ? { type: "timing", duration: 450 } : undefined}
                 >
                   <LinearGradient
                     start={vec(0, chartBounds.top)}
@@ -169,7 +165,7 @@ export function TrendChart({
                   strokeCap="round"
                   strokeJoin="round"
                   curveType="monotoneX"
-                  animate={painted ? { type: "timing", duration: 450 } : undefined}
+                  animate={animateChanges ? { type: "timing", duration: 450 } : undefined}
                 />
                 {!isActive && last && typeof last.y === "number" ? (
                   <NowMarker cx={last.x} cy={last.y} color={stroke} halo={withAlpha(stroke, 0.16)} />

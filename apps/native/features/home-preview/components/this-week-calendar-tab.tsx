@@ -1,5 +1,5 @@
 import { Calendar, type DateData } from "react-native-calendars";
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
+import { memo, useCallback, useMemo, useState, type ComponentProps } from "react";
 import { Pressable, View } from "react-native";
 
 import { AppText as Text } from "@/components/app-text";
@@ -166,7 +166,12 @@ export function ThisWeekCalendarTab({
   // the newest/current month is the LAST element, not the first — so the
   // initial index must start there, not at 0 (which was showing whatever
   // the oldest fetched month happened to be, not the current one).
-  const months = monthsProp.length > 0 ? monthsProp : [currentMonthWithNoData()];
+  // Memoized: a fresh fallback array every render invalidated the day-cell
+  // memos below and re-rendered every calendar day.
+  const months = useMemo(
+    () => (monthsProp.length > 0 ? monthsProp : [currentMonthWithNoData()]),
+    [monthsProp],
+  );
   const [calendarIndex, setCalendarIndex] = useState(() => months.length - 1);
   const month = months[Math.min(calendarIndex, months.length - 1)];
   // The library only renders as many week-rows as the month actually needs
@@ -178,20 +183,19 @@ export function ThisWeekCalendarTab({
     () => new Map(months.map((candidate) => [candidate.key, candidate])),
     [months],
   );
-  const previousMonthsLength = useRef(months.length);
-  useEffect(() => {
-    // A shrunk-but-still-in-range index just needs clamping (e.g. paging
-    // changed how many months are loaded); a grown array most likely means
-    // fresh data landed (currency switch, refresh) and the view should
-    // snap back to the newest month rather than staying wherever the old,
-    // now-stale index pointed.
-    if (months.length > previousMonthsLength.current) {
-      setCalendarIndex(months.length - 1);
-    } else {
-      setCalendarIndex((index) => Math.min(index, Math.max(0, months.length - 1)));
-    }
-    previousMonthsLength.current = months.length;
-  }, [months.length]);
+  // A shrunk-but-still-in-range index just needs clamping (e.g. paging
+  // changed how many months are loaded); a grown array most likely means
+  // fresh data landed (currency switch, refresh) and the view should snap
+  // back to the newest month rather than staying wherever the old, now-stale
+  // index pointed. Adjusted while rendering (React's documented alternative
+  // to an effect), so the stale month never paints.
+  const [monthsLength, setMonthsLength] = useState(months.length);
+  if (months.length !== monthsLength) {
+    setMonthsLength(months.length);
+    setCalendarIndex((index) =>
+      months.length > monthsLength ? months.length - 1 : Math.min(index, Math.max(0, months.length - 1)),
+    );
+  }
 
   // DateData.timestamp comes from react-native-calendars' own
   // `new XDate(dateString, true)` (the `true` means UTC) — trusting it
@@ -207,9 +211,13 @@ export function ThisWeekCalendarTab({
   const onDaySheetOpenChange = useCallback((open: boolean) => {
     if (!open) setOpenDayStartMs(null);
   }, []);
-  useEffect(() => {
+  // Leaving the Calendar tab closes the day sheet for good (it must not
+  // reopen on return) — adjusted while rendering, not in an effect.
+  const [wasActive, setWasActive] = useState(isActive);
+  if (isActive !== wasActive) {
+    setWasActive(isActive);
     if (!isActive) setOpenDayStartMs(null);
-  }, [isActive]);
+  }
   const calendarDay = useCallback(
     (dayProps: CalendarDayProps) => {
       const dayKey = dayProps.date?.dateString.slice(0, 7);

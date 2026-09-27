@@ -1,5 +1,5 @@
 import { Chip, SearchField } from "heroui-native";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ScrollView, View } from "react-native";
 
 import { AppText as Text } from "@/components/app-text";
@@ -190,7 +190,6 @@ export function AnalyticsTransactionsSheetContent({
   onRetry,
   onSelect,
   focus,
-  focusKey,
 }: {
   direction: AnalyticsDirection;
   items: InsightsTransactionRow[];
@@ -198,21 +197,13 @@ export function AnalyticsTransactionsSheetContent({
   error: string | null;
   onRetry: () => void;
   onSelect: (item: InsightsTransactionRow) => void;
+  /** Initial search/filter. The parent keys this component by focus request. */
   focus: AnalyticsTransactionFocus;
-  focusKey: number;
 }) {
-  const [query, setQuery] = useState("");
-  const [activeFilter, setActiveFilter] = useState<TransactionFilterChip>("All");
-
-  useEffect(() => {
-    if (!focus) {
-      setQuery("");
-      setActiveFilter("All");
-      return;
-    }
-    setQuery(focus.searchQuery);
-    setActiveFilter(focus.chip ?? "All");
-  }, [focus, focusKey]);
+  const [query, setQuery] = useState(() => focus?.searchQuery ?? "");
+  const [activeFilter, setActiveFilter] = useState<TransactionFilterChip>(
+    () => focus?.chip ?? "All",
+  );
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();

@@ -1,7 +1,7 @@
 import { Button, Skeleton } from "heroui-native";
-import { useEffect, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { View } from "react-native";
-import Animated, { FadeIn } from "react-native-reanimated";
+import Animated from "react-native-reanimated";
 
 import { AppText as Text } from "@/components/app-text";
 import { AppIcon, type AppIconName } from "@/components/icon";
@@ -75,27 +75,33 @@ export function SkeletonBlock({ className = "" }: { className?: string }) {
 
 /**
  * Local SQLite reads usually land in a few milliseconds. Showing a skeleton
- * for that long reads as a flicker, not as loading — so placeholders only
- * appear once a load has taken longer than this. Until then the space is
- * reserved (same height, empty) so nothing jumps.
+ * for that long reads as a flicker, not as loading — so placeholders stay
+ * invisible for this long, then fade in. Their space is laid out from the
+ * start, so nothing jumps either way.
  */
 export const SKELETON_DELAY_MS = 150;
 
-export function useDelayedVisible(delayMs = SKELETON_DELAY_MS): boolean {
-  const [visible, setVisible] = useState(delayMs <= 0);
-  useEffect(() => {
-    if (delayMs <= 0) return;
-    const timer = setTimeout(() => setVisible(true), delayMs);
-    return () => clearTimeout(timer);
-  }, [delayMs]);
-  return visible;
-}
+const FADE_IN = { from: { opacity: 0 }, to: { opacity: 1 } };
 
-/** Renders children only after the skeleton delay; reserves `minHeight` until then. */
+/**
+ * Children render immediately but stay transparent until the skeleton delay
+ * passes, then fade in. Pure Reanimated CSS (`backwards` fill holds the
+ * `from` frame during the delay) — no timer, no state, no re-render.
+ */
 export function Delayed({ children, minHeight = 0 }: { children: ReactNode; minHeight?: number }) {
-  const visible = useDelayedVisible();
-  if (!visible) return <View style={{ minHeight }} />;
-  return <Animated.View entering={FadeIn.duration(duration.base)}>{children}</Animated.View>;
+  return (
+    <Animated.View
+      style={{
+        minHeight,
+        animationName: FADE_IN,
+        animationDuration: duration.base,
+        animationDelay: SKELETON_DELAY_MS,
+        animationFillMode: "backwards",
+      }}
+    >
+      {children}
+    </Animated.View>
+  );
 }
 
 const ROW_HEIGHT = 68;
