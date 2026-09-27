@@ -15,10 +15,10 @@ function account(overrides: Partial<HomeAccount> & Pick<HomeAccount, "key" | "id
     bankIcon: undefined,
     bankColor: "#000",
     status: "CONFIRMED",
-    balance: "₹1,000",
+    balance: "₹ 1,000",
     balanceMinorUnits: 100_000,
     currency: "INR",
-    netAcross: "₹9,000",
+    netAcross: "₹ 9,000",
     balanceMeta: null,
     reportedBalance: null,
     reportedMeta: null,
@@ -46,7 +46,7 @@ describe("account scope", () => {
         key: "a",
         bankName: "HDFC Bank",
         last4: "1111",
-        balance: "₹100",
+        balance: "₹ 100",
         balanceMinorUnits: 10_000,
       }),
       account({
@@ -54,12 +54,12 @@ describe("account scope", () => {
         key: "b",
         bankName: "SBI",
         last4: "2222",
-        balance: "₹200",
+        balance: "₹ 200",
         balanceMinorUnits: 20_000,
       }),
     ];
-    expect(scopedHeroBalance(accounts, "a")).toBe("₹100");
-    expect(scopedHeroBalance(accounts, ALL_ACCOUNTS_KEY)).toBe("₹300");
+    expect(scopedHeroBalance(accounts, "a")).toBe("₹ 100");
+    expect(scopedHeroBalance(accounts, ALL_ACCOUNTS_KEY)).toBe("₹ 300");
     expect(accountScopeCaption(accounts, "b")).toContain("SBI");
   });
 

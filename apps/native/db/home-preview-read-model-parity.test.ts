@@ -699,7 +699,7 @@ describe("createHomePreviewDataFromReadModel — read-model-specific correctness
     // amount, not a mislabeled figure from the other currency's data.
     const inrCurrentMonth = inrPreview.cashflow.calendarMonths.find((m) => m.today !== undefined);
     const usdCurrentMonth = usdPreview.cashflow.calendarMonths.find((m) => m.today !== undefined);
-    expect(inrCurrentMonth?.spent).toBe("₹100");
+    expect(inrCurrentMonth?.spent).toBe("₹ 100");
     expect(usdCurrentMonth?.spent).toBe("USD 50");
   });
 });

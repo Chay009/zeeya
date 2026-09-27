@@ -18,9 +18,10 @@ function NativeDatabaseGate({ children }: PropsWithChildren) {
   const { success, error } = useMigrations(db, migrations);
 
   useEffect(() => {
-    // A migration failure cannot reach the startup-sync gate below, so it
-    // must release the splash itself to show the actionable error. Success
-    // deliberately stays covered until the one startup catch-up completes.
+    // A migration failure never reaches DashboardSyncProvider (which hides
+    // the splash once the first screens' cached data is warm — it does not
+    // wait for the inbox catch-up), so it must release the splash itself to
+    // show the actionable error.
     if (error) void SplashScreen.hideAsync();
   }, [error]);
 

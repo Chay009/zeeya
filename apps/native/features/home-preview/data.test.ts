@@ -99,8 +99,8 @@ describe("createHomePreviewData — detected accounts", () => {
       last4: "1234",
       balance: "—",
       reportedBalance: null,
-      capturedExpense: "−₹225",
-      capturedChange: "−₹225",
+      capturedExpense: "−₹ 225",
+      capturedChange: "−₹ 225",
       capturedTransactionCount: 2,
     });
   });
@@ -147,9 +147,9 @@ describe("createHomePreviewData — detected accounts", () => {
 
     expect(home.accounts[0]).toMatchObject({
       status: "CALCULATED",
-      balance: "₹900",
-      reportedBalance: "₹1,000",
-      capturedExpense: "−₹100",
+      balance: "₹ 900",
+      reportedBalance: "₹ 1,000",
+      capturedExpense: "−₹ 100",
       capturedTransactionCount: 1,
     });
   });
@@ -195,7 +195,7 @@ describe("createHomePreviewData — detected accounts", () => {
 
     expect(home.accounts[0]).toMatchObject({
       balance: "—",
-      capturedExpense: "−₹50",
+      capturedExpense: "−₹ 50",
       capturedTransactionCount: 1,
     });
   });
@@ -228,9 +228,9 @@ describe("createHomePreviewData - transaction categories", () => {
       },
     });
 
-    expect(home.cashflow.income).toBe("₹999");
-    expect(home.cashflow.expense).toBe("₹123.45");
-    expect(home.cashflow.categories[0]).toMatchObject({ label: "Food", amount: "₹123.45" });
+    expect(home.cashflow.income).toBe("₹ 999");
+    expect(home.cashflow.expense).toBe("₹ 123.45");
+    expect(home.cashflow.categories[0]).toMatchObject({ label: "Food", amount: "₹ 123.45" });
   });
 
   it("does not substitute derived totals while the aggregate source is unavailable", () => {
@@ -309,7 +309,7 @@ describe("summarizeCaughtUpTransactions", () => {
       {
         key: "caught-up",
         name: "Preferred brand",
-        amount: "−₹123.45",
+        amount: "−₹ 123.45",
         direction: "expense",
       },
     ]);

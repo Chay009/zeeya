@@ -34,8 +34,10 @@ describe("Metro bundle import boundaries", () => {
   it("loads only the font faces registered by the app", () => {
     const fonts = source("lib/fonts.ts");
 
-    expect(fonts).not.toMatch(/from ["']@expo-google-fonts\/(inter|space-grotesk)["']/);
-    expect(fonts.match(/@expo-google-fonts\/(inter|space-grotesk)\//g)).toHaveLength(8);
+    // Per-face imports only (never a family's barrel, which bundles every
+    // weight): Inter 400/500/600/700/800 + Plus Jakarta Sans 500/600/700/800.
+    expect(fonts).not.toMatch(/from ["']@expo-google-fonts\/(inter|plus-jakarta-sans)["']/);
+    expect(fonts.match(/@expo-google-fonts\/(inter|plus-jakarta-sans)\//g)).toHaveLength(9);
   });
 
   it("keeps tests and Node-only imports outside Expo Router's app tree", () => {
