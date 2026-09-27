@@ -223,9 +223,27 @@ function signedTransactionChange(message: ParsedSms): number | null {
   return direction === "income" ? amount : -amount;
 }
 
+// An account's latest balance reading (the first maximum by asOf, in history
+// order). Memoized per account object: resolving every transaction used to
+// re-scan its account's whole reading history, O(transactions × readings).
+// Callers only resolve once an account's history is final.
+type LatestReadingCache = Map<AccountBalance, BalanceReading | null>;
+
+function latestReadingOf(account: AccountBalance, cache: LatestReadingCache): BalanceReading | null {
+  let latest = cache.get(account);
+  if (latest === undefined) {
+    latest = account.history[0]
+      ? account.history.reduce((best, reading) => (reading.asOf > best.asOf ? reading : best))
+      : null;
+    cache.set(account, latest);
+  }
+  return latest;
+}
+
 function resolveTransactionAccountKey(
   message: ParsedSms,
   accountsByKey: Map<string, AccountBalance>,
+  latestReadings: LatestReadingCache = new Map(),
 ): string | null {
   const { result } = message;
   if (!result.bankName) return null;
@@ -241,11 +259,7 @@ function resolveTransactionAccountKey(
     // attribution. Preserve the previously validated estimate behaviour by
     // requiring the transaction's parsed bank name to exactly match the latest
     // confirmed balance anchor's parsed bank name.
-    const latestReading = exactAccount.history[0]
-      ? exactAccount.history.reduce((latest, reading) =>
-          reading.asOf > latest.asOf ? reading : latest,
-        )
-      : null;
+    const latestReading = latestReadingOf(exactAccount, latestReadings);
     return !latestReading || latestReading.detectedBankName === bankName ? exactKey : null;
   }
 
@@ -272,7 +286,24 @@ export function createTransactionAccountResolver(
   const accountsByKey = new Map(
     accounts.map((account) => [accountKey(account.bankName, account.last4)!, account]),
   );
-  return (message) => resolveTransactionAccountKey(message, accountsByKey);
+  const latestReadings: LatestReadingCache = new Map();
+  return (message) => resolveTransactionAccountKey(message, accountsByKey, latestReadings);
+}
+
+// Index of the OLDEST reading still strictly newer than `date`, in readings
+// sorted newest-first — i.e. the reading whose window ends right after
+// `date`. -1 when no reading is newer. (Readings with asOf === date are not
+// "newer", so an entry at exactly a reading's timestamp falls in no window,
+// matching the open-interval rule.)
+function newestReadingAfter(readingsNewestFirst: readonly BalanceReading[], date: number): number {
+  let low = 0;
+  let high = readingsNewestFirst.length; // count of readings with asOf > date
+  while (low < high) {
+    const mid = (low + high) >>> 1;
+    if (readingsNewestFirst[mid]!.asOf > date) low = mid + 1;
+    else high = mid;
+  }
+  return low - 1;
 }
 
 function referencedTransactionKey(message: ParsedSms): string | null {
@@ -527,29 +558,49 @@ export function deriveDashboardProjection(
     }
   }
 
-  const ledgerEntries = deduplicatedMessages.flatMap((message) => {
-    const key = resolveTransactionAccountKey(message, accountsByKey);
+  // Ledger entries grouped by account, each list in the original message
+  // order. Every loop below used to scan ALL entries once per account and
+  // once per balance reading — O(readings × transactions), the dominant cost
+  // of a whole-history derive. Grouping plus a binary search gives the same
+  // results in O(transactions × log readings), and summing each window's
+  // entries in the same original order keeps even floating-point totals
+  // bit-identical to the old scan.
+  const latestReadings: LatestReadingCache = new Map();
+  const ledgerByAccount = new Map<string, { change: number; message: ParsedSms }[]>();
+  for (const message of deduplicatedMessages) {
+    const key = resolveTransactionAccountKey(message, accountsByKey, latestReadings);
     const change = signedTransactionChange(message);
-    return key && change !== null ? [{ key, change, message }] : [];
-  });
+    if (!key || change === null) continue;
+    const entries = ledgerByAccount.get(key);
+    if (entries) entries.push({ change, message });
+    else ledgerByAccount.set(key, [{ change, message }]);
+  }
 
   for (const [key, account] of accountsByKey) {
+    const entries = ledgerByAccount.get(key) ?? [];
     const readings = [...account.history].sort((a, b) => b.asOf - a.asOf);
+
+    // Reading i (newest first) reconciles against reading i + 1 over the
+    // open window (readings[i + 1].asOf, readings[i].asOf). Those windows
+    // are disjoint, so each entry belongs to at most one: the reading just
+    // after it, found by binary search. Accumulated in entry order.
+    const windows = readings.map(() => ({ income: 0, expense: 0, count: 0 }));
+    for (const { change, message } of entries) {
+      const index = newestReadingAfter(readings, message.date);
+      const previous = readings[index + 1];
+      if (index < 0 || !previous || message.date <= previous.asOf) continue;
+      const window = windows[index]!;
+      if (change > 0) window.income += change;
+      else window.expense += Math.abs(change);
+      window.count++;
+    }
     for (let index = 0; index < readings.length; index++) {
       const reading = readings[index]!;
       const previous = readings[index + 1];
       if (!previous || previous.currency !== reading.currency) continue;
 
-      let capturedIncome = 0;
-      let capturedExpense = 0;
-      let capturedTransactionCount = 0;
-      for (const { key: transactionKey, change, message } of ledgerEntries) {
-        if (transactionKey !== key) continue;
-        if (message.date <= previous.asOf || message.date >= reading.asOf) continue;
-        if (change > 0) capturedIncome += change;
-        else capturedExpense += Math.abs(change);
-        capturedTransactionCount++;
-      }
+      const { income: capturedIncome, expense: capturedExpense, count: capturedTransactionCount } =
+        windows[index]!;
       const capturedChange = capturedIncome - capturedExpense;
       const expectedBalance = previous.balance + capturedChange;
       reading.reconciliation = {
@@ -564,8 +615,7 @@ export function deriveDashboardProjection(
     }
     account.reconciliationDelta = readings[0]?.reconciliation?.delta ?? null;
 
-    for (const { key: transactionKey, change, message } of ledgerEntries) {
-      if (transactionKey !== key) continue;
+    for (const { change, message } of entries) {
       if (account.anchorStatus === "reported" && message.date <= account.asOf) continue;
       if (account.anchorStatus === "reported") account.estimatedBalance += change;
       if (change > 0) account.capturedIncome += change;
