@@ -5,8 +5,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { LargeTitle } from "@/components/ui/header";
 import { ErrorState, SkeletonHero, SkeletonRows } from "@/components/ui/states";
-import { HOME_RECENT_ACTIVITY_MAX_LIMIT } from "@/db/queries-home";
+import { HOME_ACTIVITY_PERIOD_MAX_LIMIT } from "@/db/queries-home";
 import { useHomeRecentActivity } from "@/features/dashboard/hooks/home-recent-activity";
+import { useActivityFiltersStore } from "@/stores/activity-filters-store";
 
 import { ALL_ACCOUNTS_KEY, resolveScopedAccountId } from "../account-scope";
 import { ActivityList } from "../components/activity-list";
@@ -27,12 +28,31 @@ export function ActivityScreen() {
     : ALL_ACCOUNTS_KEY;
   const scopedAccountId = resolveScopedAccountId(accounts, selectedAccountKey);
 
+  // The selected month is read in SQL — every transaction in it, not the
+  // newest 100 messages filtered here (which left older and busy months
+  // incomplete).
+  const monthStart = useActivityFiltersStore((state) => state.monthStart);
+  const period = useMemo(() => {
+    const end = new Date(monthStart);
+    end.setMonth(end.getMonth() + 1);
+    return { from: monthStart, to: end.getTime(), transactionsOnly: true };
+  }, [monthStart]);
   const {
     items: recentActivity,
     status: activityStatus,
     error: activityError,
     reload: reloadActivity,
-  } = useHomeRecentActivity(undefined, HOME_RECENT_ACTIVITY_MAX_LIMIT, true, scopedAccountId);
+  } = useHomeRecentActivity(
+    undefined,
+    HOME_ACTIVITY_PERIOD_MAX_LIMIT,
+    true,
+    scopedAccountId,
+    period,
+  );
+  // Full-screen skeleton only before anything has ever loaded; a month or
+  // account switch keeps the header and shows row skeletons in the list.
+  const [hasLoaded, setHasLoaded] = useState(false);
+  if (activityStatus === "ready" && !hasLoaded) setHasLoaded(true);
 
   const activity = useMemo(() => {
     const items = recentActivity.map(homeActivityViewItem);
@@ -43,7 +63,7 @@ export function ActivityScreen() {
     router.push(buildActivityDetailRoute(item));
   };
 
-  if (activityStatus === "loading" && activity.allItems.length === 0) {
+  if (!hasLoaded && activityStatus === "loading" && activity.allItems.length === 0) {
     return (
       <View className="flex-1 bg-background px-4">
         <LargeTitle title="Transactions" topInset={insets.top} />
@@ -76,6 +96,7 @@ export function ActivityScreen() {
       onAccountKeyChange={setPickedAccountKey}
       onSelect={openDetail}
       topInset={insets.top}
+      loading={activityStatus === "loading"}
     />
   );
 }

@@ -84,6 +84,10 @@ export const HOME_SUBSCRIPTION_PREVIEW_LIMIT = 20;
 // features/home-preview/data.ts's buildActivity `allItems.slice(0, 5)`.
 export const HOME_RECENT_ACTIVITY_DEFAULT_LIMIT = 5;
 export const HOME_RECENT_ACTIVITY_MAX_LIMIT = 100;
+// Cap for a period-scoped read (the Transactions tab's month). Well above a
+// heavy user's monthly transaction count, and — with stage 2's IN list — kept
+// under SQLite's 999 bound-parameter ceiling on older Android builds.
+export const HOME_ACTIVITY_PERIOD_MAX_LIMIT = 900;
 
 // The bounded, filter-specific loadRecentActivity default — larger than the
 // Home preview's 5 since this backs an on-demand pill selection, not the
@@ -803,45 +807,55 @@ const ACTIVITY_CANDIDATE_OVER_FETCH_FACTOR = STORED_ACTIVITY_CATEGORIES.length;
 // before LIMIT can trim anything — unbounded work against a table that only
 // grows. Stage 2 then aggregates ALL activity rows for exactly the
 // resulting smsIds.
+interface ActivityRowsScope {
+  category?: ActivityCategory;
+  accountId?: string;
+  /** Inclusive lower / exclusive upper bound on activity.date (epoch ms). */
+  from?: number;
+  to?: number;
+  /** Only messages that carry a transaction amount. */
+  transactionsOnly?: boolean;
+}
+
 async function queryHomeActivityRows(
   client: AsyncQueryClient,
-  category: ActivityCategory | undefined,
-  accountId: string | undefined,
+  scope: ActivityRowsScope,
   limit: number,
   at: Date,
 ): Promise<HomeActivityItem[]> {
   const candidateLimit = limit * ACTIVITY_CANDIDATE_OVER_FETCH_FACTOR;
-  const stage1Sql =
-    category && accountId
-      ? `SELECT sms_id AS smsId, date
-         FROM activity
-         WHERE category = ? AND account_id = ?
-         ORDER BY date DESC, id DESC
-         LIMIT ?`
-      : category
-        ? `SELECT sms_id AS smsId, date
-           FROM activity
-           WHERE category = ?
-           ORDER BY date DESC, sms_id DESC
-           LIMIT ?`
-        : accountId
-          ? `SELECT sms_id AS smsId, date
-             FROM activity
-             WHERE account_id = ?
-             ORDER BY date DESC, id DESC
-             LIMIT ?`
-          : `SELECT sms_id AS smsId, date
-             FROM activity
-             ORDER BY date DESC, sms_id DESC
-             LIMIT ?`;
-  const stage1Params =
-    category && accountId
-      ? [category, accountId, candidateLimit]
-      : category
-        ? [category, candidateLimit]
-        : accountId
-          ? [accountId, candidateLimit]
-          : [candidateLimit];
+  // Built from parts, but for every scope the shape stays index-served:
+  // equality columns lead (category / account_id), `date` follows as a
+  // range + ORDER BY, and the tiebreaker matches the index — account-scoped
+  // reads use activity_account_id_date_id_idx (date, id), the rest the
+  // (…, date, sms_id) indexes. See this function's EXPLAIN coverage.
+  const where: string[] = [];
+  const stage1Params: (string | number)[] = [];
+  if (scope.category) {
+    where.push("category = ?");
+    stage1Params.push(scope.category);
+  }
+  if (scope.accountId) {
+    where.push("account_id = ?");
+    stage1Params.push(scope.accountId);
+  }
+  if (scope.from !== undefined) {
+    where.push("date >= ?");
+    stage1Params.push(scope.from);
+  }
+  if (scope.to !== undefined) {
+    where.push("date < ?");
+    stage1Params.push(scope.to);
+  }
+  // Financial activity rows always carry an amount (activity_financial_
+  // fields_check), so this is exactly "rows that are transactions".
+  if (scope.transactionsOnly) where.push("amount_minor_units IS NOT NULL");
+  stage1Params.push(candidateLimit);
+  const stage1Sql = `SELECT sms_id AS smsId, date
+     FROM activity
+     ${where.length > 0 ? `WHERE ${where.join(" AND ")}` : ""}
+     ORDER BY ${scope.accountId ? "date DESC, id DESC" : "date DESC, sms_id DESC"}
+     LIMIT ?`;
   const candidateRows = await client.getAllAsync<{ smsId: string; date: number }>(
     stage1Sql,
     stage1Params,
@@ -951,13 +965,28 @@ export async function queryHomeRecentActivity(
   query: HomeRecentActivityQuery,
   client: AsyncQueryClient = defaultClient(),
 ): Promise<HomeActivityItem[]> {
+  // A period-scoped read (one month on the Transactions tab) is bounded by
+  // its period, so it may return the whole period — the recent-feed cap of
+  // 100 silently truncated busy months and left older months incomplete.
+  const periodScoped = query.from !== undefined && query.to !== undefined;
   const limit = validatedPositiveInt(
     query.limit ?? HOME_LOAD_RECENT_ACTIVITY_DEFAULT_LIMIT,
-    HOME_RECENT_ACTIVITY_MAX_LIMIT,
+    periodScoped ? HOME_ACTIVITY_PERIOD_MAX_LIMIT : HOME_RECENT_ACTIVITY_MAX_LIMIT,
     "Home recent activity limit",
   );
   const at = query.at !== undefined ? new Date(query.at) : new Date();
-  return queryHomeActivityRows(client, query.category, query.accountId, limit, at);
+  return queryHomeActivityRows(
+    client,
+    {
+      category: query.category,
+      accountId: query.accountId,
+      from: query.from,
+      to: query.to,
+      transactionsOnly: query.transactionsOnly,
+    },
+    limit,
+    at,
+  );
 }
 
 export async function queryHomeActivityCategoryCounts(
@@ -1074,7 +1103,7 @@ async function loadHomeReadModelUnsafe(
     queryHomeFlowDays(query.currency, at, client),
     queryHomeCalendarMonths({ currency: query.currency, at: query.at }, client),
     queryHomeSubscriptionOverview(at, client),
-    queryHomeActivityRows(client, undefined, undefined, HOME_RECENT_ACTIVITY_DEFAULT_LIMIT, at),
+    queryHomeActivityRows(client, {}, HOME_RECENT_ACTIVITY_DEFAULT_LIMIT, at),
     queryHomeActivityCategoryCounts(client),
     queryHomeTotalActivityCount(client),
   ]);

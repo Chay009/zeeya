@@ -10,7 +10,7 @@ import { Segmented, SelectPill } from "@/components/ui/controls";
 import { LargeTitle } from "@/components/ui/header";
 import { Money } from "@/components/ui/money";
 import { tick } from "@/components/ui/motion";
-import { EmptyState } from "@/components/ui/states";
+import { EmptyState, SkeletonRows } from "@/components/ui/states";
 import { useThemeColors } from "@/components/ui/theme";
 import { fromMinorUnits } from "@/lib/currency";
 import { useActivityFiltersStore, type ActivityDirectionFilter } from "@/stores/activity-filters-store";
@@ -292,6 +292,7 @@ export function ActivityList({
   onAccountKeyChange,
   onSelect,
   topInset,
+  loading = false,
 }: {
   activity: ActivityListData;
   accounts?: ActivityAccount[];
@@ -299,6 +300,8 @@ export function ActivityList({
   onAccountKeyChange: (key: string) => void;
   onSelect?: (item: HomeActivityViewItem) => void;
   topInset: number;
+  /** A new month/account is loading: show row skeletons, not "no transactions". */
+  loading?: boolean;
 }) {
   const tabBarClearance = useFloatingTabBarClearance();
   const filter = useActivityFiltersStore((state) => state.direction);
@@ -441,13 +444,19 @@ export function ActivityList({
         onScrollToIndexFailed={onScrollToIndexFailed}
         ListHeaderComponent={header}
         ListEmptyComponent={
-          <View className="mt-4 rounded-card bg-card">
-            <EmptyState
-              icon="rupee-receipt"
-              title={inMonthItems.length > 0 ? ACTIVITY_COPY.emptyFilteredTitle : ACTIVITY_COPY.emptyTitle}
-              body={inMonthItems.length > 0 ? undefined : ACTIVITY_COPY.emptyBody}
-            />
-          </View>
+          loading ? (
+            <View className="mt-6">
+              <SkeletonRows count={5} />
+            </View>
+          ) : (
+            <View className="mt-4 rounded-card bg-card">
+              <EmptyState
+                icon="rupee-receipt"
+                title={inMonthItems.length > 0 ? ACTIVITY_COPY.emptyFilteredTitle : ACTIVITY_COPY.emptyTitle}
+                body={inMonthItems.length > 0 ? undefined : ACTIVITY_COPY.emptyBody}
+              />
+            </View>
+          )
         }
         renderSectionHeader={renderSectionHeader}
         renderItem={renderItem}

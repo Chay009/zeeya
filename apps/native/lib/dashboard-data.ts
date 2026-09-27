@@ -814,6 +814,12 @@ export interface HomeRecentActivityQuery {
   // When set, stage-1 candidate selection is scoped to activity.account_id
   // (see db/queries-home.ts's account-scoped ORDER BY date DESC, id DESC).
   accountId?: string;
+  // Period scope: activity.date in [from, to) (epoch ms). With both set the
+  // limit may go up to HOME_ACTIVITY_PERIOD_MAX_LIMIT — the period is the bound.
+  from?: number;
+  to?: number;
+  // Only messages carrying a transaction amount (the Transactions tab).
+  transactionsOnly?: boolean;
   limit?: number;
   // The clock isRecurring's subscription-match half is evaluated against —
   // an aged-out subscription (lastDate older than RECENCY_WINDOW_DAYS from

@@ -38,11 +38,25 @@ export const localQueryKeys = {
   series: (name: string, deps: readonly unknown[]) => ["local", "series", name, ...deps] as const,
   // Scope (category · account · limit) sits at a fixed index so hooks can
   // compare it against a previous key without parsing.
-  recentActivity: (scope: { category?: string; accountId?: string; limit?: number }) =>
+  recentActivity: (scope: {
+    category?: string;
+    accountId?: string;
+    limit?: number;
+    from?: number;
+    to?: number;
+    transactionsOnly?: boolean;
+  }) =>
     [
       "local",
       "recent-activity",
-      `${scope.category ?? "all"}:${scope.accountId ?? "all-accounts"}:${scope.limit ?? "default"}`,
+      [
+        scope.category ?? "all",
+        scope.accountId ?? "all-accounts",
+        scope.limit ?? "default",
+        scope.from ?? "",
+        scope.to ?? "",
+        scope.transactionsOnly ? "tx" : "",
+      ].join(":"),
     ] as const,
   activityScope: (accountId: string) => ["local", "activity-scope", accountId] as const,
   accountCashflowScope: (accountId: string, currency: string) =>

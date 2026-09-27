@@ -120,6 +120,7 @@ const {
   homeDataSource,
   HOME_MANDATE_RECENT_EVENTS_LIMIT,
   HOME_SUBSCRIPTION_PREVIEW_LIMIT,
+  HOME_ACTIVITY_PERIOD_MAX_LIMIT,
 } = await import("./queries-home");
 
 function result(overrides: Partial<MalanaResult>): MalanaResult {
@@ -1835,5 +1836,88 @@ describe("full HomeReadModel field coverage against a small realistic fixture", 
     expect(model.recentActivity.length).toBeGreaterThan(0);
     expect(model.activityCategoryCounts.length).toBeGreaterThan(0);
     expect(model.totalActivityCount).toBeGreaterThan(0);
+  });
+});
+
+// The Transactions tab reads one month in SQL. It used to take the newest
+// 100 activity messages and filter by month in JS, so older months came back
+// incomplete (or empty) and a busy month was silently cut at 100.
+describe("period-scoped recent activity (Transactions month)", () => {
+  const juneStart = new Date(2024, 5, 1).getTime();
+  const julyStart = new Date(2024, 6, 1).getTime();
+  const at = new Date(2024, 6, 20, 10, 0, 0);
+  const debit = (id: string, date: number) =>
+    categorizedSms(id, "VM-HDFCBK", date, {
+      bankName: "HDFC Bank",
+      acc: "XX1234",
+      trx: "120.00",
+      trxTypeRich: "EXPENSE",
+    });
+
+  function seedJuneAndJuly() {
+    useFreshDb();
+    const june = Array.from({ length: 150 }, (_, index) =>
+      debit(`june-${index}`, juneStart + index * 4 * 60 * 60 * 1000),
+    );
+    const july = Array.from({ length: 30 }, (_, index) =>
+      debit(`july-${index}`, julyStart + index * 60 * 60 * 1000),
+    );
+    // A balance-only SMS in June: an activity row with no transaction amount.
+    const balanceOnly = categorizedSms("june-balance", "VM-HDFCBK", juneStart + DAY, {
+      bankName: "HDFC Bank",
+      acc: "XX1234",
+      bal: "5000.00",
+    });
+    seedAndProject([...june, ...july, balanceOnly], at);
+  }
+
+  it("returns every transaction in the month — beyond the recent-feed cap, and nothing else", async () => {
+    seedJuneAndJuly();
+
+    const rows = await homeDataSource.loadRecentActivity({
+      from: juneStart,
+      to: julyStart,
+      transactionsOnly: true,
+      limit: HOME_ACTIVITY_PERIOD_MAX_LIMIT,
+      at: at.getTime(),
+    });
+
+    expect(rows).toHaveLength(150); // > HOME_RECENT_ACTIVITY_MAX_LIMIT
+    expect(rows.every((row) => row.date >= juneStart && row.date < julyStart)).toBe(true);
+    expect(rows.every((row) => row.amountMinorUnits !== null)).toBe(true);
+    expect(rows.some((row) => row.smsId === "june-balance")).toBe(false);
+    // Newest first, as the list renders it.
+    expect(rows[0]!.smsId).toBe("june-149");
+  });
+
+  it("still caps an unscoped recent feed at the recent-feed limit", async () => {
+    seedJuneAndJuly();
+
+    await expect(
+      homeDataSource.loadRecentActivity({ limit: HOME_ACTIVITY_PERIOD_MAX_LIMIT, at: at.getTime() }),
+    ).rejects.toThrow(/limit/);
+  });
+
+  it("serves the month scope from the date index, without a sort", async () => {
+    seedJuneAndJuly();
+
+    const traced = await withSqlTrace(() =>
+      homeDataSource.loadRecentActivity({
+        from: juneStart,
+        to: julyStart,
+        transactionsOnly: true,
+        limit: HOME_ACTIVITY_PERIOD_MAX_LIMIT,
+        at: at.getTime(),
+      }),
+    );
+    const stage1 = traced.statements.find((source) => /SELECT sms_id AS smsId, date/i.test(source));
+    expect(stage1).toBeDefined();
+    const plan = rawSqlite
+      .prepare(`EXPLAIN QUERY PLAN ${stage1}`)
+      .all(juneStart, julyStart, 9000)
+      .map((row) => (row as { detail: string }).detail);
+
+    expect(plan.some((line) => line.includes("activity_date_sms_id_idx"))).toBe(true);
+    expect(plan.some((line) => /USE TEMP B-TREE/i.test(line))).toBe(false);
   });
 });

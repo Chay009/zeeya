@@ -37,13 +37,35 @@ export function useHomeRecentActivity(
   // the read model already carries the bounded unfiltered preview.
   enabled: boolean = true,
   accountId?: string,
+  // A period ([from, to), epoch ms) and/or transactions-only scope — the
+  // Transactions tab reads exactly one month this way, in SQL.
+  period?: { from: number; to: number; transactionsOnly?: boolean },
 ): UseHomeRecentActivityResult {
-  const queryKey = localQueryKeys.recentActivity({ category, accountId, limit });
+  const from = period?.from;
+  const to = period?.to;
+  const transactionsOnly = period?.transactionsOnly;
+  const queryKey = localQueryKeys.recentActivity({
+    category,
+    accountId,
+    limit,
+    from,
+    to,
+    transactionsOnly,
+  });
   const scope = queryKey[2];
 
   const { data, error, isInitialLoading, refetch } = useLocalQuery({
     queryKey,
-    queryFn: () => financeDataSource.home.loadRecentActivity({ category, accountId, limit, at: Date.now() }),
+    queryFn: () =>
+      financeDataSource.home.loadRecentActivity({
+        category,
+        accountId,
+        limit,
+        from,
+        to,
+        transactionsOnly,
+        at: Date.now(),
+      }),
     enabled,
     keepPrevious: (previousKey) => previousKey[1] === "recent-activity" && previousKey[2] === scope,
   });

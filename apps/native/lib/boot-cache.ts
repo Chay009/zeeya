@@ -1,4 +1,5 @@
-import { HOME_RECENT_ACTIVITY_MAX_LIMIT } from "@/db/queries-home";
+import { HOME_ACTIVITY_PERIOD_MAX_LIMIT } from "@/db/queries-home";
+import { useActivityFiltersStore } from "@/stores/activity-filters-store";
 import { financeDataSource } from "@/features/dashboard/dashboard-data-source";
 import { loadHomeReadModel } from "@/features/dashboard/hooks/home-read-model";
 import { loadSubscriptionsCatalog } from "@/features/home-preview/hooks/use-subscriptions-catalog";
@@ -38,7 +39,17 @@ export async function warmBootCache(): Promise<void> {
   const currency = currencies[0] ?? DEFAULT_CURRENCY;
   const overviewQuery = { currency };
   const highlightsQuery = { currency, accountId: undefined };
-  const transactionsScope = { limit: HOME_RECENT_ACTIVITY_MAX_LIMIT };
+  // The Transactions tab opens on the current month (activity-filters-store's
+  // initial monthStart), read as a period scope — same key as the screen.
+  const monthStart = useActivityFiltersStore.getState().monthStart;
+  const monthEnd = new Date(monthStart);
+  monthEnd.setMonth(monthEnd.getMonth() + 1);
+  const transactionsScope = {
+    limit: HOME_ACTIVITY_PERIOD_MAX_LIMIT,
+    from: monthStart,
+    to: monthEnd.getTime(),
+    transactionsOnly: true,
+  };
 
   await Promise.allSettled([
     queryClient.prefetchQuery({
