@@ -141,6 +141,11 @@ export function TrendChart({
           yKeys={["value"]}
           domain={{ y: [0, max * 1.12] }}
           domainPadding={{ left: 6, right: 10, top: 8 }}
+          // victory-native always builds a y-axis, and its default draws a
+          // hairline grid line at every tick (25% black) even with no yAxis
+          // prop. The design is "just the shape": zero-width grid lines, and
+          // no font means no tick labels either.
+          yAxis={[{ lineWidth: 0 }]}
           chartPressState={state}
           chartPressConfig={{ pan: { activateAfterLongPress: 80 } }}
         >
