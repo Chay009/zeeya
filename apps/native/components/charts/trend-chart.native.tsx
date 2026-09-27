@@ -108,12 +108,20 @@ export function TrendChart({
     width: width > 0 ? width * reveal.value : "100%",
   }));
 
+  // Haptic ticks at most every 60ms (decided on the UI thread): a fast scrub
+  // across a month used to fire a haptic — and a JS round trip — per day.
+  const lastTickAt = useSharedValue(0);
   useAnimatedReaction(
     () => (state.isActive.value ? state.matchedIndex.value : -1),
     (index, previous) => {
       if (index === previous) return;
       if (onScrub) scheduleOnRN(onScrub, index >= 0 ? index : null);
-      if (index >= 0) scheduleOnRN(tick);
+      if (index < 0) return;
+      const now = Date.now();
+      if (now - lastTickAt.value >= 60) {
+        lastTickAt.value = now;
+        scheduleOnRN(tick);
+      }
     },
   );
 

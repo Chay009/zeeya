@@ -88,7 +88,14 @@ function surfaceFor(brand: string): string {
 // The brand-coloured plastic: a diagonal gradient from a lifted top-left to
 // a deepened bottom-right, plus a soft off-card highlight ellipse. This is
 // what gives the surface depth instead of the flat fill it had before.
-function CardSurface({ base, width, height }: { base: string; width: number; height: number }) {
+// Fixed drawing space in the card's own ratio: the SVG stretches to the view
+// (100% + preserveAspectRatio none), so it never needs the measured size.
+const SURFACE_WIDTH = 1586;
+const SURFACE_HEIGHT = 1000;
+
+function CardSurface({ base }: { base: string }) {
+  const width = SURFACE_WIDTH;
+  const height = SURFACE_HEIGHT;
   const light = shade(base, 0.2);
   const dark = shade(base, -0.42);
 
@@ -188,23 +195,23 @@ export function AccountCard({
 }) {
   const colors = useThemeColors();
   const [expanded, setExpanded] = useState(defaultExpanded);
-  const [width, setWidth] = useState(0);
   const hasSecondaryDetail =
     Boolean(account.capturedChange) ||
     Boolean(account.reconciliation) ||
     Boolean(account.unassignedNote);
 
   const base = surfaceFor(account.bankColor || colors.hero);
-  const cardHeight = width > 0 ? Math.round(width / CARD_ASPECT) : 208;
 
+  // aspectRatio sizes the card correctly on its first layout. Measuring the
+  // width with onLayout and then setting a height rendered every card twice
+  // and made it jump from a placeholder height while the screen pushed in.
   return (
     <View>
       <View
-        onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
         className="justify-between overflow-hidden rounded-hero p-[22px]"
-        style={{ backgroundColor: base, height: cardHeight, ...cardShadow }}
+        style={{ backgroundColor: base, aspectRatio: CARD_ASPECT, ...cardShadow }}
       >
-        {width > 0 && <CardSurface base={base} width={width} height={cardHeight} />}
+        <CardSurface base={base} />
 
         <View className="flex-row items-start justify-between">
           <View className="min-w-0 flex-1 flex-row items-center gap-2.5">

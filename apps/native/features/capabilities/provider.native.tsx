@@ -62,6 +62,9 @@ export function CapabilityProvider({ children }: PropsWithChildren) {
   const [settings, setSettings] = useState<LocalSettings>({ ...DEFAULT_LOCAL_SETTINGS });
   const [loaded, setLoaded] = useState(false);
   const [unlocked, setUnlocked] = useState(false);
+  // Latches on the first successful unlock (set while rendering — no effect).
+  const [hasUnlockedOnce, setHasUnlockedOnce] = useState(false);
+  if (unlocked && !hasUnlockedOnce) setHasUnlockedOnce(true);
   const [error, setError] = useState<string | null>(null);
   const [appState, setAppState] = useState(AppState.currentState);
   const authenticating = useRef(false);
@@ -238,22 +241,40 @@ export function CapabilityProvider({ children }: PropsWithChildren) {
     );
   }
 
-  if (!unlocked) {
-    return (
-      <View className="flex-1 items-center justify-center bg-background p-8">
-        <Text className="mb-3 text-screen font-extrabold text-foreground">Zeeya is locked</Text>
-        <Text className="mb-5 text-center text-body text-muted">
-          Authenticate to view your financial information.
-        </Text>
-        {error ? <Text className="mb-4 text-caption text-negative">{error}</Text> : null}
-        <Button onPress={() => void unlock()}>Unlock</Button>
-      </View>
-    );
-  }
+  const lockScreen = (
+    <View className="flex-1 items-center justify-center bg-background p-8">
+      <Text className="mb-3 text-screen font-extrabold text-foreground">Zeeya is locked</Text>
+      <Text className="mb-5 text-center text-body text-muted">
+        Authenticate to view your financial information.
+      </Text>
+      {error ? <Text className="mb-4 text-caption text-negative">{error}</Text> : null}
+      <Button onPress={() => void unlock()}>Unlock</Button>
+    </View>
+  );
 
+  // Until the first successful unlock the app is never mounted, so no
+  // financial data renders before authentication.
+  if (!unlocked && !hasUnlockedOnce) return lockScreen;
+
+  // After that, re-locking (every trip to the background) COVERS the app
+  // instead of replacing it: replacing unmounted the whole navigation tree,
+  // so every return remounted every screen and refetched everything. The
+  // cover is opaque, takes all touches, and hides the app from screen readers.
   return (
     <CapabilityContext.Provider value={{ settings, error, setPreference }}>
-      {children}
+      <View
+        style={{ flex: 1 }}
+        pointerEvents={unlocked ? "auto" : "none"}
+        accessibilityElementsHidden={!unlocked}
+        importantForAccessibility={unlocked ? "auto" : "no-hide-descendants"}
+      >
+        {children}
+      </View>
+      {!unlocked ? (
+        <View style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0 }}>
+          {lockScreen}
+        </View>
+      ) : null}
     </CapabilityContext.Provider>
   );
 }

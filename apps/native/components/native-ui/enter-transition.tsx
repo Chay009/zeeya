@@ -7,7 +7,7 @@ const DURATION_MS = 300;
 
 /**
  * Staggered layout entrance for lists and Home sections. Skips motion when the
- * user has reduced motion enabled — same contract as ZoomTransition.
+ * user has reduced motion enabled.
  */
 export function EnterTransition({
   children,
