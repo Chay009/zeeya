@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useRef } from "react";
+import { memo, useCallback, useDeferredValue, useMemo, useRef } from "react";
 import { Pressable, SectionList, View } from "react-native";
 
 import { AppText as Text } from "@/components/app-text";
@@ -22,8 +22,33 @@ import { ACTIVITY_COPY, ACTIVITY_DIRECTION_FILTERS } from "./activity-list.conte
 // days as grouped cards. One row design (components/finance/transaction-row)
 // shared with Home and Analytics.
 
+// Per-item derived values, computed once per item object: filter switches
+// re-run matchesFilter over the whole month and mount fresh rows, and each
+// of those used to redo the pill scan / regex / Intl formatting.
+interface RowFields {
+  transfer: boolean;
+  subtitle: string;
+  meta: string;
+  amount: number | null;
+}
+const rowFieldsCache = new WeakMap<HomeActivityViewItem, RowFields>();
+
+function rowFields(item: HomeActivityViewItem): RowFields {
+  let fields = rowFieldsCache.get(item);
+  if (!fields) {
+    fields = {
+      transfer: item.pills.some((pill) => pill.key === "type" && /transfer/i.test(pill.label)),
+      subtitle: categoryLabel(item),
+      meta: timeLabel(item.date),
+      amount: amountOf(item),
+    };
+    rowFieldsCache.set(item, fields);
+  }
+  return fields;
+}
+
 function isTransfer(item: HomeActivityViewItem): boolean {
-  return item.pills.some((pill) => pill.key === "type" && /transfer/i.test(pill.label));
+  return rowFields(item).transfer;
 }
 
 function matchesFilter(item: HomeActivityViewItem, filter: ActivityDirectionFilter): boolean {
@@ -132,6 +157,7 @@ const ActivityRowCell = memo(function ActivityRowCell({
   onSelect?: (item: HomeActivityViewItem) => void;
 }) {
   const onPress = useCallback(() => onSelect?.(item), [onSelect, item]);
+  const fields = rowFields(item);
   return (
     <View
       className={`overflow-hidden bg-card ${first ? "rounded-t-card" : ""} ${last ? "rounded-b-card" : ""}`}
@@ -139,13 +165,13 @@ const ActivityRowCell = memo(function ActivityRowCell({
       {!first ? <View className="ml-[68px] h-px bg-divider" /> : null}
       <TransactionRow
         name={item.name}
-        subtitle={categoryLabel(item)}
-        meta={timeLabel(item.date)}
+        subtitle={fields.subtitle}
+        meta={fields.meta}
         logo={item}
-        amount={amountOf(item)}
+        amount={fields.amount}
         amountLabel={item.amount}
         currency={item.currency}
-        direction={isTransfer(item) ? "neutral" : item.direction}
+        direction={fields.transfer ? "neutral" : item.direction}
         onPress={onSelect ? onPress : undefined}
       />
     </View>
@@ -334,9 +360,17 @@ export function ActivityList({
     () => transactional.filter((item) => item.date >= monthStart && item.date < monthEnd),
     [transactional, monthStart, monthEnd],
   );
+  // The segmented control reads `filter` (urgent) so its indicator moves on
+  // the very next frame; the list reads the deferred copy, re-filtering and
+  // re-rendering in a lower-priority, interruptible render right after.
+  // Previously the control's own update waited for the whole list render —
+  // the lag between tapping a filter and the indicator moving. (zustand
+  // updates can't be wrapped in startTransition — external stores always
+  // render synchronously — but deferring the VALUE works.)
+  const listFilter = useDeferredValue(filter);
   const visibleItems = useMemo(
-    () => inMonthItems.filter((item) => matchesFilter(item, filter)),
-    [inMonthItems, filter],
+    () => inMonthItems.filter((item) => matchesFilter(item, listFilter)),
+    [inMonthItems, listFilter],
   );
   const sections = useMemo(() => groupByDay(visibleItems), [visibleItems]);
 
@@ -427,7 +461,7 @@ export function ActivityList({
         size="sm"
         className="mt-4"
       />
-      {filter === "all" || filter === "expense" ? (
+      {listFilter === "all" || listFilter === "expense" ? (
         <MonthSummary items={inMonthItems} monthStart={monthStart} />
       ) : null}
     </View>
