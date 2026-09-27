@@ -15,8 +15,20 @@ let queue: Promise<unknown> = Promise.resolve();
 // (successfully or not) — chaining on the queue rather than replacing it
 // outright is what prevents one call's failure from letting a later call
 // jump ahead of an earlier one still queued behind it.
+let active = 0;
+
+// True while any locked operation is queued or running. Readers use this to
+// avoid queuing behind a writer: the writer publishes (and notifies) when it
+// finishes, so a reader serves the last published projection instead.
+export function isIngestionActive(): boolean {
+  return active > 0;
+}
+
 export function withIngestionLock<T>(fn: () => Promise<T>): Promise<T> {
-  const result = queue.then(fn, fn);
+  active++;
+  const result = queue.then(fn, fn).finally(() => {
+    active--;
+  });
   // Swallow the outcome here so one failure doesn't wedge every future
   // call behind a permanently-rejected queue — `result`, returned below,
   // still carries the real value or error to this specific caller.

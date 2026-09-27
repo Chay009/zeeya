@@ -1,8 +1,6 @@
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 
-import type { ParsedSms } from "@/lib/sms";
-
 const TRANSACTION_CHANNEL_ID = "financial-activity";
 
 Notifications.setNotificationHandler({
@@ -32,11 +30,12 @@ export async function requestTransactionNotificationPermission(): Promise<boolea
   return requested.granted;
 }
 
-export async function notifyNewFinancialTransactions(messages: ParsedSms[]): Promise<void> {
-  if (messages.length === 0) return;
+// The notice carries only a count — never merchant, amount or SMS content —
+// so it is safe on a lock screen.
+export async function notifyNewFinancialTransactions(count: number): Promise<void> {
+  if (count <= 0) return;
   await ensureTransactionChannel();
 
-  const count = messages.length;
   await Notifications.scheduleNotificationAsync({
     content: {
       title: count === 1 ? "New transaction detected" : "New transactions detected",

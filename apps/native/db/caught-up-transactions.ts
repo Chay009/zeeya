@@ -2,7 +2,8 @@ import { count, desc, eq, gt, max, sql } from "drizzle-orm";
 import type { BaseSQLiteDatabase } from "drizzle-orm/sqlite-core";
 
 import type { TransactionSummary } from "../lib/dashboard-data";
-import { db } from "./client";
+import { db, sqlite } from "./client";
+import type { AsyncQueryClient } from "./queries";
 import { readConsistentSnapshot } from "./projection-snapshot";
 import { localSettings, smsArrivals, transactions } from "./schema";
 import type * as schema from "./schema";
@@ -79,6 +80,40 @@ export function queryCaughtUpTransactions(
 ): Promise<CaughtUpTransactionBatch> {
   const database = requireDb();
   return readConsistentSnapshot(async () => queryCaughtUpTransactionsUnsafe(query, database));
+}
+
+// ── Arrival-sequence helpers for "what did this sync bring in?" ─────────
+//
+// sms_arrivals is an append-only, monotonic record of when THIS install
+// ingested each SMS (independent of the SMS's own date). Reading the head
+// before a sync and counting transactions that arrived after it answers
+// "how many new transactions did that sync add" with two indexed reads —
+// no need to derive the whole dashboard twice and diff it.
+
+function requireSqlite(): AsyncQueryClient {
+  if (!sqlite) throw new Error("Arrival tracking is unavailable on this platform.");
+  return sqlite;
+}
+
+/** The newest arrival sequence (0 when nothing has ever been ingested). */
+export async function latestArrivalSequence(): Promise<number> {
+  const rows = await requireSqlite().getAllAsync<{ value: number | null }>(
+    `SELECT MAX(sequence) AS value FROM sms_arrivals`,
+    [],
+  );
+  return rows[0]?.value ?? 0;
+}
+
+/** Projected transactions whose SMS arrived after `sequence`. */
+export async function countTransactionsArrivedAfter(sequence: number): Promise<number> {
+  const rows = await requireSqlite().getAllAsync<{ value: number }>(
+    `SELECT COUNT(*) AS value
+     FROM sms_arrivals a
+     INNER JOIN transactions t ON t.sms_id = a.sms_id
+     WHERE a.sequence > ?`,
+    [sequence],
+  );
+  return rows[0]?.value ?? 0;
 }
 
 export async function acknowledgeCaughtUpTransactions(

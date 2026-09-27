@@ -24,6 +24,7 @@ import { MalanaEngine, PARSER_VERSION } from "@zeeya/parser/malana";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as schema from "./schema";
 import { initializeNativeDatabase } from "./native-init";
+import { asyncSqlite } from "./testing/async-sqlite";
 import type { RawSms } from "../lib/sms";
 
 const MIGRATIONS_DIR = path.join(__dirname, "migrations");
@@ -55,6 +56,9 @@ let testDb: ReturnType<typeof freshDb>;
 vi.mock("./client", () => ({
   get db() {
     return testDb;
+  },
+  get sqlite() {
+    return testDb ? asyncSqlite(testDb.$client) : null;
   },
 }));
 

@@ -11,7 +11,6 @@ import {
   type LocalSettings,
   updateLocalSettings,
 } from "@/db/settings";
-import type { Dashboard } from "@/lib/dashboard";
 import {
   deviceMessageCaptureRequiresReadPermission,
   isDeviceMessageCaptureSupported,
@@ -70,19 +69,16 @@ export function CapabilityProvider({ children }: PropsWithChildren) {
   settingsRef.current = settings;
 
   const syncCapturedMessages = useCallback(
-    async (
-      options: { failOnMissingReadPermission?: boolean } = {},
-    ): Promise<Dashboard | undefined> => {
-      if (!isDeviceMessageCaptureSupported()) return undefined;
+    async (options: { failOnMissingReadPermission?: boolean } = {}): Promise<void> => {
+      if (!isDeviceMessageCaptureSupported()) return;
       if (deviceMessageCaptureRequiresReadPermission() && !(await hasSmsReadPermission())) {
         if (options.failOnMissingReadPermission) {
           throw new Error("READ_SMS permission is required to process newly received SMS.");
         }
-        return undefined;
+        return;
       }
-      const dashboard = await syncDeviceMessages();
-      publishMessageSync(dashboard);
-      return dashboard;
+      await syncDeviceMessages();
+      publishMessageSync();
     },
     [],
   );

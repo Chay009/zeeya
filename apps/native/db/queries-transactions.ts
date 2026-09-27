@@ -1,8 +1,7 @@
 // Single-transaction detail and activity-list read queries against the
-// normalized projection tables. Uses drizzle-orm's sync query builder
-// against the already-open, already-keyed connection (db/client.native.ts's
-// `db` — never a second connection), the same pattern as
-// db/queries-accounts.ts and db/ingestion.ts's queryTransactionPage.
+// normalized projection tables. Built with drizzle-orm's typed query builder,
+// executed through expo-sqlite's async API on the same already-keyed
+// connection (db/async-select.ts) so a screen read never blocks the JS thread.
 import { and, desc, eq, gte, lt, lte, or, type SQL } from "drizzle-orm";
 import { parsePersistedMalanaResult } from "@zeeya/parser/malana";
 import type {
@@ -13,8 +12,9 @@ import type {
   ActivitySummary,
   TransactionDetail,
 } from "../lib/dashboard-data";
+import { aliasedColumns, selectAsync } from "./async-select";
 import { db } from "./client";
-import { ensureDashboardProjectionCurrent } from "./ingestion";
+import { ensureProjectionReadable } from "./ingestion";
 import { activity, smsLedger, transactions } from "./schema";
 import type { Database } from "./client.native";
 
@@ -145,31 +145,35 @@ function allowlistedDetailFields(result: ReturnType<typeof parsePersistedMalanaR
 // queryActivityDetail below for those.
 export async function queryTransactionDetail(id: string): Promise<TransactionDetail | null> {
   const database = requireDb();
-  await ensureDashboardProjectionCurrent();
+  await ensureProjectionReadable();
 
-  const row = await database
-    .select({
-      id: transactions.id,
-      date: transactions.date,
-      amountMinorUnits: transactions.amountMinorUnits,
-      currency: transactions.currency,
-      direction: transactions.direction,
-      accountId: transactions.accountId,
-      trxTypeRich: transactions.trxTypeRich,
-      vendor: transactions.vendor,
-      brandName: transactions.brandName,
-      category: transactions.category,
-      ref: transactions.ref,
-      bankName: transactions.bankName,
-      mandateId: transactions.mandateId,
-      merchantCategory: transactions.merchantCategory,
-      subcategory: transactions.subcategory,
-      parsedResult: smsLedger.parsedResult,
-    })
-    .from(transactions)
-    .innerJoin(smsLedger, eq(transactions.smsId, smsLedger.id))
-    .where(eq(transactions.id, id))
-    .get();
+  const [row] = await selectAsync<TransactionDetailRow>(
+    database
+      .select(
+        aliasedColumns({
+          id: transactions.id,
+          date: transactions.date,
+          amountMinorUnits: transactions.amountMinorUnits,
+          currency: transactions.currency,
+          direction: transactions.direction,
+          accountId: transactions.accountId,
+          trxTypeRich: transactions.trxTypeRich,
+          vendor: transactions.vendor,
+          brandName: transactions.brandName,
+          category: transactions.category,
+          ref: transactions.ref,
+          bankName: transactions.bankName,
+          mandateId: transactions.mandateId,
+          merchantCategory: transactions.merchantCategory,
+          subcategory: transactions.subcategory,
+          parsedResult: smsLedger.parsedResult,
+        }),
+      )
+      .from(transactions)
+      .innerJoin(smsLedger, eq(transactions.smsId, smsLedger.id))
+      .where(eq(transactions.id, id))
+      .limit(1),
+  );
 
   if (!row) return null;
 
@@ -215,6 +219,42 @@ const activityColumns = {
   direction: activity.direction,
 } as const;
 
+// Raw rows as SQLite returns them through getAllAsync — no Drizzle column
+// decoding on this path, so the one boolean-mode column (is_from_card) comes
+// back as 0/1 and is decoded explicitly.
+type TransactionDetailRow = Pick<
+  TransactionDetail,
+  | "id"
+  | "date"
+  | "amountMinorUnits"
+  | "currency"
+  | "direction"
+  | "accountId"
+  | "trxTypeRich"
+  | "vendor"
+  | "brandName"
+  | "category"
+  | "ref"
+  | "bankName"
+  | "mandateId"
+  | "merchantCategory"
+  | "subcategory"
+> & { parsedResult: string | null };
+
+type RawActivityRow = Omit<ActivitySummary, "isFromCard"> & { isFromCard: number };
+
+type RawActivityDetailRow = RawActivityRow & {
+  parsedResult: string | null;
+  transactionId: string | null;
+  accountId: string | null;
+  ref: string | null;
+  merchantCategory: string | null;
+};
+
+function decodeActivityRow(row: RawActivityRow): ActivitySummary {
+  return { ...row, isFromCard: row.isFromCard === 1 };
+}
+
 function activityCursorCondition(cursor: ActivityCursor | undefined): SQL | undefined {
   if (!cursor) return undefined;
   return or(
@@ -229,7 +269,7 @@ function activityCursorCondition(cursor: ActivityCursor | undefined): SQL | unde
 export async function queryActivityPage(query: ActivityQuery = {}): Promise<ActivityPage> {
   const limit = validatedLimit(query.limit);
   const database = requireDb();
-  await ensureDashboardProjectionCurrent();
+  await ensureProjectionReadable();
 
   const conditions: SQL[] = [];
   if (query.category) conditions.push(eq(activity.category, query.category));
@@ -238,12 +278,15 @@ export async function queryActivityPage(query: ActivityQuery = {}): Promise<Acti
   const cursor = activityCursorCondition(query.cursor);
   if (cursor) conditions.push(cursor);
 
-  const rows = await database
-    .select(activityColumns)
-    .from(activity)
-    .where(conditions.length > 0 ? and(...conditions) : undefined)
-    .orderBy(desc(activity.date), desc(activity.id))
-    .limit(limit + 1);
+  const rawRows = await selectAsync<RawActivityRow>(
+    database
+      .select(aliasedColumns(activityColumns))
+      .from(activity)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(activity.date), desc(activity.id))
+      .limit(limit + 1),
+  );
+  const rows = rawRows.map(decodeActivityRow);
 
   const hasMore = rows.length > limit;
   const items: ActivitySummary[] = hasMore ? rows.slice(0, limit) : rows;
@@ -268,36 +311,29 @@ export async function queryActivityPage(query: ActivityQuery = {}): Promise<Acti
 // the same validated allowlist queryTransactionDetail uses.
 export async function queryActivityDetail(activityId: string): Promise<ActivityDetail | null> {
   const database = requireDb();
-  await ensureDashboardProjectionCurrent();
+  await ensureProjectionReadable();
 
-  const row = await database
-    .select({
-      id: activity.id,
-      date: activity.date,
-      category: activity.category,
-      bankName: activity.bankName,
-      brandName: activity.brandName,
-      vendor: activity.vendor,
-      trxTypeRich: activity.trxTypeRich,
-      subcategory: activity.subcategory,
-      mandateEvent: activity.mandateEvent,
-      isFromCard: activity.isFromCard,
-      amountMinorUnits: activity.amountMinorUnits,
-      currency: activity.currency,
-      direction: activity.direction,
-      parsedResult: smsLedger.parsedResult,
-      transactionId: transactions.id,
-      accountId: transactions.accountId,
-      ref: transactions.ref,
-      merchantCategory: transactions.merchantCategory,
-    })
-    .from(activity)
-    .innerJoin(smsLedger, eq(activity.smsId, smsLedger.id))
-    .leftJoin(transactions, eq(activity.smsId, transactions.smsId))
-    .where(eq(activity.id, activityId))
-    .get();
+  const [rawRow] = await selectAsync<RawActivityDetailRow>(
+    database
+      .select(
+        aliasedColumns({
+          ...activityColumns,
+          parsedResult: smsLedger.parsedResult,
+          transactionId: transactions.id,
+          accountId: transactions.accountId,
+          ref: transactions.ref,
+          merchantCategory: transactions.merchantCategory,
+        }),
+      )
+      .from(activity)
+      .innerJoin(smsLedger, eq(activity.smsId, smsLedger.id))
+      .leftJoin(transactions, eq(activity.smsId, transactions.smsId))
+      .where(eq(activity.id, activityId))
+      .limit(1),
+  );
 
-  if (!row) return null;
+  if (!rawRow) return null;
+  const row = { ...rawRow, isFromCard: rawRow.isFromCard === 1 };
 
   const result = decodeValidatedResult(row.parsedResult);
 

@@ -5,23 +5,28 @@ import { AppText as Text } from "@/components/app-text";
 import { IconTile } from "@/components/ui/controls";
 import { useThemeColors } from "@/components/ui/theme";
 
-import type { Status } from "@/features/dashboard/hooks/dashboard-sync-provider";
+import { useDashboardSync } from "@/features/dashboard/hooks/dashboard-sync-provider";
 
+// Owns its sync subscription: `progress` ticks once per inbox page during a
+// scan, and only this card should re-render for it — not the screen hosting it.
 export function HomePermissionCard({
-  status,
-  error,
-  progress,
-  onConnect,
   hasData = false,
 }: {
-  status: Status;
-  error: string | null;
-  progress?: { scanned: number; inserted: number } | null;
-  onConnect: () => Promise<void>;
   /** The screen already shows real data — a background catch-up is a hint, not a blocker. */
   hasData?: boolean;
 }) {
   const colors = useThemeColors();
+  const {
+    status,
+    error,
+    progress,
+    connect: onConnect,
+  } = useDashboardSync((state) => ({
+    status: state.status,
+    error: state.error,
+    progress: state.progress,
+    connect: state.connect,
+  }));
   if (status === "ready") return null;
 
   const checking = status === "checking";

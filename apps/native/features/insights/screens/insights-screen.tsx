@@ -140,8 +140,10 @@ export function InsightsScreen() {
             )
           ) : (
             <EnterTransition index={0}>
+              {/* Not keyed by tab/range/currency: that remounted the Skia
+                  canvas and replayed its reveal on every switch. Kept
+                  mounted, the chart morphs to the new series instead. */}
               <AnalyticsHeroCard
-                key={`${tab}:${screen.timeScope}:${screen.currency}`}
                 mode={mode}
                 scope={screen.timeScope}
                 currency={screen.currency}

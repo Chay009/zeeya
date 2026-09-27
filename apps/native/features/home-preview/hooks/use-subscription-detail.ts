@@ -2,6 +2,8 @@ import { useCallback } from "react";
 
 import { financeDataSource } from "@/features/dashboard/dashboard-data-source";
 import type { MandateSummary } from "@/lib/dashboard-data";
+import { localQueryKeys } from "@/lib/local-query-keys";
+import { queryClient } from "@/lib/query-client";
 
 import {
   previewSubFromMandateSummary,
@@ -54,10 +56,19 @@ async function fetchSubscriptionDetail(key: string): Promise<PreviewSub | null> 
   return null;
 }
 
+// The Subscriptions list already holds every PreviewSub (built by the same
+// builders fetchSubscriptionDetail uses), so a tap from the list renders the
+// detail immediately instead of a skeleton followed by a full mandate scan.
+function seedFromCatalog(key: string): PreviewSub | undefined {
+  return queryClient
+    .getQueryData<PreviewSub[]>(localQueryKeys.subscriptionsCatalog())
+    ?.find((item) => item.key === key);
+}
+
 export function useSubscriptionDetail(key: string | undefined) {
   const fetch = useCallback(
     (id: string) => (id.length > 0 ? fetchSubscriptionDetail(id) : Promise.resolve(null)),
     [],
   );
-  return useDetail<PreviewSub>(key ?? "", fetch, "subscription");
+  return useDetail<PreviewSub>(key ?? "", fetch, "subscription", seedFromCatalog);
 }

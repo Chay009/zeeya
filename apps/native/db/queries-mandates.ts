@@ -1,8 +1,8 @@
 // Mandate-family read queries against the normalized projection tables
-// (mandates, mandate_events — see db/schema.ts / db/projections.ts). Uses
-// drizzle-orm's sync query builder against the already-open, already-keyed
-// connection (db/client.native.ts's `db` — never a second connection), the
-// same pattern as db/queries-accounts.ts.
+// (mandates, mandate_events — see db/schema.ts / db/projections.ts). Built
+// with drizzle-orm's typed query builder, executed through expo-sqlite's
+// async API on the same already-keyed connection (db/async-select.ts) so a
+// screen read never blocks the JS thread.
 import { and, desc, eq, inArray, lt, or, type SQL } from "drizzle-orm";
 import type {
   MandateCursor,
@@ -14,10 +14,19 @@ import type {
   MandateQuery,
   MandateSummary,
 } from "../lib/dashboard-data";
+import { aliasedColumns, selectAsync } from "./async-select";
 import { db } from "./client";
-import { ensureDashboardProjectionCurrent } from "./ingestion";
+import { ensureProjectionReadable } from "./ingestion";
 import { mandateEvents, mandates } from "./schema";
 import type { Database } from "./client.native";
+
+const MANDATE_EVENT_COLUMNS = {
+  id: mandateEvents.id,
+  mandateId: mandateEvents.mandateId,
+  status: mandateEvents.status,
+  date: mandateEvents.date,
+  sender: mandateEvents.sender,
+};
 
 function requireDb(): Database {
   if (!db) {
@@ -70,25 +79,29 @@ export async function queryMandates(query: MandateQuery = {}): Promise<MandatePa
     "Mandate page",
   );
   const database = requireDb();
-  await ensureDashboardProjectionCurrent();
+  await ensureProjectionReadable();
 
   const cursor = mandateCursorCondition(query.cursor);
 
-  const rows: MandateSummary[] = await database
-    .select({
-      mandateId: mandates.mandateId,
-      merchant: mandates.merchant,
-      amountMinorUnits: mandates.amountMinorUnits,
-      currency: mandates.currency,
-      status: mandates.status,
-      createdAt: mandates.createdAt,
-      lastUpdated: mandates.lastUpdated,
-      sender: mandates.sender,
-    })
-    .from(mandates)
-    .where(cursor)
-    .orderBy(desc(mandates.lastUpdated), desc(mandates.mandateId))
-    .limit(limit + 1);
+  const rows = await selectAsync<MandateSummary>(
+    database
+      .select(
+        aliasedColumns({
+          mandateId: mandates.mandateId,
+          merchant: mandates.merchant,
+          amountMinorUnits: mandates.amountMinorUnits,
+          currency: mandates.currency,
+          status: mandates.status,
+          createdAt: mandates.createdAt,
+          lastUpdated: mandates.lastUpdated,
+          sender: mandates.sender,
+        }),
+      )
+      .from(mandates)
+      .where(cursor)
+      .orderBy(desc(mandates.lastUpdated), desc(mandates.mandateId))
+      .limit(limit + 1),
+  );
 
   const hasMore = rows.length > limit;
   const items = hasMore ? rows.slice(0, limit) : rows;
@@ -119,24 +132,20 @@ export async function queryMandateEvents(query: MandateEventQuery): Promise<Mand
     "Mandate event page",
   );
   const database = requireDb();
-  await ensureDashboardProjectionCurrent();
+  await ensureProjectionReadable();
 
   const conditions = [eq(mandateEvents.mandateId, query.mandateId)];
   const cursor = mandateEventCursorCondition(query.cursor);
   if (cursor) conditions.push(cursor);
 
-  const rows: MandateEventSummary[] = await database
-    .select({
-      id: mandateEvents.id,
-      mandateId: mandateEvents.mandateId,
-      status: mandateEvents.status,
-      date: mandateEvents.date,
-      sender: mandateEvents.sender,
-    })
-    .from(mandateEvents)
-    .where(and(...conditions))
-    .orderBy(desc(mandateEvents.date), desc(mandateEvents.id))
-    .limit(limit + 1);
+  const rows = await selectAsync<MandateEventSummary>(
+    database
+      .select(aliasedColumns(MANDATE_EVENT_COLUMNS))
+      .from(mandateEvents)
+      .where(and(...conditions))
+      .orderBy(desc(mandateEvents.date), desc(mandateEvents.id))
+      .limit(limit + 1),
+  );
 
   const hasMore = rows.length > limit;
   const items = hasMore ? rows.slice(0, limit) : rows;
@@ -172,21 +181,17 @@ export async function queryMandateEventsForMandates(
   if (uniqueIds.length === 0) return grouped;
 
   const database = requireDb();
-  await ensureDashboardProjectionCurrent();
+  await ensureProjectionReadable();
 
   for (let start = 0; start < uniqueIds.length; start += MANDATE_ID_CHUNK) {
     const chunk = uniqueIds.slice(start, start + MANDATE_ID_CHUNK);
-    const rows: MandateEventSummary[] = await database
-      .select({
-        id: mandateEvents.id,
-        mandateId: mandateEvents.mandateId,
-        status: mandateEvents.status,
-        date: mandateEvents.date,
-        sender: mandateEvents.sender,
-      })
-      .from(mandateEvents)
-      .where(inArray(mandateEvents.mandateId, chunk))
-      .orderBy(desc(mandateEvents.date), desc(mandateEvents.id));
+    const rows = await selectAsync<MandateEventSummary>(
+      database
+        .select(aliasedColumns(MANDATE_EVENT_COLUMNS))
+        .from(mandateEvents)
+        .where(inArray(mandateEvents.mandateId, chunk))
+        .orderBy(desc(mandateEvents.date), desc(mandateEvents.id)),
+    );
 
     for (const row of rows) {
       const bucket = grouped.get(row.mandateId);

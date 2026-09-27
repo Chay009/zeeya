@@ -11,7 +11,8 @@
 // path, and are always fully replaced from a fresh Dashboard rather than
 // incrementally patched, so they can never drift from what
 // deriveDashboard() would compute from the ledger right now.
-import type { BaseSQLiteDatabase } from "drizzle-orm/sqlite-core";
+import { eq, inArray } from "drizzle-orm";
+import type { BaseSQLiteDatabase, SQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
 import { isProductActivityCategory } from "../lib/activity-filters";
 import {
   resolveActivityAccountId,
@@ -35,12 +36,15 @@ import {
   accounts,
   activity,
   balanceReadings,
+  DASHBOARD_PROJECTION_ID,
   detectedAccounts,
   mandateEvents,
   mandates,
+  projectionState,
   subscriptions,
   transactions,
 } from "./schema";
+import { notifyDataChanged } from "./data-changes";
 import type * as schema from "./schema";
 
 // Typed against drizzle's own sync-SQLite base class, parameterized by
@@ -298,16 +302,17 @@ function projectMandate(mandate: Mandate): typeof mandates.$inferInsert {
   };
 }
 
-// Replaces every normalized-table row with what the given Dashboard
+// Makes the normalized tables hold exactly what the given Dashboard
 // (already derived from the full, current sms_ledger — see
-// ingestion.ts's ingestSmsBatch) says should exist. Delete-then-insert,
-// not incremental upsert-and-prune: deriveDashboard's own attribution
-// (which account a transaction belongs to, which readings survive
-// dedup, mandate status as of the latest message) can change an
-// already-projected row's foreign key or field values, and computing a
-// precise incremental diff would just be reimplementing deriveDashboard's
-// logic a second time. Runs inside one transaction so a reader never
-// observes a half-replaced projection.
+// ingestion.ts's ingestSmsBatch) says should exist. The projection is
+// always derived whole — never incrementally re-derived: deriveDashboard's
+// own attribution (which account a transaction belongs to, which readings
+// survive dedup, mandate status as of the latest message) can change an
+// already-projected row's foreign key or field values, and re-deriving
+// incrementally would mean reimplementing that logic a second time. Only
+// the WRITE is incremental: rows identical to the last publish are left
+// alone (see "Publishing" below). Runs inside one transaction so a reader
+// never observes a half-replaced projection.
 //
 // Takes the whole DashboardProjection — dashboard and allSubscriptions
 // always come from one deriveDashboardProjection() call and are projected
@@ -382,32 +387,195 @@ export function replaceProjection(
       })),
   );
 
-  database.transaction((tx) => {
-    // Children before parents on delete (FKs cascade anyway, but this
-    // keeps the intent explicit), parents before children on insert.
-    tx.delete(mandateEvents).run();
-    tx.delete(mandates).run();
-    tx.delete(subscriptions).run();
-    tx.delete(activity).run();
-    tx.delete(transactions).run();
-    tx.delete(balanceReadings).run();
-    tx.delete(detectedAccounts).run();
-    tx.delete(accounts).run();
+  // Parents (referenced by FKs) and children, each with its primary key.
+  const parents: TableRows[] = [
+    tableRows("accounts", accounts, accounts.id, accountRows, (row) => row.id),
+    tableRows("detectedAccounts", detectedAccounts, detectedAccounts.id, detectedAccountRows, (row) => row.id),
+    tableRows("mandates", mandates, mandates.mandateId, mandateRows, (row) => row.mandateId),
+  ];
+  const children: TableRows[] = [
+    tableRows("balanceReadings", balanceReadings, balanceReadings.id, balanceReadingRows, (row) => row.id),
+    tableRows("transactions", transactions, transactions.id, transactionRows, (row) => row.id),
+    tableRows("activity", activity, activity.id, activityRows, (row) => row.id),
+    tableRows("subscriptions", subscriptions, subscriptions.id, subscriptionRows, (row) => row.id),
+    tableRows("mandateEvents", mandateEvents, mandateEvents.id, mandateEventRows, (row) => row.id),
+  ];
 
-    for (const batch of batches(accountRows)) tx.insert(accounts).values(batch).run();
-    for (const batch of batches(detectedAccountRows)) {
-      tx.insert(detectedAccounts).values(batch).run();
-    }
-    for (const batch of batches(balanceReadingRows)) {
-      tx.insert(balanceReadings).values(batch).run();
-    }
-    for (const batch of batches(transactionRows)) tx.insert(transactions).values(batch).run();
-    for (const batch of batches(activityRows)) tx.insert(activity).values(batch).run();
-    for (const batch of batches(subscriptionRows)) {
-      tx.insert(subscriptions).values(batch).run();
-    }
-    for (const batch of batches(mandateRows)) tx.insert(mandates).values(batch).run();
-    for (const batch of batches(mandateEventRows)) tx.insert(mandateEvents).values(batch).run();
+  let nextBaseline: PublishedBaseline | undefined;
+  database.transaction((tx) => {
+    const baseline = publishedBaselines.get(database);
+    const diffable =
+      afterReplace !== undefined &&
+      baseline !== undefined &&
+      readProjectedRevision(tx) === baseline.revision;
+    if (diffable) writeChangedRows(tx, parents, children, baseline);
+    else writeAllRows(tx, parents, children);
     afterReplace?.(tx);
+    // Only a guarded publish (afterReplace advances projected_revision)
+    // leaves a baseline a later publish may diff against.
+    if (afterReplace) {
+      nextBaseline = {
+        revision: readProjectedRevision(tx),
+        tables: new Map([...parents, ...children].map((spec) => [spec.name, spec.serialized])),
+      };
+    }
   });
+  // Only reached when the transaction committed — a throw (including
+  // afterReplace's guard) rolls back, and the old baseline still matches.
+  if (nextBaseline) publishedBaselines.set(database, nextBaseline);
+  else publishedBaselines.delete(database);
+  notifyDataChanged();
 }
+
+// ── Publishing: full replace, or only the rows that changed ─────────────────
+//
+// Every publish derives the WHOLE projection (deriveDashboard stays the one
+// owner of attribution, dedup and reconciliation). What changes is how much
+// of it is written: a new SMS alters a handful of rows, yet a full replace
+// deletes and re-inserts every row of every table — synchronously, on the JS
+// thread (expo-sqlite's Drizzle driver is sync, and an async transaction
+// would need a second connection that SQLCipher can't key, or would let
+// screen reads interleave with a half-written projection).
+//
+// So a publish diffs the derived rows against the rows this process last
+// committed and writes only the difference, inside the same single
+// transaction — readers still see before or after, never between. The end
+// state is identical to a full replace. The diff is trusted only when the
+// database's projected_revision is still the one this process published: a
+// fresh process, a background task's publish, or any unguarded write falls
+// back to a full replace.
+
+type ProjectionRow = Record<string, unknown>;
+
+interface TableRows {
+  name: string;
+  table: SQLiteTable;
+  pk: SQLiteColumn;
+  rows: ProjectionRow[];
+  keyOf: (row: ProjectionRow) => string;
+  /** primary key → JSON of the row, for change detection. */
+  serialized: Map<string, string>;
+}
+
+interface PublishedBaseline {
+  revision: number | null;
+  tables: Map<string, Map<string, string>>;
+}
+
+const publishedBaselines = new WeakMap<object, PublishedBaseline>();
+
+// Keeps DELETE ... IN (...) well under SQLite's bound-parameter ceiling.
+const DELETE_CHUNK_SIZE = 500;
+
+function tableRows<Row extends object>(
+  name: string,
+  table: SQLiteTable,
+  pk: SQLiteColumn,
+  rows: readonly Row[],
+  keyOf: (row: Row) => string,
+): TableRows {
+  // Rows are built by the same project*() functions every time, so equal
+  // content always serializes to the same string.
+  const serialized = new Map(rows.map((row) => [keyOf(row), JSON.stringify(row)]));
+  return {
+    name,
+    table,
+    pk,
+    rows: rows as ProjectionRow[],
+    keyOf: keyOf as (row: ProjectionRow) => string,
+    serialized,
+  };
+}
+
+function readProjectedRevision(tx: SyncSqliteDatabase): number | null {
+  const row = tx
+    .select({ projectedRevision: projectionState.projectedRevision })
+    .from(projectionState)
+    .where(eq(projectionState.id, DASHBOARD_PROJECTION_ID))
+    .get();
+  return row?.projectedRevision ?? null;
+}
+
+function insertAll(tx: SyncSqliteDatabase, spec: TableRows, rows: readonly ProjectionRow[]): void {
+  for (const batch of batches(rows)) tx.insert(spec.table).values(batch as never).run();
+}
+
+function deleteKeys(tx: SyncSqliteDatabase, spec: TableRows, keys: readonly string[]): void {
+  for (let start = 0; start < keys.length; start += DELETE_CHUNK_SIZE) {
+    tx.delete(spec.table)
+      .where(inArray(spec.pk, keys.slice(start, start + DELETE_CHUNK_SIZE)))
+      .run();
+  }
+}
+
+function writeAllRows(
+  tx: SyncSqliteDatabase,
+  parents: readonly TableRows[],
+  children: readonly TableRows[],
+): void {
+  // Children before parents on delete (FKs cascade anyway, but this keeps
+  // the intent explicit), parents before children on insert.
+  for (const spec of [...children].reverse()) tx.delete(spec.table).run();
+  for (const spec of [...parents].reverse()) tx.delete(spec.table).run();
+  for (const spec of [...parents, ...children]) insertAll(tx, spec, spec.rows);
+}
+
+function writeChangedRows(
+  tx: SyncSqliteDatabase,
+  parents: readonly TableRows[],
+  children: readonly TableRows[],
+  baseline: PublishedBaseline,
+): void {
+  const previous = (spec: TableRows) => baseline.tables.get(spec.name) ?? new Map<string, string>();
+
+  // 1. Children that were removed OR changed go first. Nothing references a
+  //    child row, so deleting one cascades nowhere, and clearing changed rows
+  //    frees their unique slots (transactions.sms_id, activity's
+  //    (sms_id, category), mandate_events.sms_id) before re-insertion.
+  for (const spec of children) {
+    const old = previous(spec);
+    const stale = [...old.keys()].filter((key) => spec.serialized.get(key) !== old.get(key));
+    deleteKeys(tx, spec, stale);
+  }
+
+  // 2. Parents are updated IN PLACE, never deleted and re-inserted: deleting
+  //    an account would cascade to its transactions and balance readings.
+  for (const spec of parents) {
+    const old = previous(spec);
+    const added: ProjectionRow[] = [];
+    for (const row of spec.rows) {
+      const key = spec.keyOf(row);
+      const before = old.get(key);
+      if (before === undefined) added.push(row);
+      else if (before !== spec.serialized.get(key)) {
+        tx.update(spec.table).set(row as never).where(eq(spec.pk, key)).run();
+      }
+    }
+    insertAll(tx, spec, added);
+  }
+
+  // 3. New and changed children, now that every parent they point at exists.
+  for (const spec of children) {
+    const old = previous(spec);
+    insertAll(
+      tx,
+      spec,
+      spec.rows.filter((row) => {
+        const key = spec.keyOf(row);
+        return old.get(key) !== spec.serialized.get(key);
+      }),
+    );
+  }
+
+  // 4. Removed parents last. Every surviving child already points at a
+  //    surviving parent, so the FK cascades here reach nothing that remains.
+  for (const spec of [...parents].reverse()) {
+    const old = previous(spec);
+    deleteKeys(
+      tx,
+      spec,
+      [...old.keys()].filter((key) => !spec.serialized.has(key)),
+    );
+  }
+}
+

@@ -16,6 +16,7 @@ import type { ParsedSms } from "../lib/sms";
 import { replaceProjection } from "./projections";
 import * as schema from "./schema";
 import { initializeNativeDatabase } from "./native-init";
+import { asyncSqlite } from "./testing/async-sqlite";
 
 const MIGRATIONS_DIR = path.join(__dirname, "migrations");
 
@@ -54,6 +55,9 @@ function useFreshDb(): void {
 vi.mock("./client", () => ({
   get db() {
     return testDb;
+  },
+  get sqlite() {
+    return rawSqlite ? asyncSqlite(rawSqlite) : null;
   },
 }));
 
@@ -710,6 +714,28 @@ describe("query plans use an index, not a full scan or a temp sort", () => {
     expect(
       plan.some((line) => /SCAN activity\b/i.test(line) && !line.includes("activity_date_id_idx")),
     ).toBe(false);
+    expect(plan.some((line) => /USE TEMP B-TREE/i.test(line))).toBe(false);
+  });
+
+  // Insights' recent-transactions list. Before
+  // transactions_currency_direction_date_id_idx this was a full SCAN of
+  // transactions plus a temp b-tree sort on every Analytics visit.
+  it("queryTransactionPage's real generated query seeks the currency/direction index with no sort", async () => {
+    useFreshDb();
+    seedAndProject([], new Date(2000));
+    const { queryTransactionPage } = await import("./ingestion");
+
+    const plan = await planForRealCall(
+      () => queryTransactionPage({ currency: "INR", direction: "expense", limit: 25 }),
+      "transactions",
+    );
+
+    expect(plan.some((line) => line.includes("transactions_currency_direction_date_id_idx"))).toBe(
+      true,
+    );
+    expect(plan.some((line) => /SCAN transactions\b/i.test(line) && !line.includes("INDEX"))).toBe(
+      false,
+    );
     expect(plan.some((line) => /USE TEMP B-TREE/i.test(line))).toBe(false);
   });
 

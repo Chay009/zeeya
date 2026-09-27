@@ -1,7 +1,6 @@
 import { useCallback } from "react";
 
 import { financeDataSource } from "@/features/dashboard/dashboard-data-source";
-import { useDashboardSync } from "@/features/dashboard/hooks/dashboard-sync-provider";
 import type { HomeHighlightsQuery } from "@/lib/dashboard-data";
 import { localQueryKeys } from "@/lib/local-query-keys";
 import { useLocalQuery } from "@/lib/use-local-query";
@@ -15,11 +14,10 @@ export interface UseHomeHighlightsResult extends HomeHighlightsState {
 }
 
 export function useHomeHighlights(query: HomeHighlightsQuery): UseHomeHighlightsResult {
-  const { syncRevision } = useDashboardSync();
 
   const { data, error, isInitialLoading, refetch } = useLocalQuery({
-    queryKey: localQueryKeys.homeHighlights(query, syncRevision),
-    queryFn: () => financeDataSource.home.loadHighlights(query),
+    queryKey: localQueryKeys.homeHighlights(query),
+    queryFn: () => financeDataSource.home.loadHighlights({ ...query, at: Date.now() }),
   });
 
   const reload = useCallback(() => {

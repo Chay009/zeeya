@@ -15,6 +15,7 @@ import type { ParsedSms } from "../lib/sms";
 import { replaceProjection } from "./projections";
 import * as schema from "./schema";
 import { initializeNativeDatabase } from "./native-init";
+import { asyncSqlite } from "./testing/async-sqlite";
 
 const MIGRATIONS_DIR = path.join(__dirname, "migrations");
 
@@ -53,6 +54,9 @@ function useFreshDb(): void {
 vi.mock("./client", () => ({
   get db() {
     return testDb;
+  },
+  get sqlite() {
+    return rawSqlite ? asyncSqlite(rawSqlite) : null;
   },
 }));
 

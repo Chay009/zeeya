@@ -5,6 +5,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { initializeNativeDatabase } from "./native-init";
+import { asyncSqlite } from "./testing/async-sqlite";
 import * as schema from "./schema";
 import type { ShortcutMessageQueue } from "./shortcut-sync";
 
@@ -30,6 +31,9 @@ let testDb: ReturnType<typeof freshDb>;
 vi.mock("./client", () => ({
   get db() {
     return testDb;
+  },
+  get sqlite() {
+    return testDb ? asyncSqlite(testDb.$client) : null;
   },
 }));
 
@@ -83,8 +87,8 @@ describe("drainShortcutInbox", () => {
 
     const result = await drainShortcutInbox(pending.adapter);
 
-    expect(result.dashboard.recent).toHaveLength(1);
-    expect(result.dashboard.recent[0]).toMatchObject({
+    expect(result.dashboard?.recent).toHaveLength(1);
+    expect(result.dashboard?.recent[0]).toMatchObject({
       sender: "+916304890311",
       body: BODY,
       date: 1_787_290_200_000,
@@ -106,7 +110,11 @@ describe("drainShortcutInbox", () => {
     await drainShortcutInbox(first.adapter);
     const result = await drainShortcutInbox(retry.adapter);
 
-    expect(result.dashboard.recent).toHaveLength(1);
+    // The retry is a duplicate: one ledger row, one transaction, and nothing
+    // new to publish — so no derive either.
+    expect(testDb.select().from(schema.smsLedger).all()).toHaveLength(1);
+    expect(testDb.select().from(schema.transactions).all()).toHaveLength(1);
+    expect(result.dashboard).toBeNull();
     expect(retry.acknowledged).toEqual(["retry.json"]);
   });
 
@@ -119,7 +127,7 @@ describe("drainShortcutInbox", () => {
 
     const result = await drainShortcutInbox(pending.adapter);
 
-    expect(result.dashboard.recent).toHaveLength(1);
+    expect(result.dashboard?.recent).toHaveLength(1);
     expect(result.accepted).toBe(1);
     expect(result.rejected).toEqual([
       { fileName: "bad.json", reason: "Shortcut message is not valid JSON." },

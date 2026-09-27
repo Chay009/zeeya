@@ -1,15 +1,14 @@
 // Fetches the bounded, filter-scoped HomeActivityItem[] used by Home's
-// category pills and the Transactions tab. Cached per (scope, sync revision)
-// so revisiting the tab is instant instead of a fresh SQLCipher read.
+// category pills and the Transactions tab. Cached per scope so revisiting
+// the tab is instant instead of a fresh SQLCipher read.
 //
 // The previous rows stay visible only while the SAME scope revalidates
-// (pull-to-refresh / new sync). A category or account change never shows the
+// (pull-to-refresh / data change). A category or account change never shows the
 // old scope's rows under the new label — it reports loading with no items.
 
 import { useCallback } from "react";
 
 import { financeDataSource } from "@/features/dashboard/dashboard-data-source";
-import { useDashboardSync } from "@/features/dashboard/hooks/dashboard-sync-provider";
 import type { ActivityCategory, HomeActivityItem } from "@/lib/dashboard-data";
 import { localQueryKeys } from "@/lib/local-query-keys";
 import { useLocalQuery } from "@/lib/use-local-query";
@@ -39,8 +38,7 @@ export function useHomeRecentActivity(
   enabled: boolean = true,
   accountId?: string,
 ): UseHomeRecentActivityResult {
-  const { syncRevision } = useDashboardSync();
-  const queryKey = localQueryKeys.recentActivity({ category, accountId, limit }, syncRevision);
+  const queryKey = localQueryKeys.recentActivity({ category, accountId, limit });
   const scope = queryKey[2];
 
   const { data, error, isInitialLoading, refetch } = useLocalQuery({

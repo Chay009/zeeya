@@ -53,6 +53,13 @@ export const smsLedger = sqliteTable(
     ingestionStatus: text("ingestion_status", { enum: ["parsed", "error"] }).notNull(),
     ingestionError: text("ingestion_error"),
     createdAt: integer("created_at").notNull(),
+    // Bumped by the sms_ledger_parse_revision_bump TRIGGER (baseline SQL)
+    // whenever parser_version / parsed_result / ingestion_status is updated —
+    // by any writer, so no code path can forget it. Rows are only ever
+    // inserted (never replaced or deleted), so (id, parse_revision)
+    // identifies one exact parse: db/ingestion.ts's decoded-ledger cache
+    // keys on it to re-decode only rows whose parse actually changed.
+    parseRevision: integer("parse_revision").notNull().default(0),
   },
   (table) => [
     index("sms_ledger_date_idx").on(table.date),
@@ -134,6 +141,9 @@ export const syncCheckpoint = sqliteTable("sync_checkpoint", {
   initialScanCompletedAt: integer("initial_scan_completed_at"),
   updatedAt: integer("updated_at").notNull(),
 });
+
+/** The single projection_state row's id. */
+export const DASHBOARD_PROJECTION_ID = "dashboard";
 
 // Durable freshness marker for the normalized dashboard/query tables.
 // Ledger writes advance sourceRevision in the same transaction as the
@@ -440,6 +450,17 @@ export const transactions = sqliteTable(
   (table) => [
     index("transactions_account_id_idx").on(table.accountId),
     index("transactions_date_idx").on(table.date),
+    // The hot read shape: one currency, one direction (or the income/expense
+    // pair), a date range, newest first. Serves the transaction page with no
+    // scan or sort (it was a full SCAN + temp b-tree), narrows every Insights,
+    // highlights, series and cadence aggregate to its currency+direction
+    // slice, and makes queryDistinctCurrencies a covering-index scan.
+    index("transactions_currency_direction_date_id_idx").on(
+      table.currency,
+      table.direction,
+      table.date,
+      table.id,
+    ),
     uniqueIndex("transactions_sms_id_idx").on(table.smsId),
     check(
       "transactions_direction_check",

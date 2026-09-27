@@ -44,7 +44,7 @@ const dependencies = vi.hoisted(() => ({
 }));
 
 vi.mock("@/db/ingestion", () => ({
-  ensureDashboardProjectionCurrent: dependencies.ensureCurrent,
+  ensureProjectionReadable: dependencies.ensureCurrent,
   queryTransactionPage: dependencies.queryTransactions,
 }));
 

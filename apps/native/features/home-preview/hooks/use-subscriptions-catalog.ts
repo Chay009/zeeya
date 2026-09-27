@@ -6,39 +6,16 @@
 import { useCallback } from "react";
 
 import { financeDataSource } from "@/features/dashboard/dashboard-data-source";
-import { useDashboardSync } from "@/features/dashboard/hooks/dashboard-sync-provider";
-import { useHomeReadModel } from "@/features/dashboard/hooks/home-read-model";
 import type { MandateCursor, MandateSummary } from "@/lib/dashboard-data";
 import { localQueryKeys } from "@/lib/local-query-keys";
 import { useLocalQuery } from "@/lib/use-local-query";
 
 import {
-  createHomePreviewDataFromReadModel,
   previewSubFromMandateSummary,
   previewSubFromSubscriptionSummary,
   type PreviewSub,
 } from "../data";
-
-const EMPTY_READ_MODEL = {
-  currency: "INR",
-  accounts: [],
-  detectedAccounts: [],
-  unassignedReadings: [],
-  monthTotals: { incomeByCurrency: {}, expenseByCurrency: {} },
-  categoryTotalsByCurrency: {},
-  availableCurrencies: [] as string[],
-  flowDays: [],
-  calendarMonths: { items: [], nextCursor: null },
-  subscriptionOverview: {
-    items: [],
-    totalsByCurrency: {},
-    activeCount: 0,
-    cancelledCount: 0,
-  },
-  recentActivity: [],
-  activityCategoryCounts: [],
-  totalActivityCount: 0,
-};
+import { useHomeData } from "./use-home-data";
 
 export type SubscriptionsCatalogStatus = "loading" | "ready" | "error";
 
@@ -61,8 +38,8 @@ function mandateReactivated(
 }
 
 // Every subscription + mandate row with its event history. Exported so the
-// boot cache can warm it; cached per sync revision so reopening the
-// Subscriptions screen doesn't redo the per-mandate event reads.
+// boot cache can warm it; cached (and kept live) so reopening the
+// Subscriptions screen doesn't redo the mandate event reads.
 export async function loadSubscriptionsCatalog(): Promise<PreviewSub[]> {
   const at = Date.now();
   const [subscriptions, mandates] = await Promise.all([
@@ -88,10 +65,10 @@ export async function loadSubscriptionsCatalog(): Promise<PreviewSub[]> {
 const EMPTY_ITEMS: PreviewSub[] = [];
 
 export function useSubscriptionsCatalog() {
-  const { status: syncStatus, syncRevision } = useDashboardSync();
-  const { model: readModel } = useHomeReadModel("INR");
+  // Totals come from the shared (already cached, memoized) Home data.
+  const overview = useHomeData().homeData.subscriptions;
   const { data, error: queryError, isInitialLoading, refetch } = useLocalQuery({
-    queryKey: localQueryKeys.subscriptionsCatalog(syncRevision),
+    queryKey: localQueryKeys.subscriptionsCatalog(),
     queryFn: loadSubscriptionsCatalog,
   });
   const items = data ?? EMPTY_ITEMS;
@@ -104,11 +81,6 @@ export function useSubscriptionsCatalog() {
   const load = useCallback(() => {
     void refetch();
   }, [refetch]);
-
-  const overview = createHomePreviewDataFromReadModel(
-    readModel ?? EMPTY_READ_MODEL,
-    syncStatus === "ready" && readModel !== null,
-  ).subscriptions;
 
   return {
     status,

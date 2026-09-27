@@ -1,4 +1,3 @@
-import { useDashboardSync } from "@/features/dashboard/hooks/dashboard-sync-provider";
 import { localQueryKeys } from "@/lib/local-query-keys";
 import { useLocalQuery } from "@/lib/use-local-query";
 
@@ -13,17 +12,16 @@ export interface SeriesQueryState<T> {
 }
 
 // TanStack Query-backed series reads for Insights charts. Keeps the last
-// good series visible while a refresh or projection revision is in flight.
+// good series visible while a refresh or data-change re-read is in flight.
 export function useSeriesQuery<T>(
   seriesKey: string,
   fetch: () => Promise<T>,
   deps: readonly unknown[],
   enabled = true,
 ): SeriesQueryState<T> {
-  const { syncRevision } = useDashboardSync();
 
   const { data, error, isInitialLoading } = useLocalQuery({
-    queryKey: localQueryKeys.series(seriesKey, syncRevision, deps),
+    queryKey: localQueryKeys.series(seriesKey, deps),
     queryFn: async () => {
       try {
         return await fetch();

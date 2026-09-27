@@ -10,9 +10,13 @@ import { beforeEach, describe, it, expect, vi } from "vitest";
 
 const ensureDashboardProjectionCurrent = vi.fn(async () => undefined);
 const getProjectionStatus = vi.fn();
-vi.mock("./ingestion", () => ({ ensureDashboardProjectionCurrent, getProjectionStatus }));
+vi.mock("./ingestion", () => ({
+  ensureProjectionReadable: ensureDashboardProjectionCurrent,
+  getProjectionStatus,
+}));
 
 const { readConsistentSnapshot } = await import("./projection-snapshot");
+const { withIngestionLock } = await import("./single-flight");
 
 describe("readConsistentSnapshot", () => {
   beforeEach(() => {
@@ -166,5 +170,30 @@ describe("readConsistentSnapshot", () => {
     await readConsistentSnapshot(read);
 
     expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  // Readers never queue behind a sync: while a writer holds the ingestion
+  // lock, source ahead of projected means "mid-drain", and the last
+  // published revision is served. The writer's publish notifies screens.
+  it("serves the last published revision while a writer is active instead of waiting", async () => {
+    getProjectionStatus.mockResolvedValue({ sourceRevision: 9, projectedRevision: 5 });
+    let releaseWriter!: () => void;
+    const writer = withIngestionLock(
+      () => new Promise<void>((resolve) => (releaseWriter = resolve)),
+    );
+
+    const read = vi.fn(async () => "published revision 5");
+    await expect(readConsistentSnapshot(read)).resolves.toBe("published revision 5");
+    expect(read).toHaveBeenCalledTimes(1);
+
+    releaseWriter();
+    await writer;
+  });
+
+  it("still rejects a dirty projection once no writer is active (an interrupted publish)", async () => {
+    getProjectionStatus.mockResolvedValue({ sourceRevision: 9, projectedRevision: 5 });
+    const read = vi.fn(async () => "stale");
+    await expect(readConsistentSnapshot(read)).rejects.toThrow(/still catching up/);
+    expect(read).not.toHaveBeenCalled();
   });
 });

@@ -173,11 +173,16 @@ CREATE TABLE `sms_ledger` (
 	`ingestion_status` text NOT NULL,
 	`ingestion_error` text,
 	`created_at` integer NOT NULL,
+	`parse_revision` integer DEFAULT 0 NOT NULL,
 	CONSTRAINT "sms_ledger_parsed_result_matches_status" CHECK(("sms_ledger"."ingestion_status" = 'parsed' AND "sms_ledger"."parsed_result" IS NOT NULL AND "sms_ledger"."ingestion_error" IS NULL) OR ("sms_ledger"."ingestion_status" = 'error' AND "sms_ledger"."parsed_result" IS NULL AND "sms_ledger"."ingestion_error" IS NOT NULL))
 );
 --> statement-breakpoint
 CREATE INDEX `sms_ledger_date_idx` ON `sms_ledger` (`date`);--> statement-breakpoint
 CREATE UNIQUE INDEX `sms_ledger_provider_id_idx` ON `sms_ledger` (`provider_id`);--> statement-breakpoint
+CREATE TRIGGER `sms_ledger_parse_revision_bump` AFTER UPDATE OF `parser_version`, `parsed_result`, `ingestion_status` ON `sms_ledger`
+BEGIN
+	UPDATE `sms_ledger` SET `parse_revision` = OLD.`parse_revision` + 1 WHERE `id` = NEW.`id`;
+END;--> statement-breakpoint
 CREATE TABLE `subscriptions` (
 	`id` text PRIMARY KEY NOT NULL,
 	`merchant` text NOT NULL,
@@ -227,4 +232,5 @@ CREATE TABLE `transactions` (
 --> statement-breakpoint
 CREATE INDEX `transactions_account_id_idx` ON `transactions` (`account_id`);--> statement-breakpoint
 CREATE INDEX `transactions_date_idx` ON `transactions` (`date`);--> statement-breakpoint
+CREATE INDEX `transactions_currency_direction_date_id_idx` ON `transactions` (`currency`,`direction`,`date`,`id`);--> statement-breakpoint
 CREATE UNIQUE INDEX `transactions_sms_id_idx` ON `transactions` (`sms_id`);

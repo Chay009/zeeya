@@ -86,7 +86,7 @@ export type InboxReader = (options: {
 // mismatch can't actually occur today — but if a future caller ever needs
 // a second, meaningfully different concurrent reader, this would silently
 // reuse the first call's result for it instead of running the second.
-let inFlightSync: Promise<Dashboard> | null = null;
+let inFlightSync: Promise<SyncRun> | null = null;
 
 // `pageSize` is a test-only override of inbox-pagination.ts's default
 // page size — real callers never need it (the default is sized for real
@@ -95,15 +95,40 @@ let inFlightSync: Promise<Dashboard> | null = null;
 // boundary without constructing thousands of rows. `now` is likewise a
 // test-only override of Date.now(), needed because the initial-scan
 // window below is computed relative to "now."
-export function syncInbox(
+interface SyncOptions {
+  pageSize?: number;
+  onProgress?: (progress: SyncProgress) => void;
+  now?: number;
+}
+
+/**
+ * What one sync run did. `dashboard` is present only when the run published
+ * a projection (it derives one anyway to publish) — a run that found nothing
+ * new never derives the dashboard at all.
+ */
+export interface SyncRun {
+  inserted: number;
+  dashboard: Dashboard | null;
+}
+
+// Returns the full derived Dashboard, deriving it from the whole ledger when
+// the run itself didn't publish. Kept for callers that genuinely want the
+// in-memory Dashboard; the app's own paths use syncInboxChanges(), which
+// never pays for a derive just to report "nothing changed".
+export async function syncInbox(
   readInbox: InboxReader,
-  options: {
-    pageSize?: number;
-    onProgress?: (progress: SyncProgress) => void;
-    now?: number;
-    currentDashboard?: Dashboard;
-  } = {},
+  options: SyncOptions & { currentDashboard?: Dashboard } = {},
 ): Promise<Dashboard> {
+  const run = await syncInboxChanges(readInbox, options);
+  return (
+    run.dashboard ?? options.currentDashboard ?? withIngestionLock(() => loadDashboard())
+  );
+}
+
+export function syncInboxChanges(
+  readInbox: InboxReader,
+  options: SyncOptions = {},
+): Promise<SyncRun> {
   if (inFlightSync) return inFlightSync;
 
   const promise = withIngestionLock(async () => {
@@ -169,7 +194,7 @@ export function syncInbox(
       );
     }
 
-    if (inserted > 0) return refreshDashboardProjection();
+    if (inserted > 0) return { inserted, dashboard: await refreshDashboardProjection() };
 
     // A clean foreground check should not rewrite every normalized table—or
     // even decode the ledger again when the caller already owns the current
@@ -177,9 +202,9 @@ export function syncInbox(
     // so repair it even though this particular inbox read inserted nothing.
     const projection = await getProjectionStatus();
     if (projection.projectedRevision !== projection.sourceRevision) {
-      return refreshDashboardProjection();
+      return { inserted, dashboard: await refreshDashboardProjection() };
     }
-    return options.currentDashboard ?? loadDashboard();
+    return { inserted, dashboard: null };
   }).finally(() => {
     inFlightSync = null;
   });

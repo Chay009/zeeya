@@ -12,12 +12,13 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { eq } from "drizzle-orm";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type { MalanaResult } from "@zeeya/parser/malana";
 import { deriveDashboardProjection } from "../lib/dashboard";
 import type { ParsedSms } from "../lib/sms";
 import { fromMinorUnits } from "../lib/currency";
 import { normalizeMerchant } from "../lib/subscriptions";
+import { subscribeDataChanged } from "./data-changes";
 import { replaceProjection } from "./projections";
 import * as schema from "./schema";
 import { initializeNativeDatabase } from "./native-init";
@@ -452,6 +453,37 @@ describe("replaceProjection", () => {
     expect(db.select().from(schema.balanceReadings).all()).toHaveLength(0);
   });
 
+  // Screens re-read on this signal (lib/live-queries.ts), so it must follow
+  // a commit — and never a rolled-back publish, which would re-read the old
+  // data for nothing.
+  it("notifies data-change listeners after a committed publish, not after a rollback", async () => {
+    // Earlier tests' publishes leave a coalesced notification pending on a
+    // real timer; let it flush so this test observes only its own.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    vi.useFakeTimers();
+    const listener = vi.fn();
+    const off = subscribeDataChanged(listener);
+    try {
+      const db = freshDb();
+      const projection = deriveDashboardProjection([], new Date(2000));
+
+      expect(() =>
+        replaceProjection(db, projection, () => {
+          throw new Error("guard rejected");
+        }),
+      ).toThrow("guard rejected");
+      vi.runAllTimers();
+      expect(listener).not.toHaveBeenCalled();
+
+      replaceProjection(db, projection);
+      vi.runAllTimers();
+      expect(listener).toHaveBeenCalledTimes(1);
+    } finally {
+      off();
+      vi.useRealTimers();
+    }
+  });
+
   it("skips a transaction whose amount string this currency's rules cannot represent, without throwing", () => {
     const db = freshDb();
     const messages: ParsedSms[] = [
@@ -578,5 +610,170 @@ describe("replaceProjection", () => {
     replaceProjection(db, second);
 
     expect(db.select().from(schema.subscriptions).all()).toHaveLength(0);
+  });
+});
+
+// replaceProjection writes only the rows that changed since this process's
+// last guarded publish. Its whole correctness claim is "the end state is
+// identical to a full replace" — so that is what these tests check, table by
+// table, across publishes that add, change and remove rows (including a
+// removed account, whose FK cascades are the dangerous part).
+describe("replaceProjection — changed-rows publish", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const T0 = Date.UTC(2026, 0, 5);
+
+  const PROJECTION_TABLES = {
+    accounts: schema.accounts,
+    detectedAccounts: schema.detectedAccounts,
+    balanceReadings: schema.balanceReadings,
+    transactions: schema.transactions,
+    activity: schema.activity,
+    subscriptions: schema.subscriptions,
+    mandates: schema.mandates,
+    mandateEvents: schema.mandateEvents,
+  };
+
+  function dump(db: ReturnType<typeof freshDb>) {
+    return Object.fromEntries(
+      Object.entries(PROJECTION_TABLES).map(([name, table]) => [
+        name,
+        db
+          .select()
+          .from(table)
+          .all()
+          .map((row) => JSON.stringify(row))
+          .sort(),
+      ]),
+    );
+  }
+
+  // The production guard: advances projected_revision inside the publish,
+  // which is what makes a later publish eligible to diff.
+  function publishGuarded(db: ReturnType<typeof freshDb>, messages: ParsedSms[], revision: number) {
+    replaceProjection(db, deriveDashboardProjection(messages, new Date(T0 + 100 * DAY)), (tx) => {
+      tx.insert(schema.projectionState)
+        .values({
+          id: schema.DASHBOARD_PROJECTION_ID,
+          sourceRevision: revision,
+          projectedRevision: revision,
+          updatedAt: 0,
+        })
+        .onConflictDoUpdate({
+          target: schema.projectionState.id,
+          set: { sourceRevision: revision, projectedRevision: revision },
+        })
+        .run();
+    });
+  }
+
+  function fullReplace(messages: ParsedSms[], ledger: ParsedSms[]) {
+    const reference = freshDb();
+    seedLedger(reference, ledger);
+    replaceProjection(reference, deriveDashboardProjection(messages, new Date(T0 + 100 * DAY)));
+    return dump(reference);
+  }
+
+  const balance = (id: string, day: number, bal: string, acc = "XX1234") =>
+    sms(id, "VM-TESTBK", T0 + day * DAY, { bankName: "Test Bank", bal, acc });
+  const debit = (id: string, day: number, trx: string, vendor: string, acc = "XX1234") =>
+    sms(id, "VM-TESTBK", T0 + day * DAY, {
+      bankName: "Test Bank",
+      acc,
+      trx,
+      trxTypeRich: "EXPENSE",
+      vendor,
+    });
+
+  const step1 = [
+    balance("b1", 0, "50000.00"),
+    debit("d1", 1, "199.00", "Netflix"),
+    debit("d2", 2, "450.00", "Swiggy"),
+  ];
+  const step2 = [
+    ...step1,
+    debit("d3", 31, "199.00", "Netflix"),
+    debit("d4", 32, "1200.00", "Amazon"),
+    balance("b2", 33, "48000.00"),
+    balance("b9", 34, "9000.00", "XX9999"),
+    debit("d9", 35, "300.00", "Uber", "XX9999"),
+  ];
+  // The second account's messages drop out of the derivation: its account
+  // row, readings and transactions must all disappear, exactly as in a full
+  // replace — the parent-delete + cascade path.
+  const step3 = [...step2.filter((m) => !["b9", "d9"].includes(m.id)), debit("d5", 61, "199.00", "Netflix")];
+  const ledger = [...step3, ...step2.filter((m) => ["b9", "d9"].includes(m.id))];
+
+  it("ends every publish in exactly the state a full replace produces", () => {
+    const db = freshDb();
+    seedLedger(db, ledger);
+
+    publishGuarded(db, step1, 1); // first publish in this process: full replace
+    expect(dump(db)).toEqual(fullReplace(step1, ledger));
+
+    publishGuarded(db, step2, 2); // adds rows, changes the account's balance
+    expect(dump(db)).toEqual(fullReplace(step2, ledger));
+    // Non-vacuous: the scenario really has two accounts and their children.
+    expect(dump(db).accounts).toHaveLength(2);
+    expect(dump(db).transactions.length).toBeGreaterThanOrEqual(5);
+    expect(dump(db).balanceReadings.length).toBeGreaterThanOrEqual(3);
+
+    publishGuarded(db, step3, 3); // removes an account and its children
+    expect(dump(db)).toEqual(fullReplace(step3, ledger));
+    expect(dump(db).accounts).toHaveLength(1);
+    expect(dump(db).transactions.some((row) => row.includes('"smsId":"d9"'))).toBe(false);
+  });
+
+  it("leaves unchanged rows untouched once a baseline exists", () => {
+    const db = freshDb();
+    seedLedger(db, ledger);
+    publishGuarded(db, step1, 1);
+
+    // Tag a row the next derivation won't change. A changed-rows publish
+    // never rewrites it; a full replace would.
+    db.update(schema.transactions)
+      .set({ ref: "untouched-marker" })
+      .where(eq(schema.transactions.smsId, "d2"))
+      .run();
+
+    publishGuarded(db, step1, 2);
+
+    const row = db.select().from(schema.transactions).where(eq(schema.transactions.smsId, "d2")).get();
+    expect(row?.ref).toBe("untouched-marker");
+  });
+
+  it("falls back to a full replace when another writer moved projected_revision", () => {
+    const db = freshDb();
+    seedLedger(db, ledger);
+    publishGuarded(db, step1, 1);
+
+    db.update(schema.transactions)
+      .set({ ref: "stale-marker" })
+      .where(eq(schema.transactions.smsId, "d2"))
+      .run();
+    // Someone else (e.g. a background task's publish) wrote the projection:
+    // this process's baseline no longer describes the database.
+    db.update(schema.projectionState).set({ projectedRevision: 7, sourceRevision: 7 }).run();
+
+    publishGuarded(db, step1, 8);
+
+    const row = db.select().from(schema.transactions).where(eq(schema.transactions.smsId, "d2")).get();
+    expect(row?.ref).not.toBe("stale-marker");
+    expect(dump(db)).toEqual(fullReplace(step1, ledger));
+  });
+
+  it("keeps the old baseline when a publish rolls back", () => {
+    const db = freshDb();
+    seedLedger(db, ledger);
+    publishGuarded(db, step1, 1);
+
+    expect(() =>
+      replaceProjection(db, deriveDashboardProjection(step2, new Date(T0 + 100 * DAY)), () => {
+        throw new Error("source changed");
+      }),
+    ).toThrow("source changed");
+    expect(dump(db)).toEqual(fullReplace(step1, ledger));
+
+    publishGuarded(db, step2, 2);
+    expect(dump(db)).toEqual(fullReplace(step2, ledger));
   });
 });

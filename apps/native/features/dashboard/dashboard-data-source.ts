@@ -1,4 +1,4 @@
-import { ensureDashboardProjectionCurrent, queryTransactionPage } from "@/db/ingestion";
+import { ensureProjectionReadable, queryTransactionPage } from "@/db/ingestion";
 import {
   queryCategoryTotals,
   queryDailySeries,
@@ -35,11 +35,11 @@ import type { FinanceDataSource } from "@/lib/dashboard-data";
 export const financeDataSource: FinanceDataSource = {
   dashboard: {
     loadAggregates: async ({ currencies, at }) => {
-      await ensureDashboardProjectionCurrent();
+      await ensureProjectionReadable();
       return queryDashboardAggregates(currencies, new Date(at));
     },
     listCurrencies: async () => {
-      await ensureDashboardProjectionCurrent();
+      await ensureProjectionReadable();
       return queryDistinctCurrencies();
     },
   },
@@ -65,22 +65,22 @@ export const financeDataSource: FinanceDataSource = {
   },
   subscriptions: {
     list: async ({ at } = {}) => {
-      await ensureDashboardProjectionCurrent();
+      await ensureProjectionReadable();
       return querySubscriptions(at !== undefined ? new Date(at) : new Date());
     },
   },
   insights: {
     loadOverview: queryInsightsOverview,
     loadDailySeries: async ({ currency, direction, at, days }) => {
-      await ensureDashboardProjectionCurrent();
+      await ensureProjectionReadable();
       return queryDailySeries(currency, direction, new Date(at), days);
     },
     loadMonthlySeries: async ({ currency, direction, at, months }) => {
-      await ensureDashboardProjectionCurrent();
+      await ensureProjectionReadable();
       return queryMonthlySeries(currency, direction, new Date(at), months);
     },
     loadCategoryTotals: async ({ currency, at }) => {
-      await ensureDashboardProjectionCurrent();
+      await ensureProjectionReadable();
       return queryCategoryTotals(currency, new Date(at));
     },
   },

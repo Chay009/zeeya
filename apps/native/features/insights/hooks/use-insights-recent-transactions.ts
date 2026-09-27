@@ -1,7 +1,6 @@
 import { useCallback, useMemo } from "react";
 
 import { financeDataSource } from "@/features/dashboard/dashboard-data-source";
-import { useDashboardSync } from "@/features/dashboard/hooks/dashboard-sync-provider";
 import { localQueryKeys } from "@/lib/local-query-keys";
 import { useLocalQuery } from "@/lib/use-local-query";
 
@@ -43,7 +42,6 @@ export function useInsightsRecentTransactions(
   direction: "income" | "expense",
   currency: string,
 ): UseInsightsRecentTransactionsResult {
-  const { syncRevision } = useDashboardSync();
   const query = useMemo(
     () => ({
       direction,
@@ -54,12 +52,7 @@ export function useInsightsRecentTransactions(
   );
 
   const { data, error, isInitialLoading, refetch } = useLocalQuery({
-    queryKey: localQueryKeys.recentTransactions(
-      query.direction,
-      query.currency,
-      query.limit,
-      syncRevision,
-    ),
+    queryKey: localQueryKeys.recentTransactions(query.direction, query.currency, query.limit),
     queryFn: () => loadRecentInsightsTransactions(query),
   });
 

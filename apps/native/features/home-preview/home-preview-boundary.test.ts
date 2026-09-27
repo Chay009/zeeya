@@ -71,66 +71,81 @@ function objectBindingNames(pattern: ts.ObjectBindingPattern): string[] {
     .filter((name): name is string => name !== null);
 }
 
+function screenFunction(sourceFile: ts.SourceFile, name: string) {
+  return sourceFile.statements.find(
+    (statement): statement is ts.FunctionDeclaration =>
+      ts.isFunctionDeclaration(statement) && statement.name?.text === name,
+  );
+}
+
+// Names a screen pulls out of the sync store: destructured bindings, plus the
+// property names of an object-returning selector (useDashboardSync((s) => ({…}))).
+function syncStoreNames(root: ts.Node): string[] {
+  return callExpressions(root, "useDashboardSync").flatMap((call) => {
+    const names: string[] = [];
+    const declaration = call.parent;
+    if (ts.isVariableDeclaration(declaration) && ts.isObjectBindingPattern(declaration.name)) {
+      names.push(...objectBindingNames(declaration.name));
+    }
+    const selector = call.arguments[0];
+    if (selector && ts.isArrowFunction(selector)) {
+      const body = ts.isParenthesizedExpression(selector.body)
+        ? selector.body.expression
+        : selector.body;
+      if (ts.isObjectLiteralExpression(body)) {
+        for (const property of body.properties) {
+          if (property.name && ts.isIdentifier(property.name)) names.push(property.name.text);
+        }
+      }
+    }
+    return names;
+  });
+}
+
 describe("Home preview data boundary", () => {
-  it("uses the bounded read model for the rendered Home body", () => {
-    const sourceFile = parseHomeScreen();
-    const homeFunction = sourceFile.statements.find(
-      (statement): statement is ts.FunctionDeclaration =>
-        ts.isFunctionDeclaration(statement) && statement.name?.text === "HomePreviewScreen",
-    );
-    expect(homeFunction).toBeDefined();
-    if (!homeFunction) return;
+  // The shared Home data hook is the one place the read model becomes
+  // presentation data — screens go through it, never the legacy builder.
+  it("builds Home presentation data only from the bounded read model", () => {
+    const source = readFileSync(path.join(__dirname, "hooks", "use-home-data.ts"), "utf8");
+    const sourceFile = ts.createSourceFile("use-home-data.ts", source, ts.ScriptTarget.Latest, true);
 
-    expect(callExpressions(homeFunction, "useHomeReadModel")).not.toHaveLength(0);
-    expect(callExpressions(homeFunction, "createHomePreviewDataFromReadModel")).not.toHaveLength(0);
-
-    const dataImports = importsFrom(sourceFile, "../data");
-    expect(dataImports).toHaveLength(1);
-    const dataImportNames = dataImports.flatMap(namedImportNames);
+    expect(callExpressions(sourceFile, "useHomeReadModel")).not.toHaveLength(0);
+    expect(callExpressions(sourceFile, "createHomePreviewDataFromReadModel")).not.toHaveLength(0);
+    const dataImportNames = importsFrom(sourceFile, "../data").flatMap(namedImportNames);
     expect(dataImportNames).toContain("createHomePreviewDataFromReadModel");
-    expect(dataImportNames).not.toContain("createHomePreviewData");
     // Comments and similarly-prefixed names cannot satisfy this AST check:
     // the legacy builder must be absent as an actual import or call.
     expect(identifiers(sourceFile, "createHomePreviewData")).toHaveLength(0);
-
-    const syncCalls = callExpressions(homeFunction, "useDashboardSync");
-    expect(syncCalls).toHaveLength(1);
-    const syncBindingNames = syncCalls.flatMap((call) => {
-      const declaration = call.parent;
-      return ts.isVariableDeclaration(declaration) && ts.isObjectBindingPattern(declaration.name)
-        ? objectBindingNames(declaration.name)
-        : [];
-    });
-    expect(syncBindingNames).toEqual(
-      expect.arrayContaining(["status", "progress", "newSinceLastView"]),
-    );
-    expect(syncBindingNames).not.toContain("dashboard");
-    expect(syncBindingNames).not.toContain("aggregates");
   });
 
-  it("uses the bounded read model for the Cards screen body", () => {
+  it("renders the Home body from the shared read-model hook, not the synced dashboard", () => {
+    const sourceFile = parseHomeScreen();
+    const homeFunction = screenFunction(sourceFile, "HomePreviewScreen");
+    expect(homeFunction).toBeDefined();
+    if (!homeFunction) return;
+
+    expect(callExpressions(homeFunction, "useHomeData")).not.toHaveLength(0);
+    expect(identifiers(sourceFile, "createHomePreviewData")).toHaveLength(0);
+
+    const syncNames = syncStoreNames(homeFunction);
+    expect(syncNames).toEqual(expect.arrayContaining(["status", "caughtUpTransactions"]));
+    expect(syncNames).not.toContain("dashboard");
+    expect(syncNames).not.toContain("aggregates");
+    // Per-page sync progress belongs to the permission card alone — the
+    // screen subscribing to it would re-render Home on every inbox page.
+    expect(syncNames).not.toContain("progress");
+  });
+
+  it("renders the Cards body from the shared read-model hook, not the synced dashboard", () => {
     const sourceFile = parseScreen("cards-screen.tsx");
-    const cardsFunction = sourceFile.statements.find(
-      (statement): statement is ts.FunctionDeclaration =>
-        ts.isFunctionDeclaration(statement) && statement.name?.text === "CardsScreen",
-    );
+    const cardsFunction = screenFunction(sourceFile, "CardsScreen");
     expect(cardsFunction).toBeDefined();
     if (!cardsFunction) return;
 
-    expect(callExpressions(cardsFunction, "useHomeReadModel")).not.toHaveLength(0);
-    expect(callExpressions(cardsFunction, "createHomePreviewDataFromReadModel")).not.toHaveLength(0);
+    expect(callExpressions(cardsFunction, "useHomeData")).not.toHaveLength(0);
     expect(identifiers(sourceFile, "createHomePreviewData")).toHaveLength(0);
-
-    const syncCalls = callExpressions(cardsFunction, "useDashboardSync");
-    expect(syncCalls).toHaveLength(1);
-    const syncBindingNames = syncCalls.flatMap((call) => {
-      const declaration = call.parent;
-      return ts.isVariableDeclaration(declaration) && ts.isObjectBindingPattern(declaration.name)
-        ? objectBindingNames(declaration.name)
-        : [];
-    });
-    expect(syncBindingNames).toEqual(expect.arrayContaining(["status", "progress"]));
-    expect(syncBindingNames).not.toContain("dashboard");
+    expect(syncStoreNames(cardsFunction)).not.toContain("dashboard");
+    expect(syncStoreNames(cardsFunction)).not.toContain("progress");
   });
 
   it("uses FinanceDataSource for the subscriptions list body", () => {

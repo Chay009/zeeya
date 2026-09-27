@@ -1,27 +1,28 @@
 import { financeDataSource } from "@/features/dashboard/dashboard-data-source";
-import { useDashboardSync } from "@/features/dashboard/hooks/dashboard-sync-provider";
 import type { HomeAccountCashflowScope } from "@/lib/dashboard-data";
 import { localQueryKeys } from "@/lib/local-query-keys";
 import { useLocalQuery } from "@/lib/use-local-query";
 
 export type HomeAccountCashflowScopeStatus = "idle" | "loading" | "ready" | "error";
 
-// Per-account cashflow, cached per (account, currency, anchor, revision).
+// Per-account cashflow, cached per (account, currency).
 // While the same account revalidates the last snapshot stays on screen;
 // switching accounts never shows another account's numbers.
 export function useHomeAccountCashflowScope(
   accountId: string | undefined,
   currency: string,
-  at: number,
 ): {
   status: HomeAccountCashflowScopeStatus;
   error: string | null;
   scope: HomeAccountCashflowScope | null;
 } {
-  const { syncRevision } = useDashboardSync();
   const { data, error, isInitialLoading, isRevalidating } = useLocalQuery({
-    queryKey: localQueryKeys.accountCashflowScope(accountId ?? "", currency, at, syncRevision),
-    queryFn: () => financeDataSource.home.loadAccountCashflowScope({ accountId: accountId!, currency, at }),
+    queryKey: localQueryKeys.accountCashflowScope(accountId ?? "", currency),
+    queryFn: () => financeDataSource.home.loadAccountCashflowScope({
+        accountId: accountId!,
+        currency,
+        at: Date.now(),
+      }),
     enabled: accountId !== undefined,
     keepPrevious: (previousKey) =>
       previousKey[1] === "account-cashflow-scope" && previousKey[2] === accountId,

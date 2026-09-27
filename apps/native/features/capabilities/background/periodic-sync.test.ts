@@ -1,217 +1,128 @@
 import { describe, expect, it, vi } from "vitest";
-import { createMalanaEngine } from "@zeeya/parser/malana";
 
-import type { Dashboard } from "@/lib/dashboard";
-import type { ParsedSms } from "@/lib/sms";
+import { runPeriodicSync, syncAndNotify } from "./periodic-sync";
 
-import { findNewFinancialTransactions, runPeriodicSync, syncAndNotify } from "./periodic-sync";
-
-function transaction(id: string, date: number): ParsedSms {
-  const body = "INR 10 debited from account XX1234";
+// An arrival log stand-in: `sync` appends `arriving` transactions, and the
+// count reads how many arrived after a cursor — the same contract
+// db/caught-up-transactions.ts implements over sms_arrivals.
+function arrivals(existing: number, arriving: number) {
+  let head = existing;
   return {
-    id,
-    sender: "VM-HDFCBK",
-    body,
-    date,
-    result: createMalanaEngine().parse(body, "VM-HDFCBK"),
+    arrivalCursor: vi.fn(async () => head),
+    sync: vi.fn(async () => {
+      head += arriving;
+    }),
+    countTransactionsArrivedAfter: vi.fn(async (cursor: number) => head - cursor),
   };
 }
 
-function dashboard(recent: ParsedSms[]): Dashboard {
-  return {
-    accounts: [],
-    detectedAccounts: [],
-    banks: [],
-    monthIncomeByCurrency: {},
-    monthExpenseByCurrency: {},
-    subscriptions: [],
-    mandates: [],
-    mandatesByMerchant: [],
-    activity: recent,
-    recent,
-  };
-}
+const enabled = async () => ({ backgroundSyncEnabled: true, transactionNotificationsEnabled: true });
 
 describe("periodic financial sync policy", () => {
-  it("identifies only financial rows that were absent before the sync", () => {
-    const old = transaction("old", 1);
-    const added = transaction("new", 2);
-
-    expect(findNewFinancialTransactions(dashboard([old]), dashboard([added, old]))).toEqual([
-      added,
-    ]);
-  });
-
   it("does no inbox or notification work while background sync is disabled", async () => {
+    const log = arrivals(3, 1);
     const canSync = vi.fn();
-    const sync = vi.fn();
     const notify = vi.fn();
 
     const result = await runPeriodicSync({
-      getSettings: async () => ({
-        backgroundSyncEnabled: false,
-        transactionNotificationsEnabled: true,
-      }),
+      getSettings: async () => ({ backgroundSyncEnabled: false, transactionNotificationsEnabled: true }),
       canSync,
-      loadDashboard: async () => dashboard([]),
-      sync,
+      ...log,
       notify,
     });
 
     expect(result).toEqual({ status: "disabled", newFinancialTransactions: 0 });
-    expect(sync).not.toHaveBeenCalled();
     expect(canSync).not.toHaveBeenCalled();
+    expect(log.sync).not.toHaveBeenCalled();
     expect(notify).not.toHaveBeenCalled();
   });
 
   it("does no inbox or notification work after capture permission is revoked", async () => {
-    const loadDashboard = vi.fn();
-    const sync = vi.fn();
+    const log = arrivals(3, 1);
     const notify = vi.fn();
 
     const result = await runPeriodicSync({
-      getSettings: async () => ({
-        backgroundSyncEnabled: true,
-        transactionNotificationsEnabled: true,
-      }),
+      getSettings: enabled,
       canSync: async () => false,
-      loadDashboard,
-      sync,
+      ...log,
       notify,
     });
 
     expect(result).toEqual({ status: "permissions-missing", newFinancialTransactions: 0 });
-    expect(loadDashboard).not.toHaveBeenCalled();
-    expect(sync).not.toHaveBeenCalled();
+    expect(log.arrivalCursor).not.toHaveBeenCalled();
+    expect(log.sync).not.toHaveBeenCalled();
     expect(notify).not.toHaveBeenCalled();
   });
 
-  it("notifies once when enabled and the sync adds recognized financial activity", async () => {
-    const old = transaction("old", 1);
-    const added = transaction("new", 2);
+  it("notifies once when enabled and the sync adds financial transactions", async () => {
     const notify = vi.fn().mockResolvedValue(undefined);
 
     const result = await runPeriodicSync({
-      getSettings: async () => ({
-        backgroundSyncEnabled: true,
-        transactionNotificationsEnabled: true,
-      }),
+      getSettings: enabled,
       canSync: async () => true,
-      loadDashboard: async () => dashboard([old]),
-      sync: async () => dashboard([added, old]),
+      ...arrivals(3, 1),
       notify,
     });
 
     expect(result).toEqual({ status: "completed", newFinancialTransactions: 1 });
-    expect(notify).toHaveBeenCalledWith([added]);
+    expect(notify).toHaveBeenCalledWith(1);
   });
 
   it("does not notify for a sync that adds no financial transaction", async () => {
-    const same = dashboard([transaction("old", 1)]);
     const notify = vi.fn();
 
-    await runPeriodicSync({
-      getSettings: async () => ({
-        backgroundSyncEnabled: true,
-        transactionNotificationsEnabled: true,
-      }),
-      canSync: async () => true,
-      loadDashboard: async () => same,
-      sync: async () => same,
-      notify,
-    });
+    await runPeriodicSync({ getSettings: enabled, canSync: async () => true, ...arrivals(3, 0), notify });
 
     expect(notify).not.toHaveBeenCalled();
   });
 
-  // syncAndNotify is the sequence both runPeriodicSync (above) and the
-  // real-time SMS-broadcast path (provider.native.tsx's notifyRealtimeSync
-  // — untestable directly under Vitest, since it transitively imports
-  // react-native, same reason lib/sms.ts's own module can't be either)
-  // share. Tested here directly, not just through runPeriodicSync's
-  // gating, since the real-time caller invokes it without that gating at
-  // all — its own permission/subscription checks happen upstream instead.
   describe("syncAndNotify", () => {
-    it("passes the already-loaded dashboard into sync so a no-op sync can reuse it", async () => {
-      const before = dashboard([transaction("old", 1)]);
-      const sync = vi.fn(async (currentDashboard: Dashboard) => currentDashboard);
-
+    it("reads the cursor before syncing, so only this sync's arrivals count", async () => {
+      const order: string[] = [];
       await syncAndNotify({
-        loadDashboard: async () => before,
-        sync,
+        arrivalCursor: async () => {
+          order.push("cursor");
+          return 0;
+        },
+        sync: async () => {
+          order.push("sync");
+        },
+        countTransactionsArrivedAfter: async () => {
+          order.push("count");
+          return 0;
+        },
         transactionNotificationsEnabled: true,
         notify: vi.fn(),
       });
 
-      expect(sync).toHaveBeenCalledWith(before);
+      expect(order).toEqual(["cursor", "sync", "count"]);
     });
 
-    it("notifies with exactly the newly-added financial transactions when enabled", async () => {
-      const old = transaction("old", 1);
-      const added = transaction("new", 2);
-      const notify = vi.fn().mockResolvedValue(undefined);
-
-      const result = await syncAndNotify({
-        loadDashboard: async () => dashboard([old]),
-        sync: async () => dashboard([added, old]),
-        transactionNotificationsEnabled: true,
-        notify,
-      });
-
-      expect(notify).toHaveBeenCalledWith([added]);
-      expect(result.newFinancialTransactions).toEqual([added]);
-      expect(result.dashboard).toEqual(dashboard([added, old]));
-    });
-
-    it("does not notify when transactionNotificationsEnabled is false, even with new activity", async () => {
-      const old = transaction("old", 1);
-      const added = transaction("new", 2);
+    it("counts new transactions but does not notify when notifications are off", async () => {
       const notify = vi.fn();
 
       const result = await syncAndNotify({
-        loadDashboard: async () => dashboard([old]),
-        sync: async () => dashboard([added, old]),
+        ...arrivals(3, 2),
         transactionNotificationsEnabled: false,
         notify,
       });
 
       expect(notify).not.toHaveBeenCalled();
-      // The sync itself, and the diff it returns to the caller, still
-      // happen regardless of the notification preference — only the
-      // notify() call is gated, not the sync/diff work itself.
-      expect(result.newFinancialTransactions).toEqual([added]);
+      expect(result.newFinancialTransactions).toBe(2);
     });
 
-    it("treats a message present both before and after as not new (duplicate suppression)", async () => {
-      const seen = transaction("seen", 1);
-      const notify = vi.fn();
-
-      const result = await syncAndNotify({
-        loadDashboard: async () => dashboard([seen]),
-        sync: async () => dashboard([seen]), // same id, re-synced
-        transactionNotificationsEnabled: true,
-        notify,
-      });
-
-      expect(notify).not.toHaveBeenCalled();
-      expect(result.newFinancialTransactions).toEqual([]);
-    });
-
-    it("coalesces a burst of several new messages from one sync into a single notify() call", async () => {
-      const old = transaction("old", 1);
-      const burst = [transaction("b1", 2), transaction("b2", 3), transaction("b3", 4)];
+    it("coalesces a burst of several new transactions from one sync into a single notify() call", async () => {
       const notify = vi.fn().mockResolvedValue(undefined);
 
       const result = await syncAndNotify({
-        loadDashboard: async () => dashboard([old]),
-        sync: async () => dashboard([...burst, old]),
+        ...arrivals(1, 3),
         transactionNotificationsEnabled: true,
         notify,
       });
 
       expect(notify).toHaveBeenCalledTimes(1);
-      expect(notify).toHaveBeenCalledWith(burst);
-      expect(result.newFinancialTransactions).toEqual(burst);
+      expect(notify).toHaveBeenCalledWith(3);
+      expect(result.newFinancialTransactions).toBe(3);
     });
   });
 });

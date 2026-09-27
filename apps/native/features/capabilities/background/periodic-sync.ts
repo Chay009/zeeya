@@ -1,17 +1,22 @@
-import type { Dashboard } from "@/lib/dashboard";
-import type { ParsedSms } from "@/lib/sms";
-
 interface PeriodicSyncSettings {
   backgroundSyncEnabled: boolean;
   transactionNotificationsEnabled: boolean;
 }
 
-interface PeriodicSyncDependencies {
+export interface SyncAndNotifyDependencies {
+  /** Head of the append-only arrival log before syncing (db/caught-up-transactions.ts). */
+  arrivalCursor(): Promise<number>;
+  sync(): Promise<void>;
+  /** Projected transactions whose SMS arrived after the cursor. */
+  countTransactionsArrivedAfter(cursor: number): Promise<number>;
+  transactionNotificationsEnabled: boolean;
+  notify(count: number): Promise<void>;
+}
+
+interface PeriodicSyncDependencies
+  extends Omit<SyncAndNotifyDependencies, "transactionNotificationsEnabled"> {
   getSettings(): Promise<PeriodicSyncSettings>;
   canSync(): Promise<boolean>;
-  loadDashboard(): Promise<Dashboard>;
-  sync(currentDashboard: Dashboard): Promise<Dashboard>;
-  notify(transactions: ParsedSms[]): Promise<void>;
 }
 
 export interface PeriodicSyncResult {
@@ -19,41 +24,22 @@ export interface PeriodicSyncResult {
   newFinancialTransactions: number;
 }
 
-export function findNewFinancialTransactions(before: Dashboard, after: Dashboard): ParsedSms[] {
-  const existingIds = new Set(before.recent.map((message) => message.id));
-  return after.recent.filter((message) => !existingIds.has(message.id));
-}
-
-export interface SyncAndNotifyDependencies {
-  loadDashboard(): Promise<Dashboard>;
-  sync(currentDashboard: Dashboard): Promise<Dashboard>;
-  transactionNotificationsEnabled: boolean;
-  notify(transactions: ParsedSms[]): Promise<void>;
-}
-
-export interface SyncAndNotifyResult {
-  dashboard: Dashboard;
-  newFinancialTransactions: ParsedSms[];
-}
-
-// The load-before/sync/load-after/diff/notify sequence, factored out so
-// both the 15-minute background task (via runPeriodicSync below) and the
-// real-time SMS-broadcast path (features/capabilities/provider.native.tsx)
-// share one implementation instead of two independently-maintained copies
-// that could drift — e.g. one path forgetting the notifications-enabled
-// check, or diffing dashboards differently.
+// cursor → sync → count-arrived-after → notify. "New" means a transaction
+// whose SMS this install ingested during the sync — read from the
+// append-only arrival log, so it costs two indexed reads instead of deriving
+// the whole dashboard before and after and diffing them. A re-synced SMS
+// that was already ingested has no new arrival, so duplicates can't notify.
 export async function syncAndNotify(
   dependencies: SyncAndNotifyDependencies,
-): Promise<SyncAndNotifyResult> {
-  const before = await dependencies.loadDashboard();
-  const after = await dependencies.sync(before);
-  const added = findNewFinancialTransactions(before, after);
+): Promise<{ newFinancialTransactions: number }> {
+  const cursor = await dependencies.arrivalCursor();
+  await dependencies.sync();
+  const added = await dependencies.countTransactionsArrivedAfter(cursor);
 
-  if (dependencies.transactionNotificationsEnabled && added.length > 0) {
+  if (dependencies.transactionNotificationsEnabled && added > 0) {
     await dependencies.notify(added);
   }
-
-  return { dashboard: after, newFinancialTransactions: added };
+  return { newFinancialTransactions: added };
 }
 
 // Platform-independent orchestration used by the Expo background-task
@@ -73,11 +59,12 @@ export async function runPeriodicSync(
   }
 
   const { newFinancialTransactions } = await syncAndNotify({
-    loadDashboard: dependencies.loadDashboard,
+    arrivalCursor: dependencies.arrivalCursor,
     sync: dependencies.sync,
+    countTransactionsArrivedAfter: dependencies.countTransactionsArrivedAfter,
     transactionNotificationsEnabled: settings.transactionNotificationsEnabled,
     notify: dependencies.notify,
   });
 
-  return { status: "completed", newFinancialTransactions: newFinancialTransactions.length };
+  return { status: "completed", newFinancialTransactions };
 }

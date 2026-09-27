@@ -9,7 +9,8 @@
 // N + 1" case Step 5 warns against. This is the read-projection-revision,
 // run-the-queries, re-read-the-revision, retry-if-it-changed pattern that
 // closes that gap for any composed read spanning more than one query.
-import { ensureDashboardProjectionCurrent, getProjectionStatus } from "./ingestion";
+import { ensureProjectionReadable, getProjectionStatus } from "./ingestion";
+import { isIngestionActive } from "./single-flight";
 
 const MAX_SNAPSHOT_ATTEMPTS = 5;
 
@@ -51,13 +52,19 @@ const MAX_SNAPSHOT_ATTEMPTS = 5;
 // ATTEMPTS times in a row, and an unbounded retry against a broken/looping
 // publisher would hang a screen read forever instead of surfacing a real
 // error.
+//
+// Exception — a writer is active (isIngestionActive): the source is ahead
+// because a sync is mid-drain, not because a publish was lost. Readers then
+// serve the last published revision (still one atomic, consistent snapshot)
+// instead of queuing behind the whole sync; the writer's publish notifies
+// db/data-changes.ts and screens re-read.
 export async function readConsistentSnapshot<T>(read: () => Promise<T>): Promise<T> {
   let attempt = 0;
   for (;;) {
     attempt++;
-    await ensureDashboardProjectionCurrent();
+    await ensureProjectionReadable();
     const before = await getProjectionStatus();
-    if (before.sourceRevision !== before.projectedRevision) {
+    if (before.sourceRevision !== before.projectedRevision && !isIngestionActive()) {
       if (attempt >= MAX_SNAPSHOT_ATTEMPTS) {
         throw new Error(
           `Projection is still catching up (source revision ${before.sourceRevision}, projected revision ${before.projectedRevision}) after ${MAX_SNAPSHOT_ATTEMPTS} consecutive attempts. Not returning a result read against a stale projection.`,
@@ -68,8 +75,8 @@ export async function readConsistentSnapshot<T>(read: () => Promise<T>): Promise
     const result = await read();
     const after = await getProjectionStatus();
     if (
-      after.sourceRevision === after.projectedRevision &&
-      after.projectedRevision === before.projectedRevision
+      after.projectedRevision === before.projectedRevision &&
+      (after.sourceRevision === after.projectedRevision || isIngestionActive())
     ) {
       return result;
     }

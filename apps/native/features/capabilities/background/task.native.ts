@@ -3,8 +3,8 @@ import * as TaskManager from "expo-task-manager";
 import { migrate } from "drizzle-orm/expo-sqlite/migrator";
 import { Platform } from "react-native";
 
+import { countTransactionsArrivedAfter, latestArrivalSequence } from "@/db/caught-up-transactions";
 import { db } from "@/db/client";
-import { loadDashboard } from "@/db/ingestion";
 import migrations from "@/db/migrations/migrations";
 import { getLocalSettings } from "@/db/settings";
 import { syncDeviceMessages } from "@/lib/device-message-sync";
@@ -29,14 +29,15 @@ if (!TaskManager.isTaskDefined(BACKGROUND_SYNC_TASK)) {
         getSettings: getLocalSettings,
         canSync: () =>
           Platform.OS === "android" ? hasSmsCapturePermissions() : Promise.resolve(true),
-        loadDashboard,
-        sync: async (currentDashboard) => {
+        arrivalCursor: latestArrivalSequence,
+        sync: async () => {
           syncState.pendingSignal =
             Platform.OS === "android" && AndroidMessageQueueModule
               ? await AndroidMessageQueueModule.peekPendingSmsSignal()
               : null;
-          return syncDeviceMessages({ currentDashboard });
+          await syncDeviceMessages();
         },
+        countTransactionsArrivedAfter,
         notify: notifyNewFinancialTransactions,
       });
       if (result.status === "completed" && syncState.pendingSignal && AndroidMessageQueueModule) {

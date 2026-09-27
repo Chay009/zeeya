@@ -1,73 +1,54 @@
 import type { InsightsOverviewQuery } from "@/lib/dashboard-data";
 
+// Keys name WHAT a local read returns — never a revision or a timestamp.
+// Freshness is lib/live-queries.ts's job: it invalidates the "local" root
+// when a write commits or the day rolls over, and query functions read the
+// clock themselves when they run. A timestamp in a key would make every
+// mount a cache miss; a revision in a key would blank the screen on sync.
+
 export const localQueryKeys = {
-  homeReadModel: (currency: string, syncRevision: number) =>
-    ["local", "home-read-model", currency, syncRevision] as const,
-  homeHighlights: (
-    query: {
-      currency: string;
-      at: number;
-      accountId?: string;
-      recentLimit?: number;
-      upcomingLimit?: number;
-    },
-    syncRevision: number,
-  ) =>
+  homeReadModel: (currency: string) => ["local", "home-read-model", currency] as const,
+  homeHighlights: (query: {
+    currency: string;
+    accountId?: string;
+    recentLimit?: number;
+    upcomingLimit?: number;
+  }) =>
     [
       "local",
       "home-highlights",
       query.currency,
-      query.at,
       query.accountId ?? "all",
       query.recentLimit ?? "default",
       query.upcomingLimit ?? "default",
-      syncRevision,
     ] as const,
-  insightsOverview: (query: InsightsOverviewQuery, syncRevision: number) =>
+  insightsOverview: (query: Omit<InsightsOverviewQuery, "at">) =>
     [
       "local",
       "insights-overview",
       query.currency,
-      query.at,
       query.dailyBudgetMinorUnits ?? "none",
       query.historyMonths ?? "default",
       query.limit ?? "default",
-      syncRevision,
     ] as const,
-  recentTransactions: (
-    direction: "income" | "expense",
-    currency: string,
-    limit: number,
-    syncRevision: number,
-  ) =>
-    ["local", "recent-transactions", "mapped", direction, currency, limit, syncRevision] as const,
-  detail: (
-    scope: "transaction" | "activity" | "subscription" | "detail",
-    id: string,
-    syncRevision: number,
-  ) => ["local", "detail", scope, id, syncRevision] as const,
-  series: (name: string, syncRevision: number, deps: readonly unknown[]) =>
-    ["local", "series", name, syncRevision, ...deps] as const,
+  recentTransactions: (direction: "income" | "expense", currency: string, limit: number) =>
+    ["local", "recent-transactions", "mapped", direction, currency, limit] as const,
+  detail: (scope: "transaction" | "activity" | "subscription" | "detail", id: string) =>
+    ["local", "detail", scope, id] as const,
+  series: (name: string, deps: readonly unknown[]) => ["local", "series", name, ...deps] as const,
   // Scope (category · account · limit) sits at a fixed index so hooks can
   // compare it against a previous key without parsing.
-  recentActivity: (
-    scope: { category?: string; accountId?: string; limit?: number },
-    syncRevision: number,
-  ) =>
+  recentActivity: (scope: { category?: string; accountId?: string; limit?: number }) =>
     [
       "local",
       "recent-activity",
       `${scope.category ?? "all"}:${scope.accountId ?? "all-accounts"}:${scope.limit ?? "default"}`,
-      syncRevision,
     ] as const,
-  activityScope: (accountId: string, syncRevision: number) =>
-    ["local", "activity-scope", accountId, syncRevision] as const,
-  accountCashflowScope: (accountId: string, currency: string, at: number, syncRevision: number) =>
-    ["local", "account-cashflow-scope", accountId, currency, at, syncRevision] as const,
-  subscriptionsCatalog: (syncRevision: number) =>
-    ["local", "subscriptions-catalog", syncRevision] as const,
-  dashboardCurrencies: (syncRevision: number) =>
-    ["local", "dashboard-currencies", syncRevision] as const,
-  dayTransactions: (dayStartMs: number, currency: string, syncRevision: number) =>
-    ["local", "day-transactions", dayStartMs, currency, syncRevision] as const,
+  activityScope: (accountId: string) => ["local", "activity-scope", accountId] as const,
+  accountCashflowScope: (accountId: string, currency: string) =>
+    ["local", "account-cashflow-scope", accountId, currency] as const,
+  subscriptionsCatalog: () => ["local", "subscriptions-catalog"] as const,
+  dashboardCurrencies: () => ["local", "dashboard-currencies"] as const,
+  dayTransactions: (dayStartMs: number, currency: string) =>
+    ["local", "day-transactions", dayStartMs, currency] as const,
 };

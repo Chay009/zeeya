@@ -18,19 +18,8 @@ export function normalizeCurrencyCodes(currencies: readonly string[]): string[] 
   return [...unique];
 }
 
-// The primary currency the read model reported, remembered for the session so
-// Home (and the boot cache) start with it on the next mount instead of
-// loading INR first and then reloading in the real currency.
-let rememberedPrimary = "INR";
-
-export function rememberedPrimaryCurrency(): string {
-  return rememberedPrimary;
-}
-
-export function rememberPrimaryCurrency(currency: string | undefined): void {
-  const trimmed = currency?.trim();
-  if (trimmed) rememberedPrimary = trimmed;
-}
+/** Product default when no currency has been seen yet (an empty ledger). */
+export const DEFAULT_CURRENCY = "INR";
 
 /**
  * Put a known product/account primary first without changing the deterministic

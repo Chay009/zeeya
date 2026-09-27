@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "@/components/app-text";
 import { useDashboardSync } from "@/features/dashboard/hooks/dashboard-sync-provider";
+import { useDerivedDashboard } from "@/features/dashboard/hooks/use-derived-dashboard";
 import { TransactionDetail } from "@/features/home-preview/components/transaction-detail";
 import { createHomePreviewData } from "@/features/home-preview/data";
 
@@ -30,7 +31,8 @@ function LegacyTransactionParserDumpBody({
   topInset: number;
 }) {
   const router = useRouter();
-  const { dashboard, status } = useDashboardSync();
+  const { status } = useDashboardSync();
+  const dashboard = useDerivedDashboard();
   const homeData = useMemo(
     () => createHomePreviewData(dashboard, status === "ready"),
     [dashboard, status],

@@ -1,7 +1,6 @@
 // Shared lifecycle for bounded-read-model detail routes. TanStack Query
-// caches each id so revisiting a row feels instant and sync revisions
+// caches each id so revisiting a row feels instant and data changes
 // refresh in the background without blanking the screen.
-import { useDashboardSync } from "@/features/dashboard/hooks/dashboard-sync-provider";
 import { localQueryKeys } from "@/lib/local-query-keys";
 import { useLocalQuery } from "@/lib/use-local-query";
 
@@ -18,12 +17,14 @@ export function useDetail<T>(
   id: string,
   fetch: (id: string) => Promise<T | null>,
   scope: "transaction" | "activity" | "subscription" | "detail" = "detail",
+  /** Seed from data already cached elsewhere, so the push renders content on frame one. */
+  seed?: (id: string) => T | undefined,
 ): DetailState<T> {
-  const { syncRevision } = useDashboardSync();
-  const { data, error, isInitialLoading } = useLocalQuery({
-    queryKey: localQueryKeys.detail(scope, id, syncRevision),
+  const { data, error, isInitialLoading } = useLocalQuery<T | null>({
+    queryKey: localQueryKeys.detail(scope, id),
     queryFn: () => fetch(id),
     enabled: id.length > 0,
+    initialData: seed && id ? () => seed(id) : undefined,
   });
 
   if (!id) {

@@ -15,10 +15,12 @@ import type {
   TransactionSummary,
 } from "../lib/dashboard-data";
 import type { ParsedSms, RawSms } from "../lib/sms";
-import { db } from "./client";
+import { aliasedColumns, selectAsync } from "./async-select";
+import { db, sqlite } from "./client";
 import { replaceProjection } from "./projections";
-import { withIngestionLock } from "./single-flight";
+import { isIngestionActive, withIngestionLock } from "./single-flight";
 import {
+  DASHBOARD_PROJECTION_ID,
   identityConflicts,
   projectionState,
   smsArrivals,
@@ -27,9 +29,9 @@ import {
   transactions,
 } from "./schema";
 import type { Database } from "./client.native";
+import type { AsyncQueryClient } from "./queries";
 
 const engine = createMalanaEngine();
-const DASHBOARD_PROJECTION_ID = "dashboard";
 const MAX_PROJECTION_PUBLISH_ATTEMPTS = 3;
 
 function requireDb(): Database {
@@ -40,6 +42,16 @@ function requireDb(): Database {
     );
   }
   return db;
+}
+
+function requireSqlite(): AsyncQueryClient {
+  if (!sqlite) {
+    throw new Error(
+      "Local database is not available on this platform (see db/client.web.ts) — " +
+        "SMS ingestion is Android-only, so this should never be called on web.",
+    );
+  }
+  return sqlite;
 }
 
 type ProjectionStateDatabase = Pick<Database, "insert" | "select" | "update">;
@@ -81,9 +93,17 @@ export interface ProjectionStatus {
   projectedRevision: number;
 }
 
+// The state row only needs creating once per database — doing it on every
+// status read made every screen read issue a write (and take the write lock)
+// two or three times.
+const projectionStateRowReady = new WeakSet<object>();
+
 export async function getProjectionStatus(): Promise<ProjectionStatus> {
   const database = requireDb();
-  ensureProjectionStateRow(database);
+  if (!projectionStateRowReady.has(database)) {
+    ensureProjectionStateRow(database);
+    projectionStateRowReady.add(database);
+  }
   const row = database
     .select({
       sourceRevision: projectionState.sourceRevision,
@@ -826,16 +846,28 @@ export async function markInitialScanCompleted(at: number): Promise<void> {
 // mandates tables remains a separate caching optimization. Dashboard
 // correctness still comes from the ledger and deriveDashboard().
 async function reprocessStaleLedgerRows(database: Database): Promise<void> {
-  const staleRows = await database
-    .select({
-      id: smsLedger.id,
-      providerId: smsLedger.providerId,
-      sender: smsLedger.sender,
-      body: smsLedger.body,
-      date: smsLedger.date,
-    })
-    .from(smsLedger)
-    .where(ne(smsLedger.parserVersion, PARSER_VERSION));
+  // Runs on every refresh and usually finds nothing — async so the ledger
+  // scan it takes to prove that never blocks the JS thread.
+  const staleRows = await selectAsync<{
+    id: string;
+    providerId: string | null;
+    sender: string;
+    body: string;
+    date: number;
+  }>(
+    database
+      .select(
+        aliasedColumns({
+          id: smsLedger.id,
+          providerId: smsLedger.providerId,
+          sender: smsLedger.sender,
+          body: smsLedger.body,
+          date: smsLedger.date,
+        }),
+      )
+      .from(smsLedger)
+      .where(ne(smsLedger.parserVersion, PARSER_VERSION)),
+  );
 
   for (const batch of chunk(staleRows, PARSE_YIELD_EVERY)) {
     const reparsed = batch.map((row) => ({
@@ -872,17 +904,70 @@ async function reprocessStaleLedgerRows(database: Database): Promise<void> {
 // projection write need, so there is
 // exactly one definition of "how the ledger's cached JSON becomes the
 // messages deriveDashboard() consumes."
+//
+// Decoded messages are cached per database: a ledger row's content is fixed
+// by its id (the id IS the content fingerprint) and its parse by
+// parse_revision (bumped by a trigger on every parse-column update, by any
+// writer — see schema.ts), so a refresh lists just (id, parse_revision) and
+// fetches/JSON-decodes only rows it hasn't seen at that revision — a new SMS
+// costs one decode, not one per message ever received.
+// Both reads run on expo-sqlite's async API (native side), and rowid order
+// is kept explicitly because deriveDashboard's stable sorts break ties by
+// input order. The cache lives in memory only (never persisted), and
+// cached messages are frozen so deriveDashboard can't mutate one publish's
+// input into the next.
+interface CachedLedgerMessage {
+  parseRevision: number;
+  message: ParsedSms | null;
+}
+
+const decodedLedgerCache = new WeakMap<object, Map<string, CachedLedgerMessage>>();
+const LEDGER_FETCH_CHUNK = 400;
+
 async function readAllLedgerMessages(database: Database): Promise<ParsedSms[]> {
-  const rows = await database.select().from(smsLedger);
+  const client = requireSqlite();
+  const cache = decodedLedgerCache.get(database) ?? new Map<string, CachedLedgerMessage>();
+  decodedLedgerCache.set(database, cache);
+
+  const index = await client.getAllAsync<{ id: string; parseRevision: number }>(
+    `SELECT id, parse_revision AS parseRevision FROM sms_ledger ORDER BY rowid`,
+    [],
+  );
+
+  const stale = index.filter((row) => cache.get(row.id)?.parseRevision !== row.parseRevision);
+  for (let start = 0; start < stale.length; start += LEDGER_FETCH_CHUNK) {
+    const ids = stale.slice(start, start + LEDGER_FETCH_CHUNK).map((row) => row.id);
+    const rows = await client.getAllAsync<LedgerMessageRow & { parseRevision: number }>(
+      `SELECT id, sender, body, date, parser_version AS parserVersion,
+              parsed_result AS parsedResult, ingestion_status AS ingestionStatus,
+              parse_revision AS parseRevision
+       FROM sms_ledger WHERE id IN (${ids.map(() => "?").join(", ")})`,
+      ids,
+    );
+    for (const row of rows) {
+      const message = decodeLedgerMessage(row);
+      cache.set(row.id, {
+        parseRevision: row.parseRevision,
+        message: message ? Object.freeze({ ...message, result: Object.freeze(message.result) }) : null,
+      });
+    }
+  }
+
+  const present = new Set(index.map((row) => row.id));
+  for (const id of cache.keys()) if (!present.has(id)) cache.delete(id);
+
   const messages: ParsedSms[] = [];
-  for (const row of rows) {
-    const message = decodeLedgerMessage(row);
+  for (const row of index) {
+    const message = cache.get(row.id)?.message;
     if (message) messages.push(message);
   }
   return messages;
 }
 
-type LedgerMessageRow = typeof smsLedger.$inferSelect;
+type LedgerMessageRow = Pick<
+  typeof smsLedger.$inferSelect,
+  "id" | "sender" | "body" | "date" | "parserVersion" | "parsedResult" | "ingestionStatus"
+>;
 
 function decodeLedgerMessage(row: LedgerMessageRow): ParsedSms | null {
   if (row.ingestionStatus !== "parsed" || !row.parsedResult) return null;
@@ -968,12 +1053,31 @@ export async function refreshDashboardProjection(now: Date = new Date()): Promis
   );
 }
 
-export function ensureDashboardProjectionCurrent(): Promise<void> {
+export async function ensureDashboardProjectionCurrent(): Promise<void> {
+  // Fast path, no lock: the common case is a projection that is already
+  // current. Taking the lock here would queue every screen read behind a
+  // running inbox sync — the whole scan — even though nothing is stale.
+  const status = await getProjectionStatus();
+  if (status.projectedRevision === status.sourceRevision) return;
+  return repairDashboardProjection();
+}
+
+// Reader-side gate. While a writer is active, the published projection is
+// the last consistent state and the writer will publish (and notify
+// db/data-changes.ts) when it finishes — so readers serve that state now
+// instead of waiting out a sync. Only a mismatch with no writer active
+// (an interrupted publish) is repaired before reading.
+export async function ensureProjectionReadable(): Promise<void> {
+  if (isIngestionActive()) return;
+  return ensureDashboardProjectionCurrent();
+}
+
+function repairDashboardProjection(): Promise<void> {
   // A multi-page sync deliberately leaves sourceRevision ahead of the
-  // projection until its final page. Queue readers behind that writer rather
-  // than interpreting the temporary mismatch as a crash and publishing a
-  // partial inbox. If no writer is active, the same mismatch is durable proof
-  // of an interrupted publish and is repaired here.
+  // projection until its final page. Queue the repair behind that writer
+  // rather than interpreting the temporary mismatch as a crash and publishing
+  // a partial inbox. If no writer is active, the same mismatch is durable
+  // proof of an interrupted publish and is repaired here.
   return withIngestionLock(async () => {
     const status = await getProjectionStatus();
     if (status.projectedRevision === status.sourceRevision) return;
@@ -1010,7 +1114,7 @@ function transactionConditions(filters: TransactionFilters): SQL[] {
 // and deriving the entire dashboard for a transaction-list query.
 export async function loadTransactions(filters: TransactionFilters = {}): Promise<ParsedSms[]> {
   const database = requireDb();
-  await ensureDashboardProjectionCurrent();
+  await ensureProjectionReadable();
 
   const rows = await database
     .select({ ledger: smsLedger })
@@ -1052,7 +1156,7 @@ export async function queryTransactionPage(
   }
 
   const database = requireDb();
-  await ensureDashboardProjectionCurrent();
+  await ensureProjectionReadable();
   const conditions = transactionConditions(query);
   if (query.cursor) {
     conditions.push(
@@ -1063,12 +1167,17 @@ export async function queryTransactionPage(
     );
   }
 
-  const rows = await database
-    .select(TRANSACTION_SUMMARY_COLUMNS)
-    .from(transactions)
-    .where(and(...conditions))
-    .orderBy(desc(transactions.date), desc(transactions.id))
-    .limit(limit + 1);
+  // Built with Drizzle, executed async (db/async-select.ts) — this is a
+  // screen read (Insights' recent transactions), so it must not block the JS
+  // thread. Served by transactions_currency_direction_date_id_idx.
+  const rows = await selectAsync<TransactionSummary>(
+    database
+      .select(aliasedColumns(TRANSACTION_SUMMARY_COLUMNS))
+      .from(transactions)
+      .where(and(...conditions))
+      .orderBy(desc(transactions.date), desc(transactions.id))
+      .limit(limit + 1),
+  );
 
   const hasMore = rows.length > limit;
   const visibleRows = hasMore ? rows.slice(0, limit) : rows;

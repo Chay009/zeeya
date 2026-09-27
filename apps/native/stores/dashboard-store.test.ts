@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CaughtUpTransactionBatch } from "@/db/caught-up-transactions";
-import { deriveDashboard } from "@/lib/dashboard";
 
 // start() performs one process-start catch-up and subscribes to completed
 // sync publications. Route visits and AppState transitions must never start
@@ -18,14 +17,9 @@ const dependencies = vi.hoisted(() => {
     }),
     isSupported: vi.fn(() => true),
     requiresPermission: vi.fn(() => false),
-    syncDeviceMessages: vi.fn(async () => deriveDashboard([])),
+    syncDeviceMessages: vi.fn(async (): Promise<void> => undefined),
     hasSmsReadPermission: vi.fn(async () => true),
     requestSmsCapturePermissions: vi.fn(async () => true),
-    loadAggregates: vi.fn(async () => ({
-      monthTotals: { incomeByCurrency: {}, expenseByCurrency: {} },
-      categoryTotalsByCurrency: {},
-    })),
-    listCurrencies: vi.fn(async () => [] as string[]),
     queryCaughtUpTransactions: vi.fn(
       async (): Promise<CaughtUpTransactionBatch> => ({
         items: [],
@@ -57,15 +51,6 @@ vi.mock("@/lib/sms", () => ({
   requestSmsCapturePermissions: dependencies.requestSmsCapturePermissions,
 }));
 
-vi.mock("@/features/dashboard/dashboard-data-source", () => ({
-  financeDataSource: {
-    dashboard: {
-      loadAggregates: dependencies.loadAggregates,
-      listCurrencies: dependencies.listCurrencies,
-    },
-  },
-}));
-
 // The store remembers whether it already started, so each test needs its own
 // copy of the module.
 async function freshStore() {
@@ -93,7 +78,7 @@ describe("dashboardStore sync lifecycle", () => {
     dependencies.appStateListeners.clear();
     dependencies.isSupported.mockReturnValue(true);
     dependencies.requiresPermission.mockReturnValue(false);
-    dependencies.syncDeviceMessages.mockImplementation(async () => deriveDashboard([]));
+    dependencies.syncDeviceMessages.mockImplementation(async () => undefined);
     dependencies.queryCaughtUpTransactions.mockResolvedValue({
       items: [],
       total: 0,
@@ -149,7 +134,7 @@ describe("dashboardStore sync lifecycle", () => {
 
     // New messages should no longer reach the store either.
     useDashboardStore.setState({ status: "checking" });
-    publishMessageSync(deriveDashboard([]));
+    publishMessageSync();
     await flush();
     expect(useDashboardStore.getState().status).toBe("checking");
   });
@@ -170,7 +155,7 @@ describe("dashboardStore sync lifecycle", () => {
     expect(dependencies.appStateListeners.size).toBe(1);
 
     useDashboardStore.setState({ status: "checking" });
-    publishMessageSync(deriveDashboard([]));
+    publishMessageSync();
     await flush();
     expect(useDashboardStore.getState().status).toBe("ready");
   });
@@ -183,7 +168,6 @@ describe("dashboardStore sync lifecycle", () => {
       await new Promise<void>((resolve) => {
         releaseSync = resolve;
       });
-      return deriveDashboard([]);
     });
 
     const stop = useDashboardStore.getState().start();
@@ -201,14 +185,9 @@ describe("dashboardStore sync lifecycle", () => {
     expect(useDashboardStore.getState().status).toBe("checking");
   });
 
-  // Regression coverage for the bug the review found: a screen (Insights)
-  // keying its own SQL query dependencies on syncRevision must actually see
-  // it change on every projection publish, not just once at startup —
-  // otherwise a same-currency refresh would silently leave those queries
-  // stale forever. Every applyDashboard() call (initial load and each later
-  // publishMessageSync() push) must bump it, since either can represent a
-  // freshly-synced Dashboard the currency/tab-keyed screen state doesn't
-  // capture on its own.
+  // syncRevision's remaining reader (settings account counts) keys its reload
+  // on it, so every completed sync — initial load and each later
+  // publishMessageSync() push — must bump it, not just the first.
   it("bumps syncRevision on the initial load and again on every later message-sync push, even with nothing else changing", async () => {
     const { useDashboardStore, publishMessageSync } = await freshStore();
 
@@ -222,12 +201,12 @@ describe("dashboardStore sync lifecycle", () => {
     // Simulates a foreground/pull-to-refresh sync that republishes a
     // projection with no change to currency or direction — exactly the
     // case that used to leave Insights' charts stale.
-    publishMessageSync(deriveDashboard([]));
+    publishMessageSync();
     await flush();
     expect(useDashboardStore.getState().syncRevision).toBeGreaterThan(afterInitialLoad);
 
     const afterSecondPush = useDashboardStore.getState().syncRevision;
-    publishMessageSync(deriveDashboard([]));
+    publishMessageSync();
     await flush();
     expect(useDashboardStore.getState().syncRevision).toBeGreaterThan(afterSecondPush);
   });
@@ -267,7 +246,7 @@ describe("dashboardStore sync lifecycle", () => {
       total: 0,
       throughSequence: 12,
     });
-    await useDashboardStore.getState().dismissNewSinceLastView();
+    await useDashboardStore.getState().dismissCaughtUp();
     // A newer arrival racing with the dismiss was not part of the rendered
     // batch and must remain unseen for the next refresh.
     expect(dependencies.acknowledgeCaughtUpTransactions).toHaveBeenCalledWith(7);
@@ -285,11 +264,32 @@ describe("dashboardStore sync lifecycle", () => {
       total: 1,
       throughSequence: 9,
     });
-    publishMessageSync(deriveDashboard([]));
+    publishMessageSync();
     await flush();
 
     expect(useDashboardStore.getState().caughtUpTransactions.throughSequence).toBe(9);
-    await useDashboardStore.getState().dismissNewSinceLastView();
+    await useDashboardStore.getState().dismissCaughtUp();
     expect(dependencies.acknowledgeCaughtUpTransactions).toHaveBeenLastCalledWith(9);
+  });
+
+  // Regression: pull-to-refresh used to overwrite the unseen batch with an
+  // empty one, so transactions a refresh brought in never reached the dialog.
+  it("reads the unseen batch after a pull-to-refresh instead of clearing it", async () => {
+    const { useDashboardStore } = await freshStore();
+    useDashboardStore.getState().start();
+    await flush();
+
+    dependencies.queryCaughtUpTransactions.mockResolvedValue({
+      items: [],
+      total: 2,
+      throughSequence: 15,
+    });
+    await useDashboardStore.getState().onRefresh();
+
+    expect(useDashboardStore.getState().caughtUpTransactions).toMatchObject({
+      total: 2,
+      throughSequence: 15,
+    });
+    expect(useDashboardStore.getState().refreshing).toBe(false);
   });
 });

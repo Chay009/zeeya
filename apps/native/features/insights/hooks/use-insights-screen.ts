@@ -3,11 +3,10 @@ import { useMemo, useState } from "react";
 import { useDashboardSync } from "@/features/dashboard/hooks/dashboard-sync-provider";
 import { formatMoney } from "@/features/dashboard/utils/format";
 import { fromMinorUnits } from "@/lib/currency";
-import { useSyncAnchor } from "@/lib/sync-anchor";
+import { useToday } from "@/lib/today";
 
 import {
   elapsedDaysInCurrentMonth,
-  usesDailySeries,
   type AnalyticsDirection,
   type AnalyticsTab,
   type InsightsTimeScope,
@@ -38,8 +37,12 @@ const EMPTY_COMPARISON: MonthlySpendComparison = {
 };
 
 export function useInsightsScreen() {
-  const { status, error, progress, refreshing, onRefresh, connect, syncRevision } =
-    useDashboardSync();
+  // Only what Analytics renders: pull-to-refresh. Sync status/progress would
+  // re-render the whole tab on every inbox page of a running scan.
+  const { refreshing, onRefresh } = useDashboardSync((state) => ({
+    refreshing: state.refreshing,
+    onRefresh: state.onRefresh,
+  }));
   const {
     currencies: sqlCurrencies,
     status: currenciesStatus,
@@ -54,10 +57,10 @@ export function useInsightsScreen() {
     selectedCurrency && currencies.includes(selectedCurrency)
       ? selectedCurrency
       : (currencies[0] ?? "INR");
-  // Shared per-revision anchor: stable cache keys across mounts, and the same
-  // `at` the boot cache prefetched with.
-  const at = useSyncAnchor(syncRevision);
-  const overviewQuery = useMemo(() => ({ currency, at }), [at, currency]);
+  // The day drives day-dependent UI (month length, labels) and re-renders at
+  // midnight; each fetch reads the clock itself when it runs.
+  const today = useToday();
+  const overviewQuery = useMemo(() => ({ currency, at: today }), [today, currency]);
   const {
     status: overviewStatus,
     overview,
@@ -68,37 +71,33 @@ export function useInsightsScreen() {
   const showBudget = presentation?.budget !== null && presentation !== null;
   const effectiveTab = tabSelection === "budget" && !showBudget ? "outcome" : tabSelection;
 
-  const atDate = useMemo(() => new Date(at), [at]);
+  const atDate = useMemo(() => new Date(today), [today]);
   const direction: AnalyticsDirection = effectiveTab === "income" ? "income" : "expense";
   const recentTransactions = useInsightsRecentTransactions(direction, currency);
   const monthDays = elapsedDaysInCurrentMonth(atDate);
-  const usesDaily = usesDailySeries(timeScope);
-  const usesMonthly = timeScope === "sixMonths";
-  const incomeSeriesEnabled = effectiveTab === "income";
-  const outcomeMonthlyEnabled = effectiveTab !== "income" && usesMonthly;
+  // All four series load up front (no `enabled` gating) — they're small async
+  // reads — so switching lens or range shows cached data instantly instead of
+  // an empty chart that pops in when a just-enabled query resolves.
 
   const spendingSeriesQuery = useSeriesQuery(
     "spending-daily",
-    () => querySpendingSeries(currency, atDate, monthDays),
-    [atDate, currency, monthDays, seriesRetryKey, syncRevision],
+    () => querySpendingSeries(currency, new Date(), monthDays),
+    [currency, monthDays, seriesRetryKey],
   );
   const incomeDailySeriesQuery = useSeriesQuery(
     "income-daily",
-    () => queryIncomeSeries(currency, atDate, monthDays),
-    [atDate, currency, monthDays, seriesRetryKey, syncRevision],
-    incomeSeriesEnabled && usesDaily,
+    () => queryIncomeSeries(currency, new Date(), monthDays),
+    [currency, monthDays, seriesRetryKey],
   );
   const spendingMonthlySeriesQuery = useSeriesQuery(
     "spending-monthly",
-    () => queryMonthlySpendSeries(currency, atDate, 6),
-    [atDate, currency, seriesRetryKey, syncRevision],
-    outcomeMonthlyEnabled,
+    () => queryMonthlySpendSeries(currency, new Date(), 6),
+    [currency, seriesRetryKey],
   );
   const incomeMonthlySeriesQuery = useSeriesQuery(
     "income-monthly",
-    () => queryMonthlyIncomeSeries(currency, atDate, 6),
-    [atDate, currency, seriesRetryKey, syncRevision],
-    incomeSeriesEnabled && usesMonthly,
+    () => queryMonthlyIncomeSeries(currency, new Date(), 6),
+    [currency, seriesRetryKey],
   );
   const queriedComparisonQuery = useSeriesQuery(
     "direction-comparison",
@@ -106,15 +105,15 @@ export function useInsightsScreen() {
       queryMonthlyDirectionComparison({
         currency,
         direction: effectiveTab === "income" ? "income" : "expense",
-        now: atDate,
+        now: new Date(),
       }),
-    [atDate, currency, effectiveTab, seriesRetryKey, syncRevision],
+    [currency, effectiveTab, seriesRetryKey],
     !presentation,
   );
   const queriedSpendingComparisonQuery = useSeriesQuery(
     "spending-comparison",
-    () => queryMonthlyDirectionComparison({ currency, direction: "expense", now: atDate }),
-    [atDate, currency, seriesRetryKey, syncRevision],
+    () => queryMonthlyDirectionComparison({ currency, direction: "expense", now: new Date() }),
+    [currency, seriesRetryKey],
     !presentation,
   );
 
@@ -203,11 +202,7 @@ export function useInsightsScreen() {
       : null;
 
   return {
-    status,
-    error,
-    progress,
     refreshing,
-    connect,
     currencies,
     currenciesStatus,
     currenciesError,

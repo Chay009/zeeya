@@ -14,6 +14,7 @@ import { StatusCards } from "@/features/dashboard/components/status-cards";
 import { StatRow } from "@/features/dashboard/components/stat-row";
 import { SubscriptionSummary } from "@/features/dashboard/components/subscription-summary";
 import { useDashboardSync } from "@/features/dashboard/hooks/dashboard-sync-provider";
+import { useDerivedDashboard } from "@/features/dashboard/hooks/use-derived-dashboard";
 import { currenciesOf } from "@/features/dashboard/utils/format";
 import {
   ACTIVITY_CATEGORY_FILTERS,
@@ -23,7 +24,8 @@ import {
 import { isRecurringTransaction } from "@/lib/dashboard";
 
 export function DashboardScreen() {
-  const { status, error, dashboard, refreshing, connect, onRefresh } = useDashboardSync();
+  const { status, error, refreshing, connect, onRefresh } = useDashboardSync();
+  const dashboard = useDerivedDashboard();
   const [activityFilter, setActivityFilter] = useState<ActivityCategoryFilter>("all");
 
   const activityByCategory = useMemo(

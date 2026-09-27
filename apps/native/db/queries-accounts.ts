@@ -1,13 +1,10 @@
 // Account-family read queries against the normalized projection tables
 // (accounts, detected_accounts, balance_readings — see db/schema.ts /
-// db/projections.ts). Uses drizzle-orm's sync query builder against the
-// already-open, already-keyed connection (db/client.native.ts's `db` —
-// never a second connection), the same as db/ingestion.ts's
-// queryTransactionPage, rather than db/queries.ts's async getAllAsync
-// pattern: these queries need typed keyset predicates (and(), or(), lt())
-// that are awkward to hand-write as raw SQL strings. queryDetectedAccountsUnsafe
-// is the one exception — see its own comment for why it's async-raw-SQL
-// instead.
+// db/projections.ts). Built with drizzle-orm's query builder — these need
+// typed keyset predicates (and(), or(), lt()) that are awkward to hand-write
+// — but executed through expo-sqlite's async API on the same already-keyed
+// connection (db/async-select.ts), so a screen read never blocks the JS
+// thread. queryDetectedAccountsUnsafe is raw async SQL — see its own comment.
 import { and, asc, desc, eq, isNull, lt, or, type SQL } from "drizzle-orm";
 import { normalizeBankName } from "../lib/dashboard";
 import type {
@@ -20,8 +17,9 @@ import type {
   DetectedAccountSummary,
   UnassignedReadingsQuery,
 } from "../lib/dashboard-data";
+import { aliasedColumns, selectAsync } from "./async-select";
 import { db, sqlite } from "./client";
-import { ensureDashboardProjectionCurrent } from "./ingestion";
+import { ensureProjectionReadable } from "./ingestion";
 import { accounts, balanceReadings } from "./schema";
 import type { Database } from "./client.native";
 import type { AsyncQueryClient } from "./queries";
@@ -66,32 +64,36 @@ function validatedLimit(limit: number | undefined): number {
 // while balance history below does not.
 export async function queryAccounts(): Promise<AccountSummary[]> {
   const database = requireDb();
-  await ensureDashboardProjectionCurrent();
+  await ensureProjectionReadable();
   // balanceMinorUnits/estimatedBalanceMinorUnits are genuine SQL NULL for
   // an unreported account (schema.ts's accounts_anchor_status_balance_
   // nullability_check enforces this at write time) — no JS-side
   // reported/unreported branching needed here; a 0 read back from either
   // column is always a real reported zero balance.
-  return database
-    .select({
-      id: accounts.id,
-      bankName: accounts.bankName,
-      last4: accounts.last4,
-      currency: accounts.currency,
-      anchorStatus: accounts.anchorStatus,
-      balanceMinorUnits: accounts.balanceMinorUnits,
-      balanceAsOf: accounts.balanceAsOf,
-      balanceSender: accounts.balanceSender,
-      estimatedBalanceMinorUnits: accounts.estimatedBalanceMinorUnits,
-      estimatedAsOf: accounts.estimatedAsOf,
-      reconciliationDeltaMinorUnits: accounts.reconciliationDeltaMinorUnits,
-      capturedIncomeMinorUnits: accounts.capturedIncomeMinorUnits,
-      capturedExpenseMinorUnits: accounts.capturedExpenseMinorUnits,
-      capturedChangeMinorUnits: accounts.capturedChangeMinorUnits,
-      capturedTransactionCount: accounts.capturedTransactionCount,
-    })
-    .from(accounts)
-    .orderBy(desc(accounts.balanceAsOf), asc(accounts.id));
+  return selectAsync<AccountSummary>(
+    database
+      .select(
+        aliasedColumns({
+          id: accounts.id,
+          bankName: accounts.bankName,
+          last4: accounts.last4,
+          currency: accounts.currency,
+          anchorStatus: accounts.anchorStatus,
+          balanceMinorUnits: accounts.balanceMinorUnits,
+          balanceAsOf: accounts.balanceAsOf,
+          balanceSender: accounts.balanceSender,
+          estimatedBalanceMinorUnits: accounts.estimatedBalanceMinorUnits,
+          estimatedAsOf: accounts.estimatedAsOf,
+          reconciliationDeltaMinorUnits: accounts.reconciliationDeltaMinorUnits,
+          capturedIncomeMinorUnits: accounts.capturedIncomeMinorUnits,
+          capturedExpenseMinorUnits: accounts.capturedExpenseMinorUnits,
+          capturedChangeMinorUnits: accounts.capturedChangeMinorUnits,
+          capturedTransactionCount: accounts.capturedTransactionCount,
+        }),
+      )
+      .from(accounts)
+      .orderBy(desc(accounts.balanceAsOf), asc(accounts.id)),
+  );
 }
 
 // Async raw SQL (db/queries.ts's AsyncQueryClient pattern), not sync
@@ -121,7 +123,7 @@ export async function queryDetectedAccountsUnsafe(
 }
 
 export async function queryDetectedAccounts(): Promise<DetectedAccountSummary[]> {
-  await ensureDashboardProjectionCurrent();
+  await ensureProjectionReadable();
   return queryDetectedAccountsUnsafe(requireSqlite());
 }
 
@@ -167,18 +169,20 @@ function toPage(rows: BalanceReadingSummary[], limit: number): BalanceReadingPag
 export async function queryBalanceHistory(query: BalanceHistoryQuery): Promise<BalanceReadingPage> {
   const limit = validatedLimit(query.limit);
   const database = requireDb();
-  await ensureDashboardProjectionCurrent();
+  await ensureProjectionReadable();
 
   const conditions = [eq(balanceReadings.accountId, query.accountId)];
   const cursor = cursorCondition(query.cursor);
   if (cursor) conditions.push(cursor);
 
-  const rows = await database
-    .select(balanceReadingColumns)
-    .from(balanceReadings)
-    .where(and(...conditions))
-    .orderBy(desc(balanceReadings.asOf), desc(balanceReadings.id))
-    .limit(limit + 1);
+  const rows = await selectAsync<BalanceReadingSummary>(
+    database
+      .select(aliasedColumns(balanceReadingColumns))
+      .from(balanceReadings)
+      .where(and(...conditions))
+      .orderBy(desc(balanceReadings.asOf), desc(balanceReadings.id))
+      .limit(limit + 1),
+  );
 
   return toPage(rows, limit);
 }
@@ -196,7 +200,7 @@ export async function queryUnassignedReadings(
 ): Promise<BalanceReadingPage> {
   const limit = validatedLimit(query.limit);
   const database = requireDb();
-  await ensureDashboardProjectionCurrent();
+  await ensureProjectionReadable();
 
   const conditions = [
     eq(balanceReadings.detectedBankKey, normalizeBankName(query.bankName)),
@@ -205,12 +209,14 @@ export async function queryUnassignedReadings(
   const cursor = cursorCondition(query.cursor);
   if (cursor) conditions.push(cursor);
 
-  const rows = await database
-    .select(balanceReadingColumns)
-    .from(balanceReadings)
-    .where(and(...conditions))
-    .orderBy(desc(balanceReadings.asOf), desc(balanceReadings.id))
-    .limit(limit + 1);
+  const rows = await selectAsync<BalanceReadingSummary>(
+    database
+      .select(aliasedColumns(balanceReadingColumns))
+      .from(balanceReadings)
+      .where(and(...conditions))
+      .orderBy(desc(balanceReadings.asOf), desc(balanceReadings.id))
+      .limit(limit + 1),
+  );
 
   return toPage(rows, limit);
 }
@@ -218,7 +224,7 @@ export async function queryUnassignedReadings(
 // One revision-consistent read for profile/settings summaries — both counts
 // come from the same SQLite statement after projection freshness is checked.
 export async function queryAccountScopeCounts(): Promise<AccountScopeCounts> {
-  await ensureDashboardProjectionCurrent();
+  await ensureProjectionReadable();
   const rows = await requireSqlite().getAllAsync<AccountScopeCounts>(
     `SELECT
       (SELECT COUNT(*) FROM accounts) AS confirmedCount,

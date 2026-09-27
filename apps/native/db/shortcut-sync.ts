@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import type { Dashboard } from "../lib/dashboard";
 import type { RawSms } from "../lib/sms";
-import { ingestSmsBatch, refreshDashboardProjection } from "./ingestion";
+import { getProjectionStatus, ingestSmsBatch, refreshDashboardProjection } from "./ingestion";
 import { withIngestionLock } from "./single-flight";
 
 const ShortcutEnvelopeSchema = z.object({
@@ -31,7 +31,8 @@ export interface RejectedShortcutMessage {
 }
 
 export interface ShortcutDrainResult {
-  dashboard: Dashboard;
+  /** The published dashboard — null when nothing new needed publishing. */
+  dashboard: Dashboard | null;
   accepted: number;
   rejected: RejectedShortcutMessage[];
 }
@@ -111,8 +112,15 @@ export function drainShortcutInbox(queue: ShortcutMessageQueue): Promise<Shortcu
       for (const file of acceptedFiles) await queue.acknowledge(file.fileName);
     }
 
+    // Publish only when the ledger actually moved past the projection (a
+    // deferred ingest that inserted rows, or an interrupted earlier publish).
+    // Duplicate deliveries and empty drains derive nothing.
+    const status = await getProjectionStatus();
     return {
-      dashboard: await refreshDashboardProjection(),
+      dashboard:
+        status.projectedRevision !== status.sourceRevision
+          ? await refreshDashboardProjection()
+          : null,
       accepted: messages.length,
       rejected,
     };

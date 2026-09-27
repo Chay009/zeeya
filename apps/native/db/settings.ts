@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 
 import { db } from "./client";
+import { notifyDataChanged } from "./data-changes";
 import type { Database } from "./client.native";
 import { localSettings } from "./schema";
 
@@ -65,5 +66,6 @@ export async function updateLocalSettings(patch: LocalSettingsPatch): Promise<Lo
     })
     .run();
 
+  notifyDataChanged();
   return next;
 }

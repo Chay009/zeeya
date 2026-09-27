@@ -15,6 +15,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as schema from "./schema";
 import { initializeNativeDatabase } from "./native-init";
+import { asyncSqlite } from "./testing/async-sqlite";
 import type { RawSms } from "../lib/sms";
 import type { InboxReader } from "./sync";
 
@@ -47,6 +48,9 @@ let testDb: ReturnType<typeof freshDb>;
 vi.mock("./client", () => ({
   get db() {
     return testDb;
+  },
+  get sqlite() {
+    return testDb ? asyncSqlite(testDb.$client) : null;
   },
 }));
 

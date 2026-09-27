@@ -1105,6 +1105,14 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
+        },
+        "parse_revision": {
+          "name": "parse_revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
         }
       },
       "indexes": {
@@ -1386,6 +1394,16 @@
           "name": "transactions_date_idx",
           "columns": [
             "date"
+          ],
+          "isUnique": false
+        },
+        "transactions_currency_direction_date_id_idx": {
+          "name": "transactions_currency_direction_date_id_idx",
+          "columns": [
+            "currency",
+            "direction",
+            "date",
+            "id"
           ],
           "isUnique": false
         },
