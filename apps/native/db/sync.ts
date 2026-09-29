@@ -8,6 +8,7 @@
 import type { Dashboard } from "../lib/dashboard";
 import type { RawSms } from "../lib/sms";
 import type { InboxOrder } from "../lib/sms-filter";
+import { acknowledgeAllArrivals } from "./caught-up-transactions";
 import { drainInbox, validatePageSize } from "./inbox-pagination";
 import {
   getProjectionStatus,
@@ -179,6 +180,10 @@ export function syncInboxChanges(
         { since: now, order: "oldest-first", pageSize: options.pageSize },
         onPage,
       );
+      // The first import IS the user's history — none of it is "new since
+      // you last looked". Only SMS arriving after this point reach Home's
+      // caught-up dialog.
+      await acknowledgeAllArrivals();
     } else {
       // Routine catch-up: from the last verified point forward. Falls
       // back to when the initial scan completed if lastIngestedDate is

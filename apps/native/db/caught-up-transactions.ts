@@ -116,6 +116,16 @@ export async function countTransactionsArrivedAfter(sequence: number): Promise<n
   return rows[0]?.value ?? 0;
 }
 
+// Marks every arrival so far as seen. Called once, when the first-ever
+// historical import finishes: that import is the user's existing history,
+// not "new since you last looked" — without this, a fresh install opened
+// Home to a dialog listing the whole 90-day import as new transactions.
+export async function acknowledgeAllArrivals(database: SyncDatabase = requireDb()): Promise<void> {
+  const latest =
+    database.select({ value: max(smsArrivals.sequence) }).from(smsArrivals).get()?.value ?? 0;
+  if (latest > 0) await acknowledgeCaughtUpTransactions(latest, database);
+}
+
 export async function acknowledgeCaughtUpTransactions(
   throughSequence: number,
   database: SyncDatabase = requireDb(),

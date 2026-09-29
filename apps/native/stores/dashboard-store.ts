@@ -143,9 +143,13 @@ export const useDashboardStore = create<DashboardStoreState>((set, get) => {
       // the same arrival unseen in SQLite, making it reappear next launch.
       const caughtUp = await readCaughtUp();
       if (publicationId !== loadId || !listeningForNewMessages) return;
+      // An external sync can supersede an in-flight load() (a realtime SMS
+      // during the startup scan); that load returns early, so this path must
+      // also clear its progress.
       set((state) => ({
         error: null,
         status: "ready",
+        progress: null,
         caughtUpTransactions: caughtUp,
         syncRevision: state.syncRevision + 1,
       }));

@@ -56,6 +56,7 @@ vi.mock("./client", () => ({
 
 const { syncInbox } = await import("./sync");
 const { backfillSms } = await import("./backfill");
+const { queryCaughtUpTransactionsUnsafe } = await import("./caught-up-transactions");
 const { ensureDashboardProjectionCurrent, getProjectionStatus, getSyncStatus } =
   await import("./ingestion");
 
@@ -460,5 +461,30 @@ describe("syncInbox", () => {
     // ignored instead of rejected, unlike the already-covered checkpoint
     // case above.
     await expect(syncInbox(async () => [], { pageSize: 0 })).rejects.toThrow(/positive integer/);
+  });
+});
+
+// Home's "new transactions" dialog lists arrivals since the user last looked.
+// The first-ever import is the user's existing history, so it must not show
+// up there — only SMS arriving afterwards should.
+describe("first import and the caught-up dialog", () => {
+  beforeEach(() => {
+    testDb = freshDb();
+  });
+
+  it("treats the first-ever import as already seen, then surfaces later arrivals", async () => {
+    const history = Array.from({ length: 3 }, (_, index) =>
+      rawSms({ id: `history-${index}`, date: T + index }),
+    );
+    await syncInbox(fakeInboxReader(history), { now: T + TEN_MINUTES });
+
+    expect(queryCaughtUpTransactionsUnsafe({}, testDb).total).toBe(0);
+
+    const arrived = rawSms({ id: "arrived-later", date: T + 2 * TEN_MINUTES, body: HDFC_DEBIT.replace("5,000.00", "750.00") });
+    await syncInbox(fakeInboxReader([...history, arrived]), { now: T + 3 * TEN_MINUTES });
+
+    const caughtUp = queryCaughtUpTransactionsUnsafe({}, testDb);
+    expect(caughtUp.total).toBe(1);
+    expect(caughtUp.items[0]!.amountMinorUnits).toBe(75000);
   });
 });
