@@ -34,16 +34,20 @@ export function accountScopeCaption(accounts: HomeAccount[], selectedKey: string
 }
 
 function formatBalanceTotals(accounts: HomeAccount[]): string {
-  const totalsByCurrency: Record<string, number> = {};
+  // Summed in integer minor units, converted once per currency.
+  const totalsByCurrency = new Map<string, number>();
   for (const account of accounts) {
     if (account.balanceMinorUnits === null) continue;
-    totalsByCurrency[account.currency] =
-      (totalsByCurrency[account.currency] ?? 0) +
-      fromMinorUnits(account.balanceMinorUnits, account.currency);
+    totalsByCurrency.set(
+      account.currency,
+      (totalsByCurrency.get(account.currency) ?? 0) + account.balanceMinorUnits,
+    );
   }
-  const parts = Object.entries(totalsByCurrency)
-    .sort(([left], []) => (left === "INR" ? -1 : 1))
-    .map(([currency, amount]) => formatMoney(amount, currency));
+  const parts = [...totalsByCurrency]
+    .sort(([left], [right]) =>
+      left === right ? 0 : left === "INR" ? -1 : right === "INR" ? 1 : left.localeCompare(right),
+    )
+    .map(([currency, minorUnits]) => formatMoney(fromMinorUnits(minorUnits, currency), currency));
   return parts.length > 0 ? parts.join(" + ") : "—";
 }
 

@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/states";
 import { moneyFontFamily } from "@/lib/fonts";
 
+import { ALL_ACCOUNTS_KEY, scopedHeroBalance } from "../account-scope";
 import { AccountCard } from "../components/account-card";
 import { AccountEvidenceSection } from "../components/account-evidence-section";
 import { HomePermissionCard } from "../components/home-permission-card";
@@ -24,7 +25,9 @@ export function CardsScreen() {
   const router = useRouter();
   const { model, homeData, isLoading, error, reload } = useHomeData();
   const count = homeData.accounts.length;
-  const netAcross = homeData.accounts[0]?.netAcross ?? null;
+  // The same all-accounts total Home leads with — every currency, not just
+  // the first account's.
+  const netAcross = count > 0 ? scopedHeroBalance(homeData.accounts, ALL_ACCOUNTS_KEY) : null;
 
   return (
     <View className="flex-1 bg-background">

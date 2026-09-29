@@ -136,10 +136,12 @@ function accountPreview(
     bankColor: bankVisualFor(account.bankName).ink,
     status: presentation.status,
     balance: visible ? presentation.balance : "—",
-    balanceMinorUnits:
-      visible && account.anchorStatus === "reported"
-        ? toMinorUnits(String(account.balance), account.currency)
-        : null,
+    // The figure `balance` shows (presentAccount's rule), so totals match.
+    balanceMinorUnits: (() => {
+      if (!visible || account.anchorStatus !== "reported") return null;
+      const shown = presentation.hasCapturedTransactions ? account.estimatedBalance : account.balance;
+      return shown === null ? null : toMinorUnits(String(shown), account.currency);
+    })(),
     last4: account.last4,
     currency: account.currency,
     netAcross:

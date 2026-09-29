@@ -187,8 +187,14 @@ function homeAccountPreview(
     bankColor: bankVisualFor(account.bankName).ink,
     status: presentation.status,
     balance: visible ? presentation.balance : "—",
-    balanceMinorUnits:
-      account.balanceMinorUnits ?? account.estimatedBalanceMinorUnits ?? null,
+    // The same figure `balance` shows (presentAccountSummary's rule: the
+    // estimate once transactions are captured after the bank's reading), so
+    // the all-accounts total adds up the balances the cards display.
+    balanceMinorUnits: !visible
+      ? null
+      : hasCapturedTransactions
+        ? account.estimatedBalanceMinorUnits
+        : account.balanceMinorUnits,
     last4: account.last4,
     currency,
     netAcross:

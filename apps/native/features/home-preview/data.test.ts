@@ -148,6 +148,8 @@ describe("createHomePreviewData — detected accounts", () => {
     expect(home.accounts[0]).toMatchObject({
       status: "CALCULATED",
       balance: "₹ 900",
+      // The total sums what the card shows, not the stale bank reading.
+      balanceMinorUnits: 90_000,
       reportedBalance: "₹ 1,000",
       capturedExpense: "−₹ 100",
       capturedTransactionCount: 1,
