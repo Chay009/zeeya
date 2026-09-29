@@ -60,9 +60,8 @@ vi.mock("./client", () => ({
   },
 }));
 
-const { queryMandateEvents, queryMandateEventsForMandates, queryMandates } = await import(
-  "./queries-mandates"
-);
+const { queryMandate, queryMandateEvents, queryMandateEventsForMandates, queryMandates } =
+  await import("./queries-mandates");
 
 function result(overrides: Partial<MalanaResult>): MalanaResult {
   return {
@@ -181,6 +180,23 @@ function mandateMessage(
     ...overrides,
   });
 }
+
+describe("queryMandate", () => {
+  it("reads one mandate by id — the same row the list returns — or null", async () => {
+    useFreshDb();
+    seedAndProject(
+      [
+        mandateMessage("mandate-1", 1000),
+        mandateMessage("mandate-2", 1500, { mandateId: "UMN999", mandateMerchant: "Spotify" }),
+      ],
+      new Date(2000),
+    );
+
+    const listed = (await queryMandates()).items.find((item) => item.mandateId === "UMN999");
+    expect(await queryMandate("UMN999")).toEqual(listed);
+    expect(await queryMandate("UMN-missing")).toBeNull();
+  });
+});
 
 describe("queryMandates", () => {
   it("returns a confirmed mandate's summary fields", async () => {

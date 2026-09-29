@@ -1,13 +1,36 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useCallback } from "react";
+
+/**
+ * What a screen should render for a local read:
+ *  - "loading": nothing to show yet.
+ *  - "error": the read failed AND there is nothing to show. A failed
+ *    background re-read (after a sync) keeps the last good data on screen.
+ *  - "ready": data is showing (possibly refreshing in the background).
+ */
+export type LocalQueryStatus = "loading" | "error" | "ready";
+
+export function localQueryStatus(input: {
+  pending: boolean;
+  hasData: boolean;
+  error: string | null;
+}): LocalQueryStatus {
+  if (input.hasData) return "ready";
+  if (input.error !== null) return "error";
+  return input.pending ? "loading" : "ready";
+}
 
 export interface UseLocalQueryResult<T> {
   data: T | undefined;
+  status: LocalQueryStatus;
+  /** Set only while status is "error" — a failed background re-read is silent. */
   error: string | null;
   /** True only on the first fetch when no cached/placeholder data exists. */
   isInitialLoading: boolean;
   /** True when refreshing with prior data still visible. */
   isRevalidating: boolean;
-  refetch: () => Promise<unknown>;
+  /** Re-reads now. Stable across renders. */
+  reload: () => void;
 }
 
 /**
@@ -65,11 +88,21 @@ export function useLocalQuery<T>({
     refetchOnReconnect: false,
   });
 
-  const error = result.error
+  const failure = result.error
     ? result.error instanceof Error
       ? result.error.message
       : String(result.error)
     : null;
+  const isInitialLoading = result.isPending && enabled;
+  const status = localQueryStatus({
+    pending: isInitialLoading,
+    hasData: result.data !== undefined,
+    error: failure,
+  });
+  const { refetch } = result;
+  const reload = useCallback(() => {
+    void refetch();
+  }, [refetch]);
 
   // TanStack re-renders a component only for the result fields it READS
   // (tracked properties). Reading isFetching here for every caller made
@@ -80,11 +113,12 @@ export function useLocalQuery<T>({
   //    refresh state subscribe to fetch start/end.
   return {
     data: result.data,
-    error,
-    isInitialLoading: result.isPending && enabled,
+    status,
+    error: status === "error" ? failure : null,
+    isInitialLoading,
     get isRevalidating() {
       return result.data !== undefined && result.isFetching;
     },
-    refetch: result.refetch,
+    reload,
   };
 }

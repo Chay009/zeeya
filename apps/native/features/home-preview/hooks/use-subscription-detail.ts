@@ -1,48 +1,25 @@
 import { useCallback } from "react";
 
 import { financeDataSource } from "@/features/dashboard/dashboard-data-source";
-import type { MandateSummary } from "@/lib/dashboard-data";
 import { localQueryKeys } from "@/lib/local-query-keys";
 import { queryClient } from "@/lib/query-client";
 
 import {
-  previewSubFromMandateSummary,
   previewSubFromSubscriptionSummary,
   subscriptionPreviewKey,
   type PreviewSub,
 } from "../data";
+import { mandatePreviewSub } from "./subscription-sources";
 import { useDetail } from "./use-detail";
-
-async function loadAllMandates(): Promise<MandateSummary[]> {
-  const mandates: MandateSummary[] = [];
-  let pageCursor: { lastUpdated: number; mandateId: string } | undefined;
-  do {
-    const page = await financeDataSource.mandates.list({ limit: 100, cursor: pageCursor });
-    mandates.push(...page.items);
-    pageCursor = page.nextCursor ?? undefined;
-  } while (pageCursor);
-  return mandates;
-}
-
-function mandateReactivated(
-  mandate: MandateSummary,
-  events: { status: "active" | "cancelled" }[],
-): boolean {
-  return mandate.status === "active" && events.some((event) => event.status === "cancelled");
-}
 
 async function fetchSubscriptionDetail(key: string): Promise<PreviewSub | null> {
   if (key.startsWith("mandate:")) {
     const mandateId = key.slice("mandate:".length);
-    const mandates = await loadAllMandates();
-    const mandate = mandates.find((candidate) => candidate.mandateId === mandateId);
-    if (!mandate) return null;
-    const events = await financeDataSource.mandates.listEvents({ mandateId, limit: 30 });
-    return previewSubFromMandateSummary(
-      mandate,
-      events.items,
-      mandateReactivated(mandate, events.items),
-    );
+    const [mandate, events] = await Promise.all([
+      financeDataSource.mandates.get(mandateId),
+      financeDataSource.mandates.listEvents({ mandateId, limit: 30 }),
+    ]);
+    return mandate ? mandatePreviewSub(mandate, events.items) : null;
   }
 
   if (key.startsWith("subscription:")) {

@@ -1,29 +1,26 @@
-import { useCallback, useMemo } from "react";
+import { useMemo } from "react";
 
 import { financeDataSource } from "@/features/dashboard/dashboard-data-source";
 import { localQueryKeys } from "@/lib/local-query-keys";
-import { useLocalQuery } from "@/lib/use-local-query";
+import { useLocalQuery, type LocalQueryStatus } from "@/lib/use-local-query";
 
 import {
   normalizeInsightsTransactionRows,
   type InsightsTransactionRow,
 } from "../insights-transaction-presentation";
-import type {
-  InsightsRecentTransactionsQuery,
-  InsightsRecentTransactionsState,
-  InsightsRecentTransactionsStatus,
-} from "./insights-recent-transactions-controller";
 
-/** Main-screen preview shows the first few rows; the detail sheet shows the full list. */
-export const INSIGHTS_RECENT_TRANSACTIONS_PREVIEW_LIMIT = 3;
 export const INSIGHTS_RECENT_TRANSACTIONS_LIMIT = 25;
 
-export type {
-  InsightsRecentTransactionsState,
-  InsightsRecentTransactionsStatus,
-} from "./insights-recent-transactions-controller";
+export interface InsightsRecentTransactionsQuery {
+  direction: "income" | "expense";
+  currency: string;
+  limit: number;
+}
 
-export interface UseInsightsRecentTransactionsResult extends InsightsRecentTransactionsState {
+export interface UseInsightsRecentTransactionsResult {
+  status: LocalQueryStatus;
+  error: string | null;
+  items: InsightsTransactionRow[];
   reload: () => void;
 }
 
@@ -38,42 +35,19 @@ export async function loadRecentInsightsTransactions(
   return normalizeInsightsTransactionRows(page.items);
 }
 
+const EMPTY: InsightsTransactionRow[] = [];
+
 export function useInsightsRecentTransactions(
   direction: "income" | "expense",
   currency: string,
 ): UseInsightsRecentTransactionsResult {
-  const query = useMemo(
-    () => ({
-      direction,
-      currency,
-      limit: INSIGHTS_RECENT_TRANSACTIONS_LIMIT,
-    }),
-    [currency, direction],
-  );
-
-  const { data, error, isInitialLoading, refetch } = useLocalQuery({
-    queryKey: localQueryKeys.recentTransactions(query.direction, query.currency, query.limit),
-    queryFn: () => loadRecentInsightsTransactions(query),
+  const limit = INSIGHTS_RECENT_TRANSACTIONS_LIMIT;
+  const { data, status, error, reload } = useLocalQuery({
+    queryKey: localQueryKeys.recentTransactions(direction, currency, limit),
+    queryFn: () => loadRecentInsightsTransactions({ direction, currency, limit }),
   });
-
-  const reload = useCallback(() => {
-    void refetch();
-  }, [refetch]);
-
-  const status: InsightsRecentTransactionsStatus = isInitialLoading
-    ? "loading"
-    : error
-      ? "error"
-      : "ready";
-
-  const items = useMemo(() => normalizeInsightsTransactionRows(data ?? []), [data]);
-
-  return {
-    status,
-    error,
-    items,
-    direction: query.direction,
-    currency: query.currency,
-    reload,
-  };
+  // loadRecentInsightsTransactions already normalizes; this only keeps the
+  // empty fallback referentially stable.
+  const items = useMemo(() => data ?? EMPTY, [data]);
+  return { status, error, items, reload };
 }

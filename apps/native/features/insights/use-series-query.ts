@@ -20,7 +20,7 @@ export function useSeriesQuery<T>(
   enabled = true,
 ): SeriesQueryState<T> {
 
-  const { data, error, isInitialLoading } = useLocalQuery({
+  const { data, error, isInitialLoading } = useLocalQuery<T>({
     queryKey: localQueryKeys.series(seriesKey, deps),
     queryFn: async () => {
       try {

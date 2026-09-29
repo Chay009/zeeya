@@ -6,24 +6,15 @@
 // (pull-to-refresh / data change). A category or account change never shows the
 // old scope's rows under the new label — it reports loading with no items.
 
-import { useCallback } from "react";
-
 import { financeDataSource } from "@/features/dashboard/dashboard-data-source";
 import type { ActivityCategory, HomeActivityItem } from "@/lib/dashboard-data";
 import { localQueryKeys } from "@/lib/local-query-keys";
-import { useLocalQuery } from "@/lib/use-local-query";
+import { useLocalQuery, type LocalQueryStatus } from "@/lib/use-local-query";
 
-export type HomeRecentActivityStatus = "loading" | "ready" | "error";
-
-export interface HomeRecentActivityState {
-  status: HomeRecentActivityStatus;
+export interface UseHomeRecentActivityResult {
+  status: LocalQueryStatus;
   error: string | null;
   items: HomeActivityItem[];
-}
-
-export interface UseHomeRecentActivityResult extends HomeRecentActivityState {
-  // Re-fetches the currently selected category. It is a no-op while the
-  // auxiliary query is disabled (the Home "all" path uses the read model).
   reload: () => void;
 }
 
@@ -54,7 +45,7 @@ export function useHomeRecentActivity(
   });
   const scope = queryKey[2];
 
-  const { data, error, isInitialLoading, refetch } = useLocalQuery({
+  const { data, status, error, reload } = useLocalQuery({
     queryKey,
     queryFn: () =>
       financeDataSource.home.loadRecentActivity({
@@ -70,19 +61,8 @@ export function useHomeRecentActivity(
     keepPrevious: (previousKey) => previousKey[1] === "recent-activity" && previousKey[2] === scope,
   });
 
-  const reload = useCallback(() => {
-    if (enabled) void refetch();
-  }, [enabled, refetch]);
-
+  // Disabled (Home's "all" pill reads the read model instead): a stable,
+  // empty "ready" — TanStack never fetches a disabled query.
   if (!enabled) return { status: "ready", error: null, items: EMPTY, reload };
-
-  const status: HomeRecentActivityStatus = isInitialLoading
-    ? "loading"
-    : error && !data
-      ? "error"
-      : data
-        ? "ready"
-        : "loading";
-
-  return { status, error: status === "error" ? error : null, items: data ?? EMPTY, reload };
+  return { status, error, items: data ?? EMPTY, reload };
 }

@@ -16,7 +16,7 @@ export function useHomeAccountCashflowScope(
   error: string | null;
   scope: HomeAccountCashflowScope | null;
 } {
-  const { data, error, isInitialLoading, isRevalidating } = useLocalQuery({
+  const { data, status, error, isRevalidating } = useLocalQuery({
     queryKey: localQueryKeys.accountCashflowScope(accountId ?? "", currency),
     queryFn: () => financeDataSource.home.loadAccountCashflowScope({
         accountId: accountId!,
@@ -29,7 +29,8 @@ export function useHomeAccountCashflowScope(
   });
 
   if (!accountId) return { status: "idle", error: null, scope: null };
-  if (error && !data) return { status: "error", error, scope: null };
-  if (isInitialLoading || !data) return { status: "loading", error: null, scope: null };
+  if (status !== "ready" || !data) return { status, error, scope: null };
+  // "loading" with a scope: the same account refreshing in the background
+  // (Home dims the chart rather than blanking it).
   return { status: isRevalidating ? "loading" : "ready", error: null, scope: data };
 }

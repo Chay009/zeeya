@@ -2,17 +2,16 @@
 // via lib/live-queries.ts: a data change re-reads it in the background while
 // the current model stays on screen.
 
-import { useCallback } from "react";
-
 import { financeDataSource } from "@/features/dashboard/dashboard-data-source";
+import type { HomeReadModel } from "@/lib/dashboard-data";
 import { localQueryKeys } from "@/lib/local-query-keys";
-import { useLocalQuery } from "@/lib/use-local-query";
+import { useLocalQuery, type LocalQueryStatus } from "@/lib/use-local-query";
 
-import type { HomeReadModelStatus, HomeReadModelState } from "./home-read-model-controller";
-
-export type { HomeReadModelStatus, HomeReadModelState } from "./home-read-model-controller";
-
-export interface UseHomeReadModelResult extends HomeReadModelState {
+export interface UseHomeReadModelResult {
+  status: LocalQueryStatus;
+  error: string | null;
+  model: HomeReadModel | null;
+  currency: string;
   reload: () => void;
 }
 
@@ -21,22 +20,9 @@ export function loadHomeReadModel(currency: string) {
 }
 
 export function useHomeReadModel(currency: string): UseHomeReadModelResult {
-  const { data, error, isInitialLoading, refetch } = useLocalQuery({
+  const { data, status, error, reload } = useLocalQuery({
     queryKey: localQueryKeys.homeReadModel(currency),
     queryFn: () => loadHomeReadModel(currency),
   });
-
-  const reload = useCallback(() => {
-    void refetch();
-  }, [refetch]);
-
-  const status: HomeReadModelStatus = isInitialLoading ? "loading" : error && !data ? "error" : "ready";
-
-  return {
-    status,
-    error: status === "error" ? error : null,
-    model: data ?? null,
-    currency,
-    reload,
-  };
+  return { status, error, model: data ?? null, currency, reload };
 }

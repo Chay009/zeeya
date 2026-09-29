@@ -20,6 +20,17 @@ import { ensureProjectionReadable } from "./ingestion";
 import { mandateEvents, mandates } from "./schema";
 import type { Database } from "./client.native";
 
+const MANDATE_COLUMNS = {
+  mandateId: mandates.mandateId,
+  merchant: mandates.merchant,
+  amountMinorUnits: mandates.amountMinorUnits,
+  currency: mandates.currency,
+  status: mandates.status,
+  createdAt: mandates.createdAt,
+  lastUpdated: mandates.lastUpdated,
+  sender: mandates.sender,
+};
+
 const MANDATE_EVENT_COLUMNS = {
   id: mandateEvents.id,
   mandateId: mandateEvents.mandateId,
@@ -85,18 +96,7 @@ export async function queryMandates(query: MandateQuery = {}): Promise<MandatePa
 
   const rows = await selectAsync<MandateSummary>(
     database
-      .select(
-        aliasedColumns({
-          mandateId: mandates.mandateId,
-          merchant: mandates.merchant,
-          amountMinorUnits: mandates.amountMinorUnits,
-          currency: mandates.currency,
-          status: mandates.status,
-          createdAt: mandates.createdAt,
-          lastUpdated: mandates.lastUpdated,
-          sender: mandates.sender,
-        }),
-      )
+      .select(aliasedColumns(MANDATE_COLUMNS))
       .from(mandates)
       .where(cursor)
       .orderBy(desc(mandates.lastUpdated), desc(mandates.mandateId))
@@ -111,6 +111,20 @@ export async function queryMandates(query: MandateQuery = {}): Promise<MandatePa
     nextCursor:
       hasMore && last ? { lastUpdated: last.lastUpdated, mandateId: last.mandateId } : null,
   };
+}
+
+/** One mandate by id (its primary key), or null. */
+export async function queryMandate(mandateId: string): Promise<MandateSummary | null> {
+  const database = requireDb();
+  await ensureProjectionReadable();
+  const [row] = await selectAsync<MandateSummary>(
+    database
+      .select(aliasedColumns(MANDATE_COLUMNS))
+      .from(mandates)
+      .where(eq(mandates.mandateId, mandateId))
+      .limit(1),
+  );
+  return row ?? null;
 }
 
 function mandateEventCursorCondition(cursor: MandateEventCursor | undefined): SQL | undefined {

@@ -12,7 +12,7 @@ export function useHomeActivityScope(accountId: string | undefined): {
   error: string | null;
   scope: HomeActivityScopeSummary | null;
 } {
-  const { data, error, isInitialLoading } = useLocalQuery({
+  const { data, status, error } = useLocalQuery({
     queryKey: localQueryKeys.activityScope(accountId ?? ""),
     queryFn: () => financeDataSource.home.loadActivityScope({ accountId: accountId! }),
     enabled: accountId !== undefined,
@@ -20,7 +20,5 @@ export function useHomeActivityScope(accountId: string | undefined): {
   });
 
   if (!accountId) return { status: "idle", error: null, scope: null };
-  if (isInitialLoading || (!data && !error)) return { status: "loading", error: null, scope: null };
-  if (error && !data) return { status: "error", error, scope: null };
-  return { status: "ready", error: null, scope: data ?? null };
+  return { status, error, scope: data ?? null };
 }

@@ -1,38 +1,19 @@
-import { useCallback } from "react";
-
 import { financeDataSource } from "@/features/dashboard/dashboard-data-source";
-import type { HomeHighlightsQuery } from "@/lib/dashboard-data";
+import type { HomeHighlights, HomeHighlightsQuery } from "@/lib/dashboard-data";
 import { localQueryKeys } from "@/lib/local-query-keys";
-import { useLocalQuery } from "@/lib/use-local-query";
+import { useLocalQuery, type LocalQueryStatus } from "@/lib/use-local-query";
 
-import type { HomeHighlightsState, HomeHighlightsStatus } from "./home-highlights-controller";
-
-export type { HomeHighlightsStatus, HomeHighlightsState } from "./home-highlights-controller";
-
-export interface UseHomeHighlightsResult extends HomeHighlightsState {
+export interface UseHomeHighlightsResult {
+  status: LocalQueryStatus;
+  error: string | null;
+  highlights: HomeHighlights | null;
   reload: () => void;
 }
 
 export function useHomeHighlights(query: HomeHighlightsQuery): UseHomeHighlightsResult {
-
-  const { data, error, isInitialLoading, refetch } = useLocalQuery({
+  const { data, status, error, reload } = useLocalQuery({
     queryKey: localQueryKeys.homeHighlights(query),
     queryFn: () => financeDataSource.home.loadHighlights({ ...query, at: Date.now() }),
   });
-
-  const reload = useCallback(() => {
-    void refetch();
-  }, [refetch]);
-
-  const status: HomeHighlightsStatus = isInitialLoading ? "loading" : error ? "error" : "ready";
-
-  return {
-    status,
-    error,
-    highlights: data ?? null,
-    currency: query.currency,
-    at: query.at,
-    accountId: query.accountId,
-    reload,
-  };
+  return { status, error, highlights: data ?? null, reload };
 }

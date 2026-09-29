@@ -15,6 +15,7 @@ import {
   queryUnassignedReadings,
 } from "@/db/queries-accounts";
 import {
+  queryMandate,
   queryMandateEvents,
   queryMandateEventsForMandates,
   queryMandates,
@@ -60,6 +61,7 @@ export const financeDataSource: FinanceDataSource = {
   },
   mandates: {
     list: queryMandates,
+    get: queryMandate,
     listEvents: queryMandateEvents,
     listRecentEventsFor: queryMandateEventsForMandates,
   },

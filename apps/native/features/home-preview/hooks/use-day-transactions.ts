@@ -28,7 +28,7 @@ export function useDayTransactions(
   dayStartMs: number | null,
   currency: string,
 ): DayTransactionsState {
-  const { data, error, isInitialLoading, isRevalidating } = useLocalQuery({
+  const { data, status, error, isRevalidating } = useLocalQuery({
     queryKey: localQueryKeys.dayTransactions(dayStartMs ?? 0, currency),
     queryFn: () => queryTransactionsForDay(dayStartMs!, nextLocalMidnight(dayStartMs!) - 1, currency),
     enabled: dayStartMs !== null,
@@ -36,9 +36,7 @@ export function useDayTransactions(
   });
 
   if (dayStartMs === null) return { status: "idle", error: null, items: EMPTY };
-  if (error && !data) return { status: "error", error, items: EMPTY };
-  if (isInitialLoading || isRevalidating || !data) {
-    return { status: "loading", error: null, items: data ?? EMPTY };
-  }
-  return { status: "ready", error: null, items: data };
+  if (status !== "ready" || !data) return { status, error, items: EMPTY };
+  // "loading" with rows: another day's rows stay visible while this day loads.
+  return { status: isRevalidating ? "loading" : "ready", error: null, items: data };
 }

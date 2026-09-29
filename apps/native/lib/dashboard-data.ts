@@ -934,6 +934,7 @@ export interface FinanceDataSource {
     // grows over the ledger's lifetime the same way transactions/activity
     // do. Keyset-paginated by (lastUpdated DESC, mandateId DESC).
     list(input?: MandateQuery): Promise<MandatePage>;
+    get(mandateId: string): Promise<MandateSummary | null>;
     // Event history grows with every create/execute/cancel message for a
     // mandate over its lifetime, unlike the mandate row itself — paginated
     // the same way balance history is.
