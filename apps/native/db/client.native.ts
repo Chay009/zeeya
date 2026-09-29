@@ -30,12 +30,35 @@ function databaseKey(): string {
   return generated;
 }
 
-export const sqlite = openDatabaseSync(SECURE_DB_NAME, { enableChangeListener: true });
-sqlite.execSync(`PRAGMA key = "x'${databaseKey()}'";`);
-sqlite.execSync("PRAGMA cipher_memory_security = ON;");
-initializeNativeDatabase(sqlite);
-repairLegacyNativeSchema(sqlite);
+const key = databaseKey();
 
-export const db = drizzle(sqlite, { schema });
+// The WRITE connection: migrations, ingestion and projection publishes run
+// through Drizzle's synchronous API here.
+const writer = openDatabaseSync(SECURE_DB_NAME, { enableChangeListener: true });
+writer.execSync(`PRAGMA key = "x'${key}'";`);
+writer.execSync("PRAGMA cipher_memory_security = ON;");
+initializeNativeDatabase(writer);
+repairLegacyNativeSchema(writer);
+
+export const db = drizzle(writer, { schema });
+
+// A separate READ connection for every async screen read (getAllAsync).
+// expo-sqlite runs *Sync calls on the JS thread and *Async calls on a
+// background queue, on whatever connection they're given, with only
+// per-statement locking — so on a shared connection a queued read could run
+// BETWEEN two statements of a synchronous publish transaction and see its
+// uncommitted, half-replaced tables (same connection = no isolation). On
+// its own connection under WAL (journal_mode set above, persisted in the
+// file), a read only ever sees committed data: the state before a publish
+// or after it, never in between. useNewConnection: expo-sqlite otherwise
+// hands back the cached writer for the same name. Keyed here (a connection
+// expo-sqlite opened itself could not be), and query_only so nothing can
+// ever write through it.
+const reader = openDatabaseSync(SECURE_DB_NAME, { useNewConnection: true });
+reader.execSync(`PRAGMA key = "x'${key}'";`);
+reader.execSync("PRAGMA cipher_memory_security = ON;");
+reader.execSync("PRAGMA query_only = ON;");
+
+export const sqlite = reader;
 
 export type Database = typeof db;
