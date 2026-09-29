@@ -121,17 +121,14 @@ export function DayDetailSheet({
     [shownDateString],
   );
 
-  const netMinorUnits = items.reduce(
-    (total, item) =>
-      total + (item.direction === "income" ? item.amountMinorUnits : -item.amountMinorUnits),
-    0,
-  );
   const incomeMinorUnits = items
     .filter((item) => item.direction === "income")
     .reduce((total, item) => total + item.amountMinorUnits, 0);
   const expenseMinorUnits = items
     .filter((item) => item.direction === "expense")
     .reduce((total, item) => total + item.amountMinorUnits, 0);
+  // Neutral rows (own-account transfers) move no money in or out.
+  const netMinorUnits = incomeMinorUnits - expenseMinorUnits;
 
   return (
     <NativeBottomSheet

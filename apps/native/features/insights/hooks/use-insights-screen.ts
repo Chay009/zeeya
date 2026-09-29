@@ -14,7 +14,6 @@ import {
 import {
   monthlyComparisonFromMinorUnits,
   queryIncomeSeries,
-  queryMonthlyDirectionComparison,
   queryMonthlyIncomeSeries,
   queryMonthlySpendSeries,
   querySpendingSeries,
@@ -99,24 +98,6 @@ export function useInsightsScreen() {
     () => queryMonthlyIncomeSeries(currency, new Date(), 6),
     [currency, seriesRetryKey],
   );
-  const queriedComparisonQuery = useSeriesQuery(
-    "direction-comparison",
-    () =>
-      queryMonthlyDirectionComparison({
-        currency,
-        direction: effectiveTab === "income" ? "income" : "expense",
-        now: new Date(),
-      }),
-    [currency, effectiveTab, seriesRetryKey],
-    !presentation,
-  );
-  const queriedSpendingComparisonQuery = useSeriesQuery(
-    "spending-comparison",
-    () => queryMonthlyDirectionComparison({ currency, direction: "expense", now: new Date() }),
-    [currency, seriesRetryKey],
-    !presentation,
-  );
-
   const spendingSeries = spendingSeriesQuery.value ?? [];
   const dailySeries =
     effectiveTab === "income" ? (incomeDailySeriesQuery.value ?? []) : spendingSeries;
@@ -124,8 +105,9 @@ export function useInsightsScreen() {
     effectiveTab === "income"
       ? (incomeMonthlySeriesQuery.value ?? [])
       : (spendingMonthlySeriesQuery.value ?? []);
-  const queriedComparison = queriedComparisonQuery.value;
-  const queriedSpendingComparison = queriedSpendingComparisonQuery.value;
+  // Month-over-month comparisons come only from the overview (like-for-like:
+  // last month up to the same point). A separate full-month fallback query
+  // showed one percentage while loading, then jumped to another.
   const overviewSpendingComparison: MonthlySpendComparison | null = presentation
     ? {
         currentTotal: fromMinorUnits(presentation.currentMonth.spendingMinorUnits, currency),
@@ -147,12 +129,10 @@ export function useInsightsScreen() {
       )
     : null;
   const committedActiveCount = presentation?.subscriptions.activeCount ?? null;
-  const spendingComparison = overviewSpendingComparison ??
-    queriedSpendingComparison ?? EMPTY_COMPARISON;
+  const spendingComparison = overviewSpendingComparison ?? EMPTY_COMPARISON;
   const comparison =
-    effectiveTab === "income"
-      ? (overviewIncomeComparison ?? queriedComparison ?? EMPTY_COMPARISON)
-      : (overviewSpendingComparison ?? queriedComparison ?? EMPTY_COMPARISON);
+    (effectiveTab === "income" ? overviewIncomeComparison : overviewSpendingComparison) ??
+    EMPTY_COMPARISON;
   const scopeSeriesError =
     timeScope === "month"
       ? effectiveTab === "income"
@@ -161,15 +141,7 @@ export function useInsightsScreen() {
       : effectiveTab === "income"
         ? incomeMonthlySeriesQuery.error
         : spendingMonthlySeriesQuery.error;
-  const comparisonError =
-    effectiveTab === "income"
-      ? overviewIncomeComparison
-        ? null
-        : queriedComparisonQuery.error
-      : overviewSpendingComparison
-        ? null
-        : queriedSpendingComparisonQuery.error;
-  const chartError = scopeSeriesError ?? comparisonError;
+  const chartError = scopeSeriesError ?? (presentation ? null : overviewError);
   const categories = presentation ? mapTopCategoriesToSlices(presentation) : [];
   const categoryTotal = presentation
     ? fromMinorUnits(presentation.currentMonth.spendingMinorUnits, currency)
@@ -189,16 +161,12 @@ export function useInsightsScreen() {
       : effectiveTab === "income"
         ? incomeMonthlySeriesQuery.isInitialLoading
         : spendingMonthlySeriesQuery.isInitialLoading;
-  const isComparisonLoading =
-    effectiveTab === "income"
-      ? !overviewIncomeComparison && queriedComparisonQuery.isInitialLoading
-      : !overviewSpendingComparison && queriedComparisonQuery.isInitialLoading;
-  const isLoading = isScopeSeriesLoading || isComparisonLoading;
+  const isLoading = isScopeSeriesLoading || isOverviewLoading;
   const materialChangeNotice =
     !isLoading && comparison.percentChange !== null && Math.abs(comparison.percentChange) >= 20
       ? effectiveTab === "income"
-        ? "Income changed materially compared with the previous month."
-        : "Spending changed materially compared with the previous month."
+        ? "Income changed materially compared with this time last month."
+        : "Spending changed materially compared with this time last month."
       : null;
 
   return {

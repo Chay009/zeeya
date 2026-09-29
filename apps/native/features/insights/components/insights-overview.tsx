@@ -58,7 +58,7 @@ function SpendingInsightTile({
       >
         {comparison.percentChange === null
           ? "No prior month data"
-          : `${Math.abs(comparison.percentChange).toFixed(0)}% vs last month`}
+          : `${Math.abs(comparison.percentChange).toFixed(0)}% vs this time last month`}
       </Text>
       <View style={{ marginTop: 6, minHeight: 28 }}>
         {hasCurrentSpending ? (

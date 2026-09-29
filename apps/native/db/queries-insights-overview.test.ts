@@ -221,6 +221,55 @@ describe("queryInsightsOverviewUnsafe", () => {
     expect(result.budget).toBeNull();
   });
 
+  // Early in a month, a whole-month baseline would read as a huge drop.
+  it("compares this month so far with last month up to the same point", async () => {
+    const fresh = freshDb();
+    sqlite = fresh.sqlite;
+    const db = fresh.db;
+    const insert = (id: string, date: number, amount: number) => {
+      db.insert(schema.smsLedger)
+        .values({
+          id,
+          sender: "BANK",
+          body: "message",
+          date,
+          parserVersion: "test",
+          parsedResult: "{}",
+          ingestionStatus: "parsed",
+          createdAt: date,
+        })
+        .run();
+      db.insert(schema.transactions)
+        .values({
+          id,
+          smsId: id,
+          date,
+          amountMinorUnits: amount,
+          currency: "INR",
+          direction: "expense",
+          category: "Food",
+          brandName: null,
+          subscriptionIdentityKey: null,
+        })
+        .run();
+    };
+    insert("now", new Date(2026, 8, 5, 9).getTime(), 1_000);
+    insert("last-month-by-now", new Date(2026, 7, 4, 9).getTime(), 800);
+    insert("last-month-later", new Date(2026, 7, 20, 9).getTime(), 50_000);
+
+    const result = await queryInsightsOverviewUnsafe(
+      { currency: "INR", at: new Date(2026, 8, 5, 12).getTime() },
+      asyncClient(fresh.sqlite),
+    );
+
+    expect(result.previousMonth.spendingMinorUnits).toBe(800);
+    expect(result.spendingChangePercent).toBe(25);
+    expect(result.topCategories[0]).toMatchObject({
+      currentMinorUnits: 1_000,
+      previousMinorUnits: 800,
+    });
+  });
+
   it("honors an explicit bounded comparison period for six-month analytics", async () => {
     const fresh = freshDb();
     sqlite = fresh.sqlite;

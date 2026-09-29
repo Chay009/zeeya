@@ -62,8 +62,8 @@ function EmptyPanel({ title, body }: { title: string; body: string }) {
 
 function changeLabel(percent: number | null): string {
   if (percent === null) return "No prior month data";
-  if (percent === 0) return "No change vs last month";
-  return `${percent > 0 ? "+" : ""}${percent}% vs last month`;
+  if (percent === 0) return "No change vs this time last month";
+  return `${percent > 0 ? "+" : ""}${percent}% vs this time last month`;
 }
 
 function changeColor(percent: number | null, colors: ThemeColors): string {
@@ -97,7 +97,7 @@ function AmountPair({
         minimumFontScale={0.7}
         style={{ fontSize: 11, color: colors.muted }}
       >
-        {formatMoney(fromMinorUnits(previous, currency), currency)} last month
+        {formatMoney(fromMinorUnits(previous, currency), currency)} this time last month
       </Text>
     </View>
   );
@@ -148,7 +148,7 @@ export function InsightsMonthTotalsPanel({ data }: { data: InsightsPresentation 
 export function InsightsCategoriesPanel({ data }: { data: InsightsPresentation }) {
   const colors = useThemeColors();
   return (
-    <Panel title="Top categories" subtitle="Current month compared with the previous month">
+    <Panel title="Top categories" subtitle="This month so far compared with this time last month">
       {data.topCategories.length === 0 ? (
         <EmptyPanel
           title="No category data yet"

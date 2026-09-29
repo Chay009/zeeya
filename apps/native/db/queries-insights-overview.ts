@@ -68,6 +68,22 @@ function localDayStart(dayKey: string): number {
   return new Date(year, month - 1, day).getTime();
 }
 
+// The same day-of-month and time last month, clamped to that month's length
+// (31 March → 28/29 February) and kept strictly before this month begins.
+function samePointLastMonth(at: Date, currentStart: number): number {
+  const lastDay = new Date(at.getFullYear(), at.getMonth(), 0).getDate();
+  const point = new Date(
+    at.getFullYear(),
+    at.getMonth() - 1,
+    Math.min(at.getDate(), lastDay),
+    at.getHours(),
+    at.getMinutes(),
+    at.getSeconds(),
+    at.getMilliseconds(),
+  ).getTime();
+  return Math.min(point, currentStart - 1);
+}
+
 function monthlyDailySpend(rows: DaySpendRow[], at: Date, months: number): MonthlyDailySpend[] {
   const byMonth = new Map<number, MonthlyDailySpend>();
   for (let offset = months - 1; offset >= 0; offset--) {
@@ -97,19 +113,38 @@ export async function queryInsightsOverviewUnsafe(
   const currentEnd = query.period?.currentTo ?? query.at;
   const previousStart =
     query.period?.previousFrom ?? new Date(at.getFullYear(), at.getMonth() - 1, 1).getTime();
-  const previousEnd = query.period?.previousTo ?? currentStart - 1;
+  // Like for like: this month so far against last month up to the same
+  // point, not the whole of last month — on the 5th, a full-month baseline
+  // reads as "−85% vs last month" and trips the material-change notice.
+  const previousEnd = query.period?.previousTo ?? samePointLastMonth(at, currentStart);
   const historyStart = new Date(at.getFullYear(), at.getMonth() - historyMonths + 1, 1).getTime();
   const recencyThreshold = query.at - RECENCY_WINDOW_DAYS * 24 * 60 * 60 * 1000;
 
   const periodsPromise = client.getAllAsync<PeriodRow>(
-    `SELECT CASE WHEN date >= ? THEN 'current' ELSE 'previous' END AS period,
+    // The two windows needn't touch (last month stops at the same point), so
+    // each row is bucketed by both bounds and anything between them dropped.
+    `SELECT period,
             SUM(CASE WHEN direction = 'income' THEN amount_minor_units ELSE 0 END) AS incomeMinorUnits,
             SUM(CASE WHEN direction = 'expense' THEN amount_minor_units ELSE 0 END) AS spendingMinorUnits,
             COUNT(*) AS transactionCount
-     FROM transactions
-     WHERE currency = ? AND date >= ? AND date <= ? AND direction IN ('income', 'expense')
+     FROM (
+       SELECT direction, amount_minor_units,
+              CASE WHEN date >= ? AND date <= ? THEN 'current'
+                   WHEN date >= ? AND date <= ? THEN 'previous' END AS period
+       FROM transactions
+       WHERE currency = ? AND date >= ? AND date <= ? AND direction IN ('income', 'expense')
+     )
+     WHERE period IS NOT NULL
      GROUP BY period`,
-    [currentStart, query.currency, previousStart, currentEnd],
+    [
+      currentStart,
+      currentEnd,
+      previousStart,
+      previousEnd,
+      query.currency,
+      previousStart,
+      currentEnd,
+    ],
   );
   const categoriesPromise = client.getAllAsync<ComparisonRow>(
     `SELECT category AS label,

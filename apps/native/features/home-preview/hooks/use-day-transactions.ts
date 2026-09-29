@@ -17,7 +17,12 @@ export interface DayTransactionsState {
 }
 
 const EMPTY: TransactionSummary[] = [];
-const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Not start + 24h: a local day is 23 or 25 hours across a DST change.
+function nextLocalMidnight(dayStartMs: number): number {
+  const day = new Date(dayStartMs);
+  return new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1).getTime();
+}
 
 export function useDayTransactions(
   dayStartMs: number | null,
@@ -25,7 +30,7 @@ export function useDayTransactions(
 ): DayTransactionsState {
   const { data, error, isInitialLoading, isRevalidating } = useLocalQuery({
     queryKey: localQueryKeys.dayTransactions(dayStartMs ?? 0, currency),
-    queryFn: () => queryTransactionsForDay(dayStartMs!, dayStartMs! + DAY_MS - 1, currency),
+    queryFn: () => queryTransactionsForDay(dayStartMs!, nextLocalMidnight(dayStartMs!) - 1, currency),
     enabled: dayStartMs !== null,
     keepPrevious: (previousKey) => previousKey[1] === "day-transactions",
   });

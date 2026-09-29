@@ -80,7 +80,7 @@ export function AnalyticsSummary({
       </View>
       {comparison.percentChange !== null && (
         <Text style={{ marginTop: 3, fontSize: 12, color: colors.muted }}>
-          compared with the previous month
+          compared with this time last month
         </Text>
       )}
       <View style={{ marginTop: 14 }}>

@@ -121,7 +121,7 @@ export function AnalyticsHeroCard({
         {scope === "month" && scrubIndex === null ? (
           <DeltaChip
             percent={comparison.percentChange}
-            suffix="vs last month"
+            suffix="vs this time last month"
             goodWhen={mode === "income" ? "up" : "down"}
           />
         ) : null}

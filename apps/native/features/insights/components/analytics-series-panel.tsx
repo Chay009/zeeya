@@ -182,7 +182,7 @@ export function AnalyticsSeriesPanel({
         )}
       </View>
       <Text style={{ marginTop: 3, fontSize: 12, color: colors.muted }}>
-        Current month compared with the previous month
+        This month so far compared with this time last month
       </Text>
 
       <View style={{ marginTop: 15 }}>

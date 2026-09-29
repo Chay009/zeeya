@@ -44,5 +44,5 @@ export function analyticsTabTheme(tab: AnalyticsTab, colors: ThemeColors): Analy
 export function formatComparisonDelta(percentChange: number | null): string | null {
   if (percentChange === null) return null;
   const arrow = percentChange > 0 ? "↑" : percentChange < 0 ? "↓" : "→";
-  return `${arrow} ${Math.abs(percentChange).toFixed(1)}% vs last month`;
+  return `${arrow} ${Math.abs(percentChange).toFixed(1)}% vs this time last month`;
 }

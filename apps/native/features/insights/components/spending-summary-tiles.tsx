@@ -70,7 +70,7 @@ function MonthComparisonTile({
             }}
           >
             {isIncrease ? "+" : ""}
-            {percentChange.toFixed(0)}% vs last month
+            {percentChange.toFixed(0)}% vs this time last month
           </Text>
         )}
         <Text style={{ marginTop: 6, fontSize: 22, fontWeight: "800", color: colors.ink }}>
