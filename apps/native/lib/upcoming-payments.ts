@@ -1,5 +1,9 @@
 import type { SubscriptionSummary, UpcomingPayment } from "./dashboard-data";
 
+// Same band as lib/subscriptions.ts's MIN/MAX_RECURRING_GAP_DAYS.
+const MIN_SUBSCRIPTION_CADENCE_DAYS = 20;
+const MAX_SUBSCRIPTION_CADENCE_DAYS = 45;
+
 function daysInMonth(year: number, month: number): number {
   return new Date(year, month + 1, 0).getDate();
 }
@@ -54,9 +58,16 @@ export function nextSubscriptionExpectedAt(
     cadenceDays !== null && cadenceDays !== undefined && Number.isFinite(cadenceDays)
       ? Math.round(cadenceDays)
       : null;
+  // A measured cadence is trusted only inside the 20–45-day band that
+  // defines a subscription at all (lib/subscriptions.ts's recurring run).
+  // The cadence evidence is every recent expense at that merchant, not just
+  // the qualifying run — one-off purchases or an older weekly habit could
+  // otherwise yield e.g. "3 days" and predict a monthly subscription as due
+  // every few days. Anything outside the band falls back to monthly.
   if (
     measuredCadence !== null &&
-    measuredCadence > 0 &&
+    measuredCadence >= MIN_SUBSCRIPTION_CADENCE_DAYS &&
+    measuredCadence <= MAX_SUBSCRIPTION_CADENCE_DAYS &&
     (measuredCadence < 25 || measuredCadence > 35)
   ) {
     let candidate = lastDate;

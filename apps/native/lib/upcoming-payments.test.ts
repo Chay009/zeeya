@@ -103,4 +103,17 @@ describe("inferUpcomingSubscriptionPayments", () => {
       nextSubscriptionExpectedAt(dates[1]!, new Date(2026, 7, 1, 12).getTime(), 45),
     );
   });
+
+  // The cadence evidence is every recent expense at the merchant, so a
+  // subscription merchant you also buy from often can measure "3 days".
+  // That must not turn a monthly subscription into "due every 3 days".
+  it("ignores a measured cadence outside the subscription band and projects monthly", () => {
+    const lastDate = new Date(2026, 6, 10, 9).getTime();
+    const at = new Date(2026, 6, 20, 12).getTime();
+
+    expect(nextSubscriptionExpectedAt(lastDate, at, 3)).toBe(new Date(2026, 7, 10, 9).getTime());
+    expect(nextSubscriptionExpectedAt(lastDate, at, 90)).toBe(new Date(2026, 7, 10, 9).getTime());
+    // Inside the band, a non-monthly cadence is still honoured.
+    expect(nextSubscriptionExpectedAt(lastDate, at, 21)).toBe(new Date(2026, 6, 31, 9).getTime());
+  });
 });
