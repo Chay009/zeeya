@@ -89,6 +89,16 @@ describe("native schema compatibility", () => {
     insert.run("Food", 800_000);
     expect(() => insert.run("Food", 900_000)).toThrow(/UNIQUE|PRIMARY/);
     expect(() => insert.run("Fuel", 0)).toThrow(/CHECK/);
+
+    const alert = sqlite.prepare(
+      "INSERT INTO budget_alerts (category, currency, month_start, level) VALUES ('Food', 'INR', 1, ?)",
+    );
+    alert.run(85);
+    expect(() =>
+      sqlite
+        .prepare("INSERT INTO budget_alerts (category, currency, month_start, level) VALUES ('Fuel', 'INR', 1, 50)")
+        .run(),
+    ).toThrow(/CHECK/);
   });
 
   it("adds activity.account_id and its composite index to an already-migrated activity table", () => {

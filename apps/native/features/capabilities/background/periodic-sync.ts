@@ -17,6 +17,8 @@ interface PeriodicSyncDependencies
   extends Omit<SyncAndNotifyDependencies, "transactionNotificationsEnabled"> {
   getSettings(): Promise<PeriodicSyncSettings>;
   canSync(): Promise<boolean>;
+  /** Runs after a completed sync, e.g. budget alerts. Must not throw. */
+  afterSync?(): Promise<void>;
 }
 
 export interface PeriodicSyncResult {
@@ -65,6 +67,7 @@ export async function runPeriodicSync(
     transactionNotificationsEnabled: settings.transactionNotificationsEnabled,
     notify: dependencies.notify,
   });
+  await dependencies.afterSync?.();
 
   return { status: "completed", newFinancialTransactions };
 }

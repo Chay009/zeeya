@@ -7,6 +7,7 @@ import { countTransactionsArrivedAfter, latestArrivalSequence } from "@/db/caugh
 import { db } from "@/db/client";
 import migrations from "@/db/migrations/migrations";
 import { getLocalSettings } from "@/db/settings";
+import { checkBudgetAlerts } from "@/features/budgets/check-budget-alerts";
 import { syncDeviceMessages } from "@/lib/device-message-sync";
 import { hasSmsCapturePermissions } from "@/lib/sms";
 import AndroidMessageQueueModule from "@/modules/zeeya-message-queue/src/ZeeyaMessageQueueModule.android";
@@ -39,6 +40,7 @@ if (!TaskManager.isTaskDefined(BACKGROUND_SYNC_TASK)) {
         },
         countTransactionsArrivedAfter,
         notify: notifyNewFinancialTransactions,
+        afterSync: checkBudgetAlerts,
       });
       if (result.status === "completed" && syncState.pendingSignal && AndroidMessageQueueModule) {
         await AndroidMessageQueueModule.acknowledgePendingSmsSignal(

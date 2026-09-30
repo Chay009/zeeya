@@ -9,6 +9,7 @@ import type {
   CategoryBudgetInput,
   CategoryBudgetStatus,
 } from "../lib/dashboard-data";
+import { clearBudgetAlert, resetBudgetAlertBaseline } from "./budget-alerts";
 import { readClient, writeDb } from "./connection";
 import { notifyDataChanged } from "./data-changes";
 import { readConsistentSnapshot } from "./projection-snapshot";
@@ -96,23 +97,26 @@ export async function saveCategoryBudget(input: CategoryBudgetInput): Promise<vo
   if (limit !== null && (!Number.isSafeInteger(limit) || limit <= 0)) {
     throw new Error(`A budget limit must be a positive whole amount, got ${limit}`);
   }
-  const database = writeDb();
-  if (limit === null) {
-    database
-      .delete(categoryBudgets)
-      .where(and(eq(categoryBudgets.category, category), eq(categoryBudgets.currency, input.currency)))
-      .run();
-  } else {
+  const key = { category, currency: input.currency };
+  writeDb().transaction((tx) => {
+    if (limit === null) {
+      tx.delete(categoryBudgets)
+        .where(and(eq(categoryBudgets.category, category), eq(categoryBudgets.currency, input.currency)))
+        .run();
+      clearBudgetAlert(tx, key);
+      return;
+    }
     const updatedAt = Date.now();
-    database
-      .insert(categoryBudgets)
-      .values({ category, currency: input.currency, monthlyLimitMinorUnits: limit, updatedAt })
+    tx.insert(categoryBudgets)
+      .values({ ...key, monthlyLimitMinorUnits: limit, updatedAt })
       .onConflictDoUpdate({
         target: [categoryBudgets.category, categoryBudgets.currency],
         set: { monthlyLimitMinorUnits: limit, updatedAt },
       })
       .run();
-  }
+    // Alerts start from where the budget stands now (see budget-alerts.ts).
+    resetBudgetAlertBaseline(tx, { ...key, limitMinorUnits: limit }, updatedAt);
+  });
   // Live queries re-read: the Budgets screen and Home's card update at once.
   notifyDataChanged();
 }

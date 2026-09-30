@@ -30,6 +30,7 @@ import {
 } from "../account-scope";
 import { AccountScopeChips } from "../components/account-scope-chips";
 import { ActivitySection } from "../components/activity-section";
+import { BudgetAlertResponder } from "@/features/budgets/components/budget-alert-responder";
 import { HomeBudgetCard } from "@/features/budgets/components/home-budget-card";
 import { CashflowCard } from "../components/cashflow-card";
 import { HomePermissionCard } from "../components/home-permission-card";
@@ -301,6 +302,10 @@ export function HomePreviewScreen() {
           </>
         ) : null}
       </ScrollView>
+
+      {/* Home is the first screen and stays mounted, so a budget alert tap
+          (even the one that launched the app) always has a listener. */}
+      <BudgetAlertResponder />
 
       {/* Stays mounted so it animates open and closed; its content only
           renders once opened (NativeBottomSheet), so idle cost is small. */}

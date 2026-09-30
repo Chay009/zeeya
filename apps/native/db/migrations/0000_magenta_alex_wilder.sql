@@ -86,6 +86,15 @@ CREATE TABLE `balance_readings` (
 --> statement-breakpoint
 CREATE INDEX `balance_readings_account_id_as_of_id_idx` ON `balance_readings` (`account_id`,`as_of`,`id`);--> statement-breakpoint
 CREATE INDEX `balance_readings_bank_key_account_as_of_id_idx` ON `balance_readings` (`detected_bank_key`,`account_id`,`as_of`,`id`);--> statement-breakpoint
+CREATE TABLE `budget_alerts` (
+	`category` text NOT NULL,
+	`currency` text NOT NULL,
+	`month_start` integer NOT NULL,
+	`level` integer NOT NULL,
+	PRIMARY KEY(`category`, `currency`),
+	CONSTRAINT "budget_alerts_level_check" CHECK("budget_alerts"."level" IN (0, 85, 100))
+);
+--> statement-breakpoint
 CREATE TABLE `category_budgets` (
 	`category` text NOT NULL,
 	`currency` text NOT NULL,

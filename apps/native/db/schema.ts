@@ -245,6 +245,24 @@ export const categoryBudgets = sqliteTable(
   ],
 );
 
+// Which alert level (85 / 100) a budget has already notified for, and in
+// which month — so each level notifies once per budget per month, and a
+// new month starts clean. Kept apart from category_budgets: this is app
+// bookkeeping, that is the user's intent.
+export const budgetAlerts = sqliteTable(
+  "budget_alerts",
+  {
+    category: text("category").notNull(),
+    currency: text("currency").notNull(),
+    monthStart: integer("month_start").notNull(),
+    level: integer("level").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.category, table.currency] }),
+    check("budget_alerts_level_check", sql`${table.level} IN (0, 85, 100)`),
+  ],
+);
+
 // ── Normalized layer ─────────────────────────────────────────────────────────
 // Derived from the ledger on ingest. Shaped close to what apps/native's
 // existing dashboard.ts (deriveDashboard) already computes in-memory, and

@@ -1,5 +1,6 @@
 // What the budget surfaces show, derived from one BudgetOverview. Pure, so
 // the rules (pace, summary, suggestions) are tested without a screen.
+import { BUDGET_WATCH_SHARE } from "@/lib/budget-alerts";
 import { minorUnitExponent, toMinorUnits } from "@/lib/currency";
 import type { BudgetCategorySpend, BudgetOverview } from "@/lib/dashboard-data";
 
@@ -30,7 +31,7 @@ export interface BudgetSummaryView {
   watchCount: number;
 }
 
-const WATCH_USED = 0.85;
+const WATCH_USED = BUDGET_WATCH_SHARE;
 // "Clearly ahead": spent 15% more than an even pace would have by now.
 const AHEAD_OF_PACE = 1.15;
 

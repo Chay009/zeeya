@@ -12,6 +12,8 @@ import {
   syncDeviceMessages,
 } from "@/lib/device-message-sync";
 import type { SyncProgress } from "@/db/sync";
+// After every sync: notify budgets that just crossed 85% / 100%.
+import { checkBudgetAlerts } from "@/features/budgets/check-budget-alerts";
 import { hasSmsReadPermission, requestSmsCapturePermissions } from "@/lib/sms";
 import { subscribeToMessageSync } from "@/features/capabilities/message-sync-events";
 
@@ -100,6 +102,7 @@ export const useDashboardStore = create<DashboardStoreState>((set, get) => {
         caughtUpTransactions: caughtUp,
         syncRevision: state.syncRevision + 1,
       }));
+      void checkBudgetAlerts();
     } catch (e) {
       if (id !== loadId) return;
       set({ status: "error", error: e instanceof Error ? e.message : String(e), progress: null });
@@ -153,6 +156,7 @@ export const useDashboardStore = create<DashboardStoreState>((set, get) => {
         caughtUpTransactions: caughtUp,
         syncRevision: state.syncRevision + 1,
       }));
+      void checkBudgetAlerts();
     } catch (cause) {
       if (publicationId !== loadId || !listeningForNewMessages) return;
       set({ status: "error", error: cause instanceof Error ? cause.message : String(cause) });

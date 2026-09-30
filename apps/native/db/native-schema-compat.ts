@@ -58,6 +58,19 @@ const NEEDS_CATEGORY_BUDGETS_TABLE_SQL = `
   END AS value
 `;
 
+const NEEDS_BUDGET_ALERTS_TABLE_SQL = `
+  SELECT CASE
+    WHEN EXISTS (
+      SELECT 1 FROM sqlite_master
+      WHERE type = 'table' AND name = 'local_settings'
+    ) AND NOT EXISTS (
+      SELECT 1 FROM sqlite_master
+      WHERE type = 'table' AND name = 'budget_alerts'
+    )
+    THEN 1 ELSE 0
+  END AS value
+`;
+
 /**
  * Repairs additive schema changes made while the pre-release migration
  * history is still maintained as one squashed baseline. Existing development
@@ -103,6 +116,18 @@ export function repairLegacyNativeSchema(sqlite: NativeSchemaDatabase): void {
           CONSTRAINT category_budgets_limit_check CHECK (
             typeof(monthly_limit_minor_units) = 'integer' AND monthly_limit_minor_units > 0
           )
+        );
+      `);
+    }
+    if (sqlite.getFirstSync(NEEDS_BUDGET_ALERTS_TABLE_SQL)?.value === 1) {
+      sqlite.execSync(`
+        CREATE TABLE budget_alerts (
+          category text NOT NULL,
+          currency text NOT NULL,
+          month_start integer NOT NULL,
+          level integer NOT NULL,
+          PRIMARY KEY (category, currency),
+          CONSTRAINT budget_alerts_level_check CHECK (level IN (0, 85, 100))
         );
       `);
     }

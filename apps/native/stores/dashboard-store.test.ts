@@ -28,8 +28,13 @@ const dependencies = vi.hoisted(() => {
       }),
     ),
     acknowledgeCaughtUpTransactions: vi.fn(async () => undefined),
+    checkBudgetAlerts: vi.fn(async () => undefined),
   };
 });
+
+vi.mock("@/features/budgets/check-budget-alerts", () => ({
+  checkBudgetAlerts: dependencies.checkBudgetAlerts,
+}));
 
 vi.mock("@/db/caught-up-transactions", () => ({
   queryCaughtUpTransactions: dependencies.queryCaughtUpTransactions,
@@ -209,6 +214,33 @@ describe("dashboardStore sync lifecycle", () => {
     publishMessageSync();
     await flush();
     expect(useDashboardStore.getState().syncRevision).toBeGreaterThan(afterSecondPush);
+  });
+
+  it("checks budget alerts after each completed sync, not on a plain resume", async () => {
+    const { useDashboardStore, publishMessageSync } = await freshStore();
+
+    useDashboardStore.getState().start();
+    await flush();
+    expect(dependencies.checkBudgetAlerts).toHaveBeenCalledTimes(1);
+
+    publishMessageSync();
+    await flush();
+    expect(dependencies.checkBudgetAlerts).toHaveBeenCalledTimes(2);
+
+    emitAppStateActive();
+    await flush();
+    expect(dependencies.checkBudgetAlerts).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not check budget alerts when the sync fails", async () => {
+    dependencies.syncDeviceMessages.mockRejectedValueOnce(new Error("inbox unavailable"));
+    const { useDashboardStore } = await freshStore();
+
+    useDashboardStore.getState().start();
+    await flush();
+
+    expect(useDashboardStore.getState().status).toBe("error");
+    expect(dependencies.checkBudgetAlerts).not.toHaveBeenCalled();
   });
 
   it("loads the durable caught-up batch before startup becomes ready and acknowledges it on dismiss", async () => {

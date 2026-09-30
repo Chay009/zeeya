@@ -68,6 +68,24 @@ describe("periodic financial sync policy", () => {
     expect(notify).toHaveBeenCalledWith(1);
   });
 
+  it("runs the after-sync step (budget alerts) only after a completed sync", async () => {
+    const afterSync = vi.fn().mockResolvedValue(undefined);
+    const log = arrivals(3, 1);
+    await runPeriodicSync({ getSettings: enabled, canSync: async () => true, ...log, notify: vi.fn(), afterSync });
+    expect(afterSync).toHaveBeenCalledTimes(1);
+    expect(log.sync.mock.invocationCallOrder[0]!).toBeLessThan(afterSync.mock.invocationCallOrder[0]!);
+
+    const skipped = vi.fn();
+    await runPeriodicSync({
+      getSettings: async () => ({ backgroundSyncEnabled: false, transactionNotificationsEnabled: true }),
+      canSync: async () => true,
+      ...arrivals(3, 1),
+      notify: vi.fn(),
+      afterSync: skipped,
+    });
+    expect(skipped).not.toHaveBeenCalled();
+  });
+
   it("does not notify for a sync that adds no financial transaction", async () => {
     const notify = vi.fn();
 

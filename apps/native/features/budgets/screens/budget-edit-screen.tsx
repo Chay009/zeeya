@@ -16,6 +16,7 @@ import { usePrimaryCurrency } from "@/features/insights/hooks/use-dashboard-curr
 import { fromMinorUnits } from "@/lib/currency";
 import { moneyFontFamily } from "@/lib/fonts";
 
+import { requestBudgetAlertPermission } from "../budget-notifications";
 import { parseLimitInput, suggestedLimitMinorUnits } from "../budget-presentation";
 import { saveBudget, useBudgets } from "../hooks/use-budgets";
 
@@ -57,6 +58,11 @@ export function BudgetEditScreen() {
     try {
       await saveBudget({ category, currency, monthlyLimitMinorUnits });
       tick();
+      // Alerts need notification permission; ask here, where the reason is
+      // obvious. The OS shows its prompt only until it has been answered.
+      if (monthlyLimitMinorUnits !== null) {
+        await requestBudgetAlertPermission().catch(() => false);
+      }
       router.back();
     } catch (cause) {
       setFailure(cause instanceof Error ? cause.message : String(cause));
