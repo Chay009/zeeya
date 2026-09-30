@@ -30,7 +30,7 @@ import {
 } from "../account-scope";
 import { AccountScopeChips } from "../components/account-scope-chips";
 import { ActivitySection } from "../components/activity-section";
-import { BudgetCard } from "../components/budget-card";
+import { HomeBudgetCard } from "@/features/budgets/components/home-budget-card";
 import { CashflowCard } from "../components/cashflow-card";
 import { HomePermissionCard } from "../components/home-permission-card";
 import { HomeHighlightsPanel } from "../components/home-highlights-panel";
@@ -278,7 +278,11 @@ export function HomePreviewScreen() {
 
             <EnterTransition index={3}>
               <Section title="Budget">
-                <BudgetCard {...displayHomeData.budget} onOpen={() => router.navigate("/insights")} />
+                <HomeBudgetCard
+                  currency={loadCurrency}
+                  monthLabel={displayHomeData.budget.monthLabel}
+                  monthSpent={displayHomeData.budget.spent}
+                />
               </Section>
             </EnterTransition>
 

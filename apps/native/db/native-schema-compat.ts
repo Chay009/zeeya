@@ -42,6 +42,22 @@ const NEEDS_DAILY_BUDGET_COLUMN_SQL = `
   END AS value
 `;
 
+// local_settings is part of the baseline, so its presence means the baseline
+// already ran on this install (a fresh one gets category_budgets from the
+// migration itself — creating it here first would make that migration fail).
+const NEEDS_CATEGORY_BUDGETS_TABLE_SQL = `
+  SELECT CASE
+    WHEN EXISTS (
+      SELECT 1 FROM sqlite_master
+      WHERE type = 'table' AND name = 'local_settings'
+    ) AND NOT EXISTS (
+      SELECT 1 FROM sqlite_master
+      WHERE type = 'table' AND name = 'category_budgets'
+    )
+    THEN 1 ELSE 0
+  END AS value
+`;
+
 /**
  * Repairs additive schema changes made while the pre-release migration
  * history is still maintained as one squashed baseline. Existing development
@@ -73,6 +89,20 @@ export function repairLegacyNativeSchema(sqlite: NativeSchemaDatabase): void {
         CHECK (
           daily_budget_minor_units IS NULL OR
           (typeof(daily_budget_minor_units) = 'integer' AND daily_budget_minor_units > 0)
+        );
+      `);
+    }
+    if (sqlite.getFirstSync(NEEDS_CATEGORY_BUDGETS_TABLE_SQL)?.value === 1) {
+      sqlite.execSync(`
+        CREATE TABLE category_budgets (
+          category text NOT NULL,
+          currency text NOT NULL,
+          monthly_limit_minor_units integer NOT NULL,
+          updated_at integer NOT NULL,
+          PRIMARY KEY (category, currency),
+          CONSTRAINT category_budgets_limit_check CHECK (
+            typeof(monthly_limit_minor_units) = 'integer' AND monthly_limit_minor_units > 0
+          )
         );
       `);
     }

@@ -62,6 +62,12 @@ export async function warmBootCache(): Promise<void> {
       queryFn: () => financeDataSource.home.loadHighlights({ ...highlightsQuery, at: Date.now() }),
       staleTime: forever,
     }),
+    // Home's budget card (features/budgets/hooks/use-budgets.ts).
+    queryClient.prefetchQuery({
+      queryKey: localQueryKeys.budgets(currency),
+      queryFn: () => financeDataSource.budgets.load({ currency, at: Date.now() }),
+      staleTime: forever,
+    }),
     queryClient.prefetchQuery({
       queryKey: localQueryKeys.recentActivity(transactionsScope),
       queryFn: () =>

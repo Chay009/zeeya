@@ -16,6 +16,7 @@ export function BudgetCard({
   limit,
   usedPercent,
   remaining,
+  status,
   onOpen,
 }: {
   monthLabel: string;
@@ -23,6 +24,8 @@ export function BudgetCard({
   limit: string | null;
   usedPercent: number | null;
   remaining: string | null;
+  /** Replaces "N% used", e.g. "1 over budget". */
+  status?: string | null;
   onOpen?: () => void;
 }) {
   const colors = useThemeColors();
@@ -60,7 +63,7 @@ export function BudgetCard({
           </View>
           <ProgressBar value={used} color={barColor} height={8} className="mt-4" />
           <View className="mt-2 flex-row justify-between">
-            <Text className="text-meta text-muted">{usedPercent}% used</Text>
+            <Text className="text-meta text-muted">{status ?? `${usedPercent}% used`}</Text>
             <Text className={`text-meta font-medium ${used >= 1 ? "text-negative" : "text-ink-soft"}`}>
               {used >= 1 ? "Over budget" : remaining ? `${remaining} left` : "On track"}
             </Text>
@@ -75,7 +78,7 @@ export function BudgetCard({
           >
             {spent}
           </Text>
-          <Text className="mt-1 text-caption text-muted">Spent so far · set a monthly budget to track pace</Text>
+          <Text className="mt-1 text-caption text-muted">Spent so far · set category budgets to track pace</Text>
         </View>
       )}
     </PressableFeedback>

@@ -25,6 +25,7 @@ import {
   queryActivityPage,
   queryTransactionDetail,
 } from "@/db/queries-transactions";
+import { queryBudgetOverview, saveCategoryBudget } from "@/db/budgets";
 import { homeDataSource } from "@/db/queries-home";
 import { queryInsightsOverview } from "@/db/queries-insights-overview";
 
@@ -70,6 +71,10 @@ export const financeDataSource: FinanceDataSource = {
       await ensureProjectionReadable();
       return querySubscriptions(at !== undefined ? new Date(at) : new Date());
     },
+  },
+  budgets: {
+    load: queryBudgetOverview,
+    set: saveCategoryBudget,
   },
   insights: {
     loadOverview: queryInsightsOverview,

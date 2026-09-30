@@ -13,7 +13,15 @@
 // shipped yet, so there's no reason to let that assumption spread into
 // ingestion code.
 import { sql } from "drizzle-orm";
-import { sqliteTable, text, integer, index, uniqueIndex, check } from "drizzle-orm/sqlite-core";
+import {
+  sqliteTable,
+  text,
+  integer,
+  index,
+  uniqueIndex,
+  check,
+  primaryKey,
+} from "drizzle-orm/sqlite-core";
 import { STORED_ACTIVITY_CATEGORIES } from "../lib/activity-filters";
 
 // ── Ledger layer ────────────────────────────────────────────────────────────
@@ -212,6 +220,28 @@ export const localSettings = sqliteTable(
       sql`${table.dailyBudgetMinorUnits} IS NULL OR (typeof(${table.dailyBudgetMinorUnits}) = 'integer' AND ${table.dailyBudgetMinorUnits} > 0)`,
     ),
     check("local_settings_arrival_cursor_check", sql`${table.lastSeenArrivalSequence} >= 0`),
+  ],
+);
+
+// A monthly spending limit per category, set by the user. User-owned: the
+// projection rebuild (replaceProjection) never touches it, so budgets
+// survive every re-sync. `category` is the same display label transactions
+// carry (lib/transaction-category.ts) — a budget follows spending tagged
+// with that label, in one currency.
+export const categoryBudgets = sqliteTable(
+  "category_budgets",
+  {
+    category: text("category").notNull(),
+    currency: text("currency").notNull(),
+    monthlyLimitMinorUnits: integer("monthly_limit_minor_units").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.category, table.currency] }),
+    check(
+      "category_budgets_limit_check",
+      sql`typeof(${table.monthlyLimitMinorUnits}) = 'integer' AND ${table.monthlyLimitMinorUnits} > 0`,
+    ),
   ],
 );
 

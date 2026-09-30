@@ -67,6 +67,7 @@ export const localQueryKeys = {
     ["local", "account-cashflow-scope", accountId, currency] as const,
   subscriptionsCatalog: () => ["local", "subscriptions-catalog"] as const,
   dashboardCurrencies: () => ["local", "dashboard-currencies"] as const,
+  budgets: (currency: string) => ["local", "budgets", currency] as const,
   dayTransactions: (dayStartMs: number, currency: string) =>
     ["local", "day-transactions", dayStartMs, currency] as const,
 };

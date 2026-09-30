@@ -64,6 +64,31 @@ describe("native schema compatibility", () => {
   it("is a no-op before a fresh database creates local_settings", () => {
     const sqlite = new Database(":memory:");
     expect(() => repairLegacyNativeSchema(adapter(sqlite))).not.toThrow();
+    // Creating category_budgets here would make the baseline migration fail.
+    expect(
+      sqlite.prepare("SELECT name FROM sqlite_master WHERE name = 'category_budgets'").get(),
+    ).toBeUndefined();
+  });
+
+  it("adds category_budgets, with its limit check, to an already-migrated install", () => {
+    const sqlite = new Database(":memory:");
+    sqlite.exec(`
+      CREATE TABLE local_settings (
+        id text PRIMARY KEY NOT NULL,
+        daily_budget_minor_units integer,
+        updated_at integer NOT NULL
+      );
+    `);
+
+    repairLegacyNativeSchema(adapter(sqlite));
+    repairLegacyNativeSchema(adapter(sqlite));
+
+    const insert = sqlite.prepare(
+      "INSERT INTO category_budgets (category, currency, monthly_limit_minor_units, updated_at) VALUES (?, 'INR', ?, 1)",
+    );
+    insert.run("Food", 800_000);
+    expect(() => insert.run("Food", 900_000)).toThrow(/UNIQUE|PRIMARY/);
+    expect(() => insert.run("Fuel", 0)).toThrow(/CHECK/);
   });
 
   it("adds activity.account_id and its composite index to an already-migrated activity table", () => {

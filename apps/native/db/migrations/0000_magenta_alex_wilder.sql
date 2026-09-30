@@ -86,6 +86,15 @@ CREATE TABLE `balance_readings` (
 --> statement-breakpoint
 CREATE INDEX `balance_readings_account_id_as_of_id_idx` ON `balance_readings` (`account_id`,`as_of`,`id`);--> statement-breakpoint
 CREATE INDEX `balance_readings_bank_key_account_as_of_id_idx` ON `balance_readings` (`detected_bank_key`,`account_id`,`as_of`,`id`);--> statement-breakpoint
+CREATE TABLE `category_budgets` (
+	`category` text NOT NULL,
+	`currency` text NOT NULL,
+	`monthly_limit_minor_units` integer NOT NULL,
+	`updated_at` integer NOT NULL,
+	PRIMARY KEY(`category`, `currency`),
+	CONSTRAINT "category_budgets_limit_check" CHECK(typeof("category_budgets"."monthly_limit_minor_units") = 'integer' AND "category_budgets"."monthly_limit_minor_units" > 0)
+);
+--> statement-breakpoint
 CREATE TABLE `detected_accounts` (
 	`id` text PRIMARY KEY NOT NULL,
 	`bank_name` text NOT NULL,

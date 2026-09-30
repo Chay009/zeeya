@@ -25,6 +25,8 @@ const dependencies = vi.hoisted(() => ({
   queryMonthlySeries: vi.fn(async () => []),
   queryCategoryTotals: vi.fn(async () => []),
   queryInsightsOverview: vi.fn(async () => ({}) as never),
+  queryBudgetOverview: vi.fn(async () => ({}) as never),
+  saveCategoryBudget: vi.fn(async () => undefined),
   homeDataSource: {
     load: vi.fn(async () => ({}) as never),
     loadHighlights: vi.fn(async () => ({}) as never),
@@ -85,6 +87,11 @@ vi.mock("@/db/queries-home", () => ({
 
 vi.mock("@/db/queries-insights-overview", () => ({
   queryInsightsOverview: dependencies.queryInsightsOverview,
+}));
+
+vi.mock("@/db/budgets", () => ({
+  queryBudgetOverview: dependencies.queryBudgetOverview,
+  saveCategoryBudget: dependencies.saveCategoryBudget,
 }));
 
 const { financeDataSource } = await import("./dashboard-data-source");
@@ -165,6 +172,22 @@ describe("dashboardDataSource", () => {
     await financeDataSource.activity.get("sms-1|GRM_TRAVEL");
 
     expect(dependencies.queryActivityDetail).toHaveBeenCalledWith("sms-1|GRM_TRAVEL");
+  });
+
+  it("exposes budgets behind the same storage-neutral boundary", async () => {
+    await financeDataSource.budgets.load({ currency: "INR", at: 1 });
+    await financeDataSource.budgets.set({
+      category: "Food",
+      currency: "INR",
+      monthlyLimitMinorUnits: 800_000,
+    });
+
+    expect(dependencies.queryBudgetOverview).toHaveBeenCalledWith({ currency: "INR", at: 1 });
+    expect(dependencies.saveCategoryBudget).toHaveBeenCalledWith({
+      category: "Food",
+      currency: "INR",
+      monthlyLimitMinorUnits: 800_000,
+    });
   });
 
   it("exposes the mandate family behind the same storage-neutral boundary", async () => {

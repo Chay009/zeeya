@@ -883,6 +883,46 @@ export interface HomeReadModel {
   totalActivityCount: number;
 }
 
+// ── Budgets ──────────────────────────────────────────────────────────────
+// Monthly limits per spending category, set by the user (user-owned data,
+// not derived from SMS). One currency at a time.
+
+export interface BudgetOverviewQuery {
+  currency: string;
+  at: number;
+}
+
+export interface CategoryBudgetStatus {
+  category: string;
+  limitMinorUnits: number;
+  /** Expense in this category, this calendar month so far. */
+  spentMinorUnits: number;
+}
+
+/** A category the user spends in — the candidates for a budget. */
+export interface BudgetCategorySpend {
+  category: string;
+  thisMonthMinorUnits: number;
+  /** Mean monthly spend over the last three full months (0 when none). */
+  averageMonthlyMinorUnits: number;
+}
+
+export interface BudgetOverview {
+  currency: string;
+  monthStart: number;
+  /** Exclusive: the next month's first local midnight. */
+  monthEnd: number;
+  budgets: CategoryBudgetStatus[];
+  categories: BudgetCategorySpend[];
+}
+
+export interface CategoryBudgetInput {
+  category: string;
+  currency: string;
+  /** null removes the budget. */
+  monthlyLimitMinorUnits: number | null;
+}
+
 // RPC-shaped without depending on tRPC itself. The native implementation
 // executes local SQLite queries; a future server adapter can implement this
 // exact serializable contract with tRPC procedures.
@@ -960,6 +1000,10 @@ export interface FinanceDataSource {
     // see db/schema.ts's subscriptions table comment for why the row
     // itself is never deleted just because it aged out.
     list(input?: SubscriptionQuery): Promise<SubscriptionSummary[]>;
+  };
+  budgets: {
+    load(input: BudgetOverviewQuery): Promise<BudgetOverview>;
+    set(input: CategoryBudgetInput): Promise<void>;
   };
   insights: {
     loadOverview(input: InsightsOverviewQuery): Promise<InsightsOverview>;
