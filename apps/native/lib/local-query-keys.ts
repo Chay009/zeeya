@@ -45,6 +45,7 @@ export const localQueryKeys = {
     from?: number;
     to?: number;
     transactionsOnly?: boolean;
+    search?: string;
   }) =>
     [
       "local",
@@ -57,6 +58,9 @@ export const localQueryKeys = {
         scope.to ?? "",
         scope.transactionsOnly ? "tx" : "",
       ].join(":"),
+      // Its own slot, so one search can keep the previous search's results
+      // on screen while the next keystroke reads.
+      scope.search?.trim().toLowerCase() ?? "",
     ] as const,
   activityScope: (accountId: string) => ["local", "activity-scope", accountId] as const,
   accountCashflowScope: (accountId: string, currency: string) =>

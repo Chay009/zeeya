@@ -820,6 +820,10 @@ export interface HomeRecentActivityQuery {
   to?: number;
   // Only messages carrying a transaction amount (the Transactions tab).
   transactionsOnly?: boolean;
+  // Free-text search: every word must match merchant, payee, bank, category
+  // or transaction type; a number also matches the exact amount. The limit
+  // may go up to HOME_ACTIVITY_SEARCH_MAX_LIMIT.
+  search?: string;
   limit?: number;
   // The clock isRecurring's subscription-match half is evaluated against —
   // an aged-out subscription (lastDate older than RECENCY_WINDOW_DAYS from

@@ -1,3 +1,4 @@
+import { SearchField } from "heroui-native";
 import { memo, useCallback, useDeferredValue, useMemo, useRef } from "react";
 import { Pressable, SectionList, View } from "react-native";
 
@@ -12,6 +13,7 @@ import { Money } from "@/components/ui/money";
 import { tick } from "@/components/ui/motion";
 import { EmptyState, SkeletonRows } from "@/components/ui/states";
 import { useThemeColors } from "@/components/ui/theme";
+import { HOME_ACTIVITY_SEARCH_MAX_LIMIT } from "@/db/queries-home";
 import { fromMinorUnits } from "@/lib/currency";
 import { useActivityFiltersStore, type ActivityDirectionFilter } from "@/stores/activity-filters-store";
 
@@ -88,6 +90,12 @@ const DAY_TITLE_FORMAT = new Intl.DateTimeFormat("en-IN", {
   day: "numeric",
   month: "short",
 });
+const DAY_TITLE_WITH_YEAR_FORMAT = new Intl.DateTimeFormat("en-IN", {
+  weekday: "short",
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+});
 const TIME_FORMAT = new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-digit" });
 const MONTH_YEAR_FORMAT = new Intl.DateTimeFormat("en-IN", { month: "long", year: "numeric" });
 const MONTH_FORMAT = new Intl.DateTimeFormat("en-IN", { month: "long" });
@@ -98,6 +106,10 @@ function dayTitle(timestampMs: number): string {
   yesterday.setDate(today.getDate() - 1);
   if (dayKey(timestampMs) === dayKey(today.getTime())) return "Today";
   if (dayKey(timestampMs) === dayKey(yesterday.getTime())) return "Yesterday";
+  // Search results span years; an earlier year must say which.
+  if (new Date(timestampMs).getFullYear() !== today.getFullYear()) {
+    return DAY_TITLE_WITH_YEAR_FORMAT.format(timestampMs);
+  }
   return DAY_TITLE_FORMAT.format(timestampMs);
 }
 
@@ -319,6 +331,9 @@ export function ActivityList({
   onSelect,
   topInset,
   loading = false,
+  searchText,
+  onSearchTextChange,
+  searchQuery,
 }: {
   activity: ActivityListData;
   accounts?: ActivityAccount[];
@@ -328,7 +343,12 @@ export function ActivityList({
   topInset: number;
   /** A new month/account is loading: show row skeletons, not "no transactions". */
   loading?: boolean;
+  searchText: string;
+  onSearchTextChange: (text: string) => void;
+  /** The search being shown (all months), or null for the selected month. */
+  searchQuery: string | null;
 }) {
+  const searching = searchQuery !== null;
   const tabBarClearance = useFloatingTabBarClearance();
   const filter = useActivityFiltersStore((state) => state.direction);
   const setFilter = useActivityFiltersStore((state) => state.setDirection);
@@ -356,9 +376,13 @@ export function ActivityList({
     return date.getTime();
   }, [monthStart]);
 
+  // Search results already span every month; otherwise keep the selected one.
   const inMonthItems = useMemo(
-    () => transactional.filter((item) => item.date >= monthStart && item.date < monthEnd),
-    [transactional, monthStart, monthEnd],
+    () =>
+      searching
+        ? transactional
+        : transactional.filter((item) => item.date >= monthStart && item.date < monthEnd),
+    [searching, transactional, monthStart, monthEnd],
   );
   // The segmented control reads `filter` (urgent) so its indicator moves on
   // the very next frame; the list reads the deferred copy, re-filtering and
@@ -448,12 +472,26 @@ export function ActivityList({
           ) : undefined
         }
       />
-      <MonthSwitcher
-        monthStart={monthStart}
-        onPrev={goPrevMonth}
-        onNext={goNextMonth}
-        canGoNext={monthStart < currentMonthStart}
-      />
+      <SearchField value={searchText} onChange={onSearchTextChange} className="mt-4">
+        <SearchField.Group>
+          <SearchField.SearchIcon />
+          <SearchField.Input
+            placeholder={ACTIVITY_COPY.searchPlaceholder}
+            accessibilityLabel="Search transactions"
+            returnKeyType="search"
+            autoCorrect={false}
+          />
+          <SearchField.ClearButton />
+        </SearchField.Group>
+      </SearchField>
+      {searching ? null : (
+        <MonthSwitcher
+          monthStart={monthStart}
+          onPrev={goPrevMonth}
+          onNext={goNextMonth}
+          canGoNext={monthStart < currentMonthStart}
+        />
+      )}
       <Segmented
         value={filter}
         options={ACTIVITY_DIRECTION_FILTERS}
@@ -461,7 +499,15 @@ export function ActivityList({
         size="sm"
         className="mt-4"
       />
-      {listFilter === "all" || listFilter === "expense" ? (
+      {searching ? (
+        visibleItems.length > 0 ? (
+          <Text className="mt-4 px-1 text-caption text-muted">
+            {transactional.length >= HOME_ACTIVITY_SEARCH_MAX_LIMIT
+              ? ACTIVITY_COPY.searchResultsCapped
+              : `${visibleItems.length} ${visibleItems.length === 1 ? "match" : "matches"}`}
+          </Text>
+        ) : null
+      ) : listFilter === "all" || listFilter === "expense" ? (
         <MonthSummary items={inMonthItems} monthStart={monthStart} />
       ) : null}
     </View>
@@ -484,11 +530,19 @@ export function ActivityList({
             </View>
           ) : (
             <View className="mt-4 rounded-card bg-card">
-              <EmptyState
-                icon="rupee-receipt"
-                title={inMonthItems.length > 0 ? ACTIVITY_COPY.emptyFilteredTitle : ACTIVITY_COPY.emptyTitle}
-                body={inMonthItems.length > 0 ? undefined : ACTIVITY_COPY.emptyBody}
-              />
+              {searching ? (
+                <EmptyState
+                  icon="rupee-receipt"
+                  title={inMonthItems.length > 0 ? ACTIVITY_COPY.emptyFilteredTitle : ACTIVITY_COPY.searchNoResultsTitle}
+                  body={inMonthItems.length > 0 ? undefined : ACTIVITY_COPY.searchNoResultsBody}
+                />
+              ) : (
+                <EmptyState
+                  icon="rupee-receipt"
+                  title={inMonthItems.length > 0 ? ACTIVITY_COPY.emptyFilteredTitle : ACTIVITY_COPY.emptyTitle}
+                  body={inMonthItems.length > 0 ? undefined : ACTIVITY_COPY.emptyBody}
+                />
+              )}
             </View>
           )
         }
@@ -496,6 +550,10 @@ export function ActivityList({
         renderItem={renderItem}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: tabBarClearance }}
         showsVerticalScrollIndicator={false}
+        // A tap on a result opens it straight away; scrolling puts the
+        // keyboard away.
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         // Rows are a fixed ~60pt: render what fills the screen, keep a small
         // window, and let Android drop offscreen views from the hierarchy.
         initialNumToRender={12}

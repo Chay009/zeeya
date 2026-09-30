@@ -89,6 +89,10 @@ export const HOME_RECENT_ACTIVITY_MAX_LIMIT = 100;
 // under SQLite's 999 bound-parameter ceiling on older Android builds.
 export const HOME_ACTIVITY_PERIOD_MAX_LIMIT = 900;
 
+// Cap for a search (all time): newest matches first. Stage 2's IN list stays
+// far under SQLite's bound-parameter ceiling.
+export const HOME_ACTIVITY_SEARCH_MAX_LIMIT = 200;
+
 // The bounded, filter-specific loadRecentActivity default — larger than the
 // Home preview's 5 since this backs an on-demand pill selection, not the
 // always-visible unfiltered preview.
@@ -815,6 +819,51 @@ interface ActivityRowsScope {
   to?: number;
   /** Only messages that carry a transaction amount. */
   transactionsOnly?: boolean;
+  search?: string;
+}
+
+// The text columns a search looks in — what a row is displayed as.
+const SEARCH_COLUMNS = [
+  "brand_name",
+  "vendor",
+  "bene",
+  "bank_name",
+  "merchant_category",
+  "subcategory",
+  "trx_type_rich",
+] as const;
+
+function escapeLike(term: string): string {
+  return term.replace(/[\\%_]/g, (character) => `\\${character}`);
+}
+
+/**
+ * The WHERE fragment for a free-text search, or null for a blank one. Every
+ * word must match (so "swiggy hdfc" narrows), each in any searched column,
+ * case-insensitively (SQLite LIKE, ASCII). A numeric word also matches the
+ * exact amount: "499" / "499.50" / "1,299" read as display units with two
+ * decimals — the minor-unit scale of INR and every other currency with paise
+ * or cents.
+ */
+export function activitySearchClause(
+  search: string,
+): { sql: string; params: (string | number)[] } | null {
+  const words = search.trim().split(/\s+/).filter(Boolean).slice(0, 6);
+  if (words.length === 0) return null;
+  const parts: string[] = [];
+  const params: (string | number)[] = [];
+  for (const word of words) {
+    const alternatives = SEARCH_COLUMNS.map((column) => `${column} LIKE ? ESCAPE '\\'`);
+    const pattern = `%${escapeLike(word)}%`;
+    params.push(...SEARCH_COLUMNS.map(() => pattern));
+    const amount = Number(word.replace(/,/g, ""));
+    if (/^[\d,]+(\.\d{1,2})?$/.test(word) && Number.isFinite(amount) && amount > 0) {
+      alternatives.push("amount_minor_units = ?");
+      params.push(Math.round(amount * 100));
+    }
+    parts.push(`(${alternatives.join(" OR ")})`);
+  }
+  return { sql: parts.join(" AND "), params };
 }
 
 async function queryHomeActivityRows(
@@ -850,6 +899,11 @@ async function queryHomeActivityRows(
   // Financial activity rows always carry an amount (activity_financial_
   // fields_check), so this is exactly "rows that are transactions".
   if (scope.transactionsOnly) where.push("amount_minor_units IS NOT NULL");
+  const search = scope.search ? activitySearchClause(scope.search) : null;
+  if (search) {
+    where.push(search.sql);
+    stage1Params.push(...search.params);
+  }
   stage1Params.push(candidateLimit);
   const stage1Sql = `SELECT sms_id AS smsId, date
      FROM activity
@@ -969,9 +1023,14 @@ export async function queryHomeRecentActivity(
   // its period, so it may return the whole period — the recent-feed cap of
   // 100 silently truncated busy months and left older months incomplete.
   const periodScoped = query.from !== undefined && query.to !== undefined;
+  const searching = (query.search ?? "").trim().length > 0;
   const limit = validatedPositiveInt(
     query.limit ?? HOME_LOAD_RECENT_ACTIVITY_DEFAULT_LIMIT,
-    periodScoped ? HOME_ACTIVITY_PERIOD_MAX_LIMIT : HOME_RECENT_ACTIVITY_MAX_LIMIT,
+    periodScoped
+      ? HOME_ACTIVITY_PERIOD_MAX_LIMIT
+      : searching
+        ? HOME_ACTIVITY_SEARCH_MAX_LIMIT
+        : HOME_RECENT_ACTIVITY_MAX_LIMIT,
     "Home recent activity limit",
   );
   const at = query.at !== undefined ? new Date(query.at) : new Date();
@@ -983,6 +1042,7 @@ export async function queryHomeRecentActivity(
       from: query.from,
       to: query.to,
       transactionsOnly: query.transactionsOnly,
+      search: query.search,
     },
     limit,
     at,

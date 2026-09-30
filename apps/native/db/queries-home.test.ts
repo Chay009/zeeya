@@ -121,6 +121,8 @@ const {
   HOME_MANDATE_RECENT_EVENTS_LIMIT,
   HOME_SUBSCRIPTION_PREVIEW_LIMIT,
   HOME_ACTIVITY_PERIOD_MAX_LIMIT,
+  HOME_ACTIVITY_SEARCH_MAX_LIMIT,
+  activitySearchClause,
 } = await import("./queries-home");
 
 function result(overrides: Partial<MalanaResult>): MalanaResult {
@@ -1919,5 +1921,82 @@ describe("period-scoped recent activity (Transactions month)", () => {
 
     expect(plan.some((line) => line.includes("activity_date_sms_id_idx"))).toBe(true);
     expect(plan.some((line) => /USE TEMP B-TREE/i.test(line))).toBe(false);
+  });
+});
+
+describe("activity search", () => {
+  function seedSearchFixtures() {
+    useFreshDb();
+    seedAndProject(
+      [
+        categorizedSms("swiggy", "VM-HDFCBK", 3000, {
+          bankName: "HDFC Bank",
+          acc: "XX1234",
+          trx: "499.00",
+          trxTypeRich: "EXPENSE",
+          brandName: "Swiggy",
+        }),
+        categorizedSms("amazon", "VM-ICICIB", 2000, {
+          bankName: "ICICI Bank",
+          acc: "XX9876",
+          trx: "1299.00",
+          trxTypeRich: "EXPENSE",
+          brandName: "Amazon",
+        }),
+        // Mentions Swiggy but carries no amount: not a transaction.
+        {
+          ...sms("swiggy-delivery", "VM-SWIGGY", 1000, { vendor: "Swiggy", trackingId: "TRK1" }),
+          result: {
+            ...result({ vendor: "Swiggy", trackingId: "TRK1" }),
+            matchedCategories: ["GRM_DELIVERY"],
+          },
+        } as unknown as ParsedSms,
+      ],
+      new Date(5000),
+    );
+  }
+
+  async function search(text: string, transactionsOnly = true) {
+    const items = await queryHomeRecentActivity({ search: text, transactionsOnly, limit: 50 }, client);
+    return items.map((item) => item.smsId);
+  }
+
+  it("matches a merchant case-insensitively, transactions only", async () => {
+    seedSearchFixtures();
+    expect(await search("SWIGGY")).toEqual(["swiggy"]);
+    expect(await search("swiggy", false)).toEqual(["swiggy", "swiggy-delivery"]);
+  });
+
+  it("requires every word to match, across columns", async () => {
+    seedSearchFixtures();
+    expect(await search("swiggy hdfc")).toEqual(["swiggy"]);
+    expect(await search("swiggy icici")).toEqual([]);
+  });
+
+  it("matches an exact amount written as display units", async () => {
+    seedSearchFixtures();
+    expect(await search("499")).toEqual(["swiggy"]);
+    expect(await search("1,299")).toEqual(["amazon"]);
+    expect(await search("1299.00")).toEqual(["amazon"]);
+  });
+
+  it("treats LIKE wildcards in the text literally", async () => {
+    seedSearchFixtures();
+    expect(await search("%")).toEqual([]);
+    expect(await search("_")).toEqual([]);
+  });
+
+  it("allows up to the search cap, beyond the recent-feed cap", async () => {
+    seedSearchFixtures();
+    await expect(
+      queryHomeRecentActivity({ search: "swiggy", limit: HOME_ACTIVITY_SEARCH_MAX_LIMIT }, client),
+    ).resolves.toBeDefined();
+    await expect(
+      queryHomeRecentActivity({ limit: HOME_ACTIVITY_SEARCH_MAX_LIMIT }, client),
+    ).rejects.toThrow(/limit/);
+  });
+
+  it("builds no clause for blank text", () => {
+    expect(activitySearchClause("   ")).toBeNull();
   });
 });

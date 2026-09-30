@@ -28,13 +28,14 @@ export function useHomeRecentActivity(
   // the read model already carries the bounded unfiltered preview.
   enabled: boolean = true,
   accountId?: string,
-  // A period ([from, to), epoch ms) and/or transactions-only scope — the
-  // Transactions tab reads exactly one month this way, in SQL.
-  period?: { from: number; to: number; transactionsOnly?: boolean },
+  // A period ([from, to), epoch ms), transactions-only and/or search scope —
+  // the Transactions tab reads one month, or an all-time search, in SQL.
+  period?: { from?: number; to?: number; transactionsOnly?: boolean; search?: string },
 ): UseHomeRecentActivityResult {
   const from = period?.from;
   const to = period?.to;
   const transactionsOnly = period?.transactionsOnly;
+  const search = period?.search;
   const queryKey = localQueryKeys.recentActivity({
     category,
     accountId,
@@ -42,8 +43,10 @@ export function useHomeRecentActivity(
     from,
     to,
     transactionsOnly,
+    search,
   });
   const scope = queryKey[2];
+  const searching = queryKey[3] !== "";
 
   const { data, status, error, reload } = useLocalQuery({
     queryKey,
@@ -55,10 +58,16 @@ export function useHomeRecentActivity(
         from,
         to,
         transactionsOnly,
+        search,
         at: Date.now(),
       }),
     enabled,
-    keepPrevious: (previousKey) => previousKey[1] === "recent-activity" && previousKey[2] === scope,
+    // Same scope, and either the same search or still searching: typing keeps
+    // the last results up instead of flashing skeletons on every keystroke.
+    keepPrevious: (previousKey) =>
+      previousKey[1] === "recent-activity" &&
+      previousKey[2] === scope &&
+      (previousKey[3] === queryKey[3] || (searching && previousKey[3] !== "")),
   });
 
   // Disabled (Home's "all" pill reads the read model instead): a stable,

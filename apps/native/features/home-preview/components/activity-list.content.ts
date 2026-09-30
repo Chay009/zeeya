@@ -21,4 +21,8 @@ export const ACTIVITY_COPY = {
   emptyBody: "Payments show up here as soon as a bank message is captured.",
   emptyFilteredTitle: "Nothing matches this filter",
   otherCategoryLabel: "Other",
+  searchPlaceholder: "Search merchant, bank, amount",
+  searchNoResultsTitle: "No matches",
+  searchNoResultsBody: "Try a merchant, a bank, a category or an exact amount.",
+  searchResultsCapped: "Showing the newest matches — add a word to narrow down.",
 } as const;

@@ -1,11 +1,11 @@
-import { useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { LargeTitle } from "@/components/ui/header";
 import { ErrorState, SkeletonHero, SkeletonRows } from "@/components/ui/states";
-import { HOME_ACTIVITY_PERIOD_MAX_LIMIT } from "@/db/queries-home";
+import { HOME_ACTIVITY_PERIOD_MAX_LIMIT, HOME_ACTIVITY_SEARCH_MAX_LIMIT } from "@/db/queries-home";
 import { useHomeRecentActivity } from "@/features/dashboard/hooks/home-recent-activity";
 import { useActivityFiltersStore } from "@/stores/activity-filters-store";
 
@@ -32,11 +32,17 @@ export function ActivityScreen() {
   // newest 100 messages filtered here (which left older and busy months
   // incomplete).
   const monthStart = useActivityFiltersStore((state) => state.monthStart);
+  // A search spans every month (newest matches first); a blank one shows the
+  // selected month. The deferred copy keeps typing responsive while it reads.
+  const [searchText, setSearchText] = useState("");
+  const search = useDeferredValue(searchText.trim());
+  const searching = search.length > 0;
   const period = useMemo(() => {
+    if (searching) return { transactionsOnly: true, search };
     const end = new Date(monthStart);
     end.setMonth(end.getMonth() + 1);
     return { from: monthStart, to: end.getTime(), transactionsOnly: true };
-  }, [monthStart]);
+  }, [monthStart, searching, search]);
   const {
     items: recentActivity,
     status: activityStatus,
@@ -44,7 +50,7 @@ export function ActivityScreen() {
     reload: reloadActivity,
   } = useHomeRecentActivity(
     undefined,
-    HOME_ACTIVITY_PERIOD_MAX_LIMIT,
+    searching ? HOME_ACTIVITY_SEARCH_MAX_LIMIT : HOME_ACTIVITY_PERIOD_MAX_LIMIT,
     true,
     scopedAccountId,
     period,
@@ -97,6 +103,9 @@ export function ActivityScreen() {
       onSelect={openDetail}
       topInset={insets.top}
       loading={activityStatus === "loading"}
+      searchText={searchText}
+      onSearchTextChange={setSearchText}
+      searchQuery={searching ? search : null}
     />
   );
 }
