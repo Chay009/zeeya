@@ -4,6 +4,7 @@ import { View } from "react-native";
 import Animated from "react-native-reanimated";
 
 import { AppText as Text } from "@/components/app-text";
+import { Art } from "@/components/art/art";
 import { AppIcon, type AppIconName } from "@/components/icon";
 
 import { duration } from "./motion";
@@ -14,6 +15,8 @@ import { useThemeColors } from "./theme";
 
 export function EmptyState({
   icon = "sparkles",
+  art,
+  visual,
   title,
   body,
   actionLabel,
@@ -21,6 +24,10 @@ export function EmptyState({
   compact = false,
 }: {
   icon?: AppIconName;
+  /** A catalog art piece (assets/art); the icon shows until it exists. */
+  art?: string;
+  /** A drawn (SVG) piece in place of catalog art, e.g. CaughtUpTick. */
+  visual?: ReactNode;
   title: string;
   body?: string;
   actionLabel?: string;
@@ -28,11 +35,15 @@ export function EmptyState({
   compact?: boolean;
 }) {
   const colors = useThemeColors();
+  const iconBadge = (
+    <View className="h-14 w-14 items-center justify-center rounded-full bg-fill">
+      <AppIcon name={icon} size={24} color={colors.muted} />
+    </View>
+  );
   return (
     <View className={`items-center px-6 ${compact ? "py-8" : "py-14"}`}>
-      <View className="h-14 w-14 items-center justify-center rounded-full bg-fill">
-        <AppIcon name={icon} size={24} color={colors.muted} />
-      </View>
+      {visual ??
+        (art ? <Art name={art} size={compact ? 88 : 120} fallback={iconBadge} /> : iconBadge)}
       <Text className="mt-4 text-center text-body font-semibold text-ink">{title}</Text>
       {body ? (
         <Text className="mt-1.5 max-w-[280px] text-center text-caption text-muted">{body}</Text>

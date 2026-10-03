@@ -94,7 +94,10 @@ const HomeCalendarDay = memo(function HomeCalendarDay({
 }: CalendarDayProps & { month?: CalendarMonth }) {
   const colors = useThemeColors();
   const isDisabled = state === "disabled";
-  const net = date && month && !isDisabled ? month.nets[date.day] ?? month.nets[Number(date.day)] : undefined;
+  const net =
+    date && month && !isDisabled
+      ? (month.nets[date.day] ?? month.nets[Number(date.day)])
+      : undefined;
   const displayNet = net ? compactCalendarNet(net) : undefined;
   const isToday = state === "today" || month?.today === date?.day;
   const income = Boolean(net?.startsWith("+"));
@@ -104,7 +107,9 @@ const HomeCalendarDay = memo(function HomeCalendarDay({
   return (
     <Pressable
       accessibilityLabel={
-        net ? `${accessibilityLabel ?? date?.day ?? ""}, ${net}, view transactions` : accessibilityLabel
+        net
+          ? `${accessibilityLabel ?? date?.day ?? ""}, ${net}, view transactions`
+          : accessibilityLabel
       }
       accessibilityRole={onPress ? "button" : undefined}
       onLongPress={onLongPress ? () => onLongPress(date) : undefined}
@@ -127,7 +132,7 @@ const HomeCalendarDay = memo(function HomeCalendarDay({
         }}
       >
         <Text
-          className={`text-subtitle font-bold ${
+          className={`text-subtitle font-semibold ${
             isDisabled
               ? "text-faint"
               : isToday
@@ -193,7 +198,9 @@ export function ThisWeekCalendarTab({
   if (months.length !== monthsLength) {
     setMonthsLength(months.length);
     setCalendarIndex((index) =>
-      months.length > monthsLength ? months.length - 1 : Math.min(index, Math.max(0, months.length - 1)),
+      months.length > monthsLength
+        ? months.length - 1
+        : Math.min(index, Math.max(0, months.length - 1)),
     );
   }
 
@@ -223,9 +230,12 @@ export function ThisWeekCalendarTab({
       const dayKey = dayProps.date?.dateString.slice(0, 7);
       const dayMonth = dayKey ? calendarMonthByKey.get(dayKey) : undefined;
       const hasNet = Boolean(
-        dayProps.date && (dayMonth?.nets[dayProps.date.day] ?? dayMonth?.nets[Number(dayProps.date.day)]),
+        dayProps.date &&
+        (dayMonth?.nets[dayProps.date.day] ?? dayMonth?.nets[Number(dayProps.date.day)]),
       );
-      return <HomeCalendarDay {...dayProps} month={dayMonth} onPress={hasNet ? openDay : undefined} />;
+      return (
+        <HomeCalendarDay {...dayProps} month={dayMonth} onPress={hasNet ? openDay : undefined} />
+      );
     },
     [calendarMonthByKey, openDay],
   );
@@ -235,13 +245,16 @@ export function ThisWeekCalendarTab({
   // A swipe landing on a month we have real data for just syncs the index;
   // a swipe past either end of the bounded `months` array (this isn't
   // infinite scroll — there's a fixed, fetched range) has nowhere valid to
-  // land, so the key-remount below (same mechanism the chevrons use) snaps
-  // the library's internal state back to whichever boundary month is
-  // closest, instead of leaving it drifted onto a month with no data.
+  // land, so the key-remount below (the grid is keyed by month, which the
+  // chevrons rely on too) snaps the library's internal state back to
+  // whichever boundary month is closest, instead of leaving it drifted onto
+  // a month with no data.
   const [swipeRevision, setSwipeRevision] = useState(0);
   const onMonthChange = useCallback(
     (date: DateData) => {
-      const nextIndex = months.findIndex((candidate) => candidate.key === date.dateString.slice(0, 7));
+      const nextIndex = months.findIndex(
+        (candidate) => candidate.key === date.dateString.slice(0, 7),
+      );
       if (nextIndex !== -1) {
         setCalendarIndex(nextIndex);
         return;
@@ -278,7 +291,7 @@ export function ThisWeekCalendarTab({
             </Pressable>
           ) : null}
           <View className="rounded-pill bg-fill px-3 py-1.5">
-            <Text className="text-label font-bold text-ink-soft">{month.label}</Text>
+            <Text className="text-label font-semibold text-ink-soft">{month.label}</Text>
           </View>
           {months.length > 1 ? (
             <Pressable
@@ -304,8 +317,12 @@ export function ThisWeekCalendarTab({
       </View>
 
       <View className="mt-2" style={{ height: gridHeight }}>
+        {/* Keyed by the shown month (and the swipe snap-back revision): the
+            library reads `current` only when it mounts, so the chevrons —
+            which change only calendarIndex — must remount it, or the header
+            moves to the new month while the grid stays on the old one. */}
         <Calendar
-          key={swipeRevision > 0 ? `calendar:${swipeRevision}` : "calendar"}
+          key={`calendar:${month.key}:${swipeRevision}`}
           current={`${month.key}-01`}
           dayComponent={calendarDay}
           disableMonthChange
@@ -325,15 +342,15 @@ export function ThisWeekCalendarTab({
       <View className="mt-3 flex-row justify-between">
         <View className="flex-row items-center gap-1.5">
           <View className="h-1.5 w-1.5 rounded-full bg-negative" />
-          <Text className="text-label font-bold text-muted">− Expense</Text>
+          <Text className="text-label font-semibold text-muted">− Expense</Text>
         </View>
         <View className="flex-row items-center gap-1.5">
           <View className="h-1.5 w-1.5 rounded-full bg-positive" />
-          <Text className="text-label font-bold text-muted">+ Income</Text>
+          <Text className="text-label font-semibold text-muted">+ Income</Text>
         </View>
         <View className="flex-row items-center gap-1.5">
           <View className="h-2.5 w-2.5 rounded-full border border-positive/45 bg-positive/20" />
-          <Text className="text-label font-bold text-muted">Today</Text>
+          <Text className="text-label font-semibold text-muted">Today</Text>
         </View>
       </View>
 

@@ -40,6 +40,36 @@ describe("trxTypeRich", () => {
     expect(r.trxTypeRich).toBe("INCOME");
   });
 
+  it("a biller's 'we have received a payment' is not income, even from a plain number", () => {
+    const body =
+      "Hi Venkata  Gopisetty Lakshmi, we have received a payment of Rs. 824.82 for your Airtel Black ID 10101029043733. To download the payment receipt, click https://digi-api.airtel.in/raas/fetch?key=a22f72fb816e3e10e1d527701fc2685f035956017205ab161bff7f04325ff5e2 . This receipt will be available to download for 7 days.";
+    for (const sender of ["+919000000000", "AX-AIRTEL-S"]) {
+      const r = parse(body, sender);
+      expect(r.category).toBe("GRM_BILL");
+      expect(r.trxTypeRich).toBeNull();
+    }
+  });
+
+  it("KVB debit is attributed to KV Bank from its '-KVB' sign-off, whatever the sender", () => {
+    const body =
+      "Your a/c XXXXXXXXXXXX4626 is debited Rs. 125.00 on 02-Oct-2026 to M S TEWARI FOODS P LTD info :P2A/596458201188. Avl Bal INR 1015.08 Not You? call 18005721916-KVB";
+    for (const sender of ["VM-KVBANK", "JD-KVBSMS", "+919000000000"]) {
+      const r = parse(body, sender);
+      expect(r.bankName).toBe("KV Bank");
+      expect(r.acc).toBe("XXXXXXXXXXXX4626");
+      expect(r.bal).toBe("1015.08");
+      expect(r.trxTypeRich).toBe("EXPENSE");
+    }
+  });
+
+  it("a bank's 'received … in your A/c' stays income from a plain number", () => {
+    const r = parse(
+      "Received Rs.250.00 in your Kotak Bank AC X3333 from john.doe@oksbi on 14-10-25. UPI Ref 2222222222.",
+      "+919000000000",
+    );
+    expect(r.trxTypeRich).toBe("INCOME");
+  });
+
   it("TRANSFER — NEFT debit", () => {
     const r = parse(
       "INR 5,000.00 debited from account XX1234 via NEFT on 09-08-2026. Avl Bal: INR 12,500.00",

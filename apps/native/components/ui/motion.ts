@@ -1,6 +1,6 @@
 import * as Haptics from "expo-haptics";
 import { Platform } from "react-native";
-import { Easing, FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
+import { Easing, FadeIn, FadeOut, LinearTransition, cubicBezier } from "react-native-reanimated";
 
 // Motion tokens. One feel across the app: quick, soft, never bouncy enough
 // to draw attention to itself. Every animation here respects Reduce Motion
@@ -13,6 +13,20 @@ export const duration = {
 } as const;
 
 export const easeOut = Easing.bezier(0.22, 1, 0.36, 1);
+/** The same curve for Reanimated's CSS animations and transitions. */
+export const easeOutCss = cubicBezier(0.22, 1, 0.36, 1);
+
+/**
+ * A number settling into a new value: re-key the node on the formatted value
+ * and play this, so a change rises and fades in (Money, HeroAmount). Under
+ * Reduce Motion use VALUE_FADE — the change still reads, without movement.
+ */
+export const VALUE_IN = {
+  from: { opacity: 0, transform: [{ translateY: 6 }] },
+  to: { opacity: 1, transform: [{ translateY: 0 }] },
+};
+export const VALUE_FADE = { from: { opacity: 0 }, to: { opacity: 1 } };
+export const VALUE_DURATION = 220;
 
 /** Settling spring — values that grow into place (bars, progress). */
 export const settle = { damping: 20, stiffness: 180, mass: 0.9 } as const;

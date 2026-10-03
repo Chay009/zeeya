@@ -15,7 +15,10 @@ import { EmptyState, SkeletonRows } from "@/components/ui/states";
 import { useThemeColors } from "@/components/ui/theme";
 import { HOME_ACTIVITY_SEARCH_MAX_LIMIT } from "@/db/queries-home";
 import { fromMinorUnits } from "@/lib/currency";
-import { useActivityFiltersStore, type ActivityDirectionFilter } from "@/stores/activity-filters-store";
+import {
+  useActivityFiltersStore,
+  type ActivityDirectionFilter,
+} from "@/stores/activity-filters-store";
 
 import type { HomeAccount, HomeActivityViewItem } from "../data";
 import { ACTIVITY_COPY, ACTIVITY_DIRECTION_FILTERS } from "./activity-list.content";
@@ -140,7 +143,15 @@ function groupByDay(items: HomeActivityViewItem[]): DaySection[] {
     const key = dayKey(item.date);
     let group = groups.get(key);
     if (!group) {
-      group = { key, dayKey: key, title: dayTitle(item.date), spent: 0, currency: item.currency ?? "INR", data: [], timestamp: item.date };
+      group = {
+        key,
+        dayKey: key,
+        title: dayTitle(item.date),
+        spent: 0,
+        currency: item.currency ?? "INR",
+        data: [],
+        timestamp: item.date,
+      };
       groups.set(key, group);
     }
     group.data.push(item);
@@ -251,7 +262,13 @@ function MonthSwitcher({
   );
 }
 
-function MonthSummary({ items, monthStart }: { items: HomeActivityViewItem[]; monthStart: number }) {
+function MonthSummary({
+  items,
+  monthStart,
+}: {
+  items: HomeActivityViewItem[];
+  monthStart: number;
+}) {
   const colors = useThemeColors();
   const summary = useMemo(() => {
     let spent = 0;
@@ -281,12 +298,25 @@ function MonthSummary({ items, monthStart }: { items: HomeActivityViewItem[]; mo
       <View className="flex-row items-end justify-between">
         <View>
           <Text className="text-caption font-medium text-muted">Spent in {month}</Text>
-          <Money value={summary.spent} currency={summary.currency} size="title" animated className="mt-1" />
+          <Money
+            value={summary.spent}
+            currency={summary.currency}
+            size="title"
+            animated
+            className="mt-1"
+          />
         </View>
         {summary.earned > 0 ? (
           <View className="items-end">
             <Text className="text-caption font-medium text-muted">Money in</Text>
-            <Money value={summary.earned} currency={summary.currency} size="subtitle" tone="income" sign="income" className="mt-1" />
+            <Money
+              value={summary.earned}
+              currency={summary.currency}
+              size="subtitle"
+              tone="income"
+              sign="income"
+              className="mt-1"
+            />
           </View>
         ) : null}
       </View>
@@ -305,7 +335,10 @@ function MonthSummary({ items, monthStart }: { items: HomeActivityViewItem[]; mo
           <View className="mt-3 flex-row flex-wrap gap-x-4 gap-y-1.5">
             {summary.categories.map(([label], index) => (
               <View key={label} className="flex-row items-center gap-1.5">
-                <View className="h-2 w-2 rounded-full" style={{ backgroundColor: colors.chart[index % colors.chart.length] }} />
+                <View
+                  className="h-2 w-2 rounded-full"
+                  style={{ backgroundColor: colors.chart[index % colors.chart.length] }}
+                />
                 <Text className="text-meta text-muted">{label}</Text>
               </View>
             ))}
@@ -405,7 +438,12 @@ export function ActivityList({
       const targetKey = dayKey(targetDay);
       const sectionIndex = sections.findIndex((section) => section.dayKey === targetKey);
       if (sectionIndex === -1) return false;
-      listRef.current?.scrollToLocation({ sectionIndex, itemIndex: 0, viewPosition: 0, animated: true });
+      listRef.current?.scrollToLocation({
+        sectionIndex,
+        itemIndex: 0,
+        viewPosition: 0,
+        animated: true,
+      });
       return true;
     },
     [sections],
@@ -426,7 +464,12 @@ export function ActivityList({
       return;
     }
     scrollRetryCount.current += 1;
-    listRef.current?.scrollToLocation({ sectionIndex: 0, itemIndex: 0, viewOffset: 0, animated: false });
+    listRef.current?.scrollToLocation({
+      sectionIndex: 0,
+      itemIndex: 0,
+      viewOffset: 0,
+      animated: false,
+    });
     requestAnimationFrame(() => {
       if (!scrollToSection(target)) {
         retryTargetDay.current = null;
@@ -444,7 +487,15 @@ export function ActivityList({
   );
 
   const renderItem = useCallback(
-    ({ item, index, section }: { item: HomeActivityViewItem; index: number; section: DaySection }) => (
+    ({
+      item,
+      index,
+      section,
+    }: {
+      item: HomeActivityViewItem;
+      index: number;
+      section: DaySection;
+    }) => (
       <ActivityRowCell
         item={item}
         first={index === 0}
@@ -533,13 +584,23 @@ export function ActivityList({
               {searching ? (
                 <EmptyState
                   icon="rupee-receipt"
-                  title={inMonthItems.length > 0 ? ACTIVITY_COPY.emptyFilteredTitle : ACTIVITY_COPY.searchNoResultsTitle}
+                  art={inMonthItems.length > 0 ? undefined : "hero-search"}
+                  title={
+                    inMonthItems.length > 0
+                      ? ACTIVITY_COPY.emptyFilteredTitle
+                      : ACTIVITY_COPY.searchNoResultsTitle
+                  }
                   body={inMonthItems.length > 0 ? undefined : ACTIVITY_COPY.searchNoResultsBody}
                 />
               ) : (
                 <EmptyState
                   icon="rupee-receipt"
-                  title={inMonthItems.length > 0 ? ACTIVITY_COPY.emptyFilteredTitle : ACTIVITY_COPY.emptyTitle}
+                  art={inMonthItems.length > 0 ? undefined : "hero-calendar"}
+                  title={
+                    inMonthItems.length > 0
+                      ? ACTIVITY_COPY.emptyFilteredTitle
+                      : ACTIVITY_COPY.emptyTitle
+                  }
                   body={inMonthItems.length > 0 ? undefined : ACTIVITY_COPY.emptyBody}
                 />
               )}

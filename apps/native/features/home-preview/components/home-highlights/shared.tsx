@@ -3,8 +3,10 @@ import { PressableFeedback, Skeleton } from "heroui-native";
 import { View } from "react-native";
 
 import { AppText as Text } from "@/components/app-text";
+import { Art, hasArt } from "@/components/art/art";
 import { AppIcon } from "@/components/icon";
-import { useThemeColors } from "@/components/ui/theme";
+import { useCardElevation } from "@/components/ui/elevation";
+import { mixColors, useThemeColors } from "@/components/ui/theme";
 import { MoneyText } from "@/components/native-ui/money-text";
 import { formatMoney } from "@/features/dashboard/utils/format";
 import { fromMinorUnits } from "@/lib/currency";
@@ -43,37 +45,66 @@ export function GhostLine({ width, height = 10 }: { width: number; height?: numb
   return <Skeleton className="rounded-sm" style={{ width, height }} />;
 }
 
-function PairCardHeader({ title }: { title: string }) {
+function PairCardHeader({ title, chevron }: { title: string; chevron: boolean }) {
   const colors = useThemeColors();
   return (
     <View className="flex-row items-center justify-between gap-2">
       <Text numberOfLines={1} className="min-w-0 flex-1 text-caption font-semibold text-muted">
         {title}
       </Text>
-      <AppIcon name="chevron-right" size={14} color={colors.faint} />
+      {chevron ? <AppIcon name="chevron-right" size={14} color={colors.faint} /> : null}
     </View>
   );
 }
 
+// A pair card can carry its section's art in the top-right corner (where the
+// chevron would be — the whole card stays the button) on a faint field of
+// its own hue, so the two cards read as two things, not two white boxes.
+const PAIR_ART_SIZE = 52;
+
 export function PairCardShell({
   title,
   onPress,
+  art,
+  hue,
   children,
 }: {
   title: string;
   onPress: () => void;
+  /** A catalog art piece for the corner (assets/art); none keeps the chevron. */
+  art?: string;
+  /** The card's own hue, laid very faintly over the card colour. */
+  hue?: string;
   children: ReactNode;
 }) {
+  const colors = useThemeColors();
+  const elevation = useCardElevation();
+  const withArt = art !== undefined && hasArt(art);
   return (
     <PressableFeedback
       accessibilityRole="button"
       accessibilityLabel={title}
       onPress={onPress}
-      className="h-full w-full flex-1 overflow-hidden rounded-card bg-card p-4"
-      style={{ minHeight: PAIR_CARD_MIN_HEIGHT }}
+      className="h-full w-full flex-1 overflow-hidden rounded-card p-5"
+      style={[
+        {
+          minHeight: PAIR_CARD_MIN_HEIGHT,
+          backgroundColor: hue
+            ? mixColors(colors.card, hue, colors.isDark ? 0.1 : 0.06)
+            : colors.card,
+        },
+        elevation,
+      ]}
     >
       <PressableFeedback.Highlight />
-      <PairCardHeader title={title} />
+      {withArt ? (
+        <View pointerEvents="none" style={{ position: "absolute", top: 8, right: 8 }}>
+          <Art name={art} size={PAIR_ART_SIZE} />
+        </View>
+      ) : null}
+      <View style={{ marginRight: withArt ? PAIR_ART_SIZE - 8 : 0 }}>
+        <PairCardHeader title={title} chevron={!withArt} />
+      </View>
       {children}
     </PressableFeedback>
   );
@@ -91,7 +122,11 @@ export function PairSummaryHero({
   return (
     <View className="mt-2">
       <View className="flex-row items-baseline gap-1.5">
-        <MoneyText weight="bold" className="text-title tracking-tight text-ink" style={moneyTextStyle}>
+        <MoneyText
+          weight="semibold"
+          className="text-ink"
+          style={{ ...moneyTextStyle, fontSize: 20, lineHeight: 26, letterSpacing: -0.4 }}
+        >
           {count}
         </MoneyText>
         <Text className="text-caption text-muted">{label}</Text>

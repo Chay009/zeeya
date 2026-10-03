@@ -191,6 +191,22 @@ describe("queryInsightsOverviewUnsafe", () => {
     });
     expect(result.subscriptions.top.map((item) => item.merchant)).toEqual(["Netflix", "Music"]);
     expect(result.budget?.adherenceScore).toBe(90);
+    // A credit with no named payer is filed under its income category.
+    expect(result.topIncomeSources).toEqual([
+      {
+        source: "Income",
+        currentMinorUnits: 5_000,
+        previousMinorUnits: 0,
+        deltaMinorUnits: 5_000,
+        changePercent: null,
+        transactionCount: 1,
+      },
+    ]);
+    expect(result.largestCredit).toEqual({
+      source: "Income",
+      amountMinorUnits: 5_000,
+      date: new Date(2026, 8, 4, 10).getTime(),
+    });
   });
 
   it("returns honest zero/null comparisons when the selected currency has no history", async () => {

@@ -8,7 +8,7 @@ import {
   vendorTransactionFocus,
   type AnalyticsTransactionFocus,
 } from "../analytics-transaction-focus";
-import type { AnalyticsDirection, AnalyticsTab, InsightsTimeScope } from "../analytics-scope";
+import type { AnalyticsDirection, AnalyticsTab } from "../analytics-scope";
 import type { InsightsPresentation } from "../insights-presentation";
 import type { InsightsTransactionRow } from "../insights-transaction-presentation";
 import type { InsightsCategorySlice } from "../insights-presentation";
@@ -19,6 +19,8 @@ import {
   AnalyticsVendorsSheetContent,
 } from "./analytics-sheet-contents";
 import { InsightsBudgetPanel } from "./insights-overview-panels";
+import { InvestmentList, OnlineMixSheetContent, PlaceList } from "./message-insight-cards";
+import type { MessageInsights } from "@/lib/message-insights";
 
 export type AnalyticsDetailSheet =
   | "categories"
@@ -26,6 +28,9 @@ export type AnalyticsDetailSheet =
   | "subscriptions"
   | "vendors"
   | "budget"
+  | "investments"
+  | "places"
+  | "online"
   | null;
 
 export function AnalyticsDetailSheets({
@@ -47,10 +52,9 @@ export function AnalyticsDetailSheets({
   onOpenTransactions,
   transactionFocus,
   transactionFocusKey,
-  timeScope,
   currencies,
-  onScopeChange,
   onCurrencyChange,
+  messageInsights,
 }: {
   activeSheet: AnalyticsDetailSheet;
   onActiveSheetChange: (sheet: AnalyticsDetailSheet) => void;
@@ -70,10 +74,9 @@ export function AnalyticsDetailSheets({
   onOpenTransactions: (focus?: AnalyticsTransactionFocus) => void;
   transactionFocus: AnalyticsTransactionFocus;
   transactionFocusKey: number;
-  timeScope: InsightsTimeScope;
   currencies: string[];
-  onScopeChange: (scope: InsightsTimeScope) => void;
   onCurrencyChange: (currency: string) => void;
+  messageInsights: MessageInsights;
 }) {
   const close = () => onActiveSheetChange(null);
 
@@ -95,7 +98,9 @@ export function AnalyticsDetailSheets({
             currency={currency}
             presentation={presentation}
             isLoading={isCategoryLoading}
-            onViewTransactions={(category) => onOpenTransactions(categoryTransactionFocus(category))}
+            onViewTransactions={(category) =>
+              onOpenTransactions(categoryTransactionFocus(category))
+            }
           />
         </ScrollView>
       </NativeBottomSheet>
@@ -103,8 +108,9 @@ export function AnalyticsDetailSheets({
       <NativeBottomSheet
         isOpen={activeSheet === "transactions"}
         onOpenChange={(open) => onActiveSheetChange(open ? "transactions" : null)}
-        title={direction === "income" ? "Recent income" : "Recent spending"}
-        description={formatAnalyticsSheetSubtitle(at, tab, currency)}
+        title={direction === "income" ? "Latest income" : "Latest spending"}
+        // Honest about the window: the newest payments, not the whole period.
+        description={`Newest ${transactions.length} · ${currency}`}
         snapPoints={["88%"]}
       >
         <ScrollView showsVerticalScrollIndicator={false}>
@@ -141,7 +147,7 @@ export function AnalyticsDetailSheets({
       <NativeBottomSheet
         isOpen={activeSheet === "vendors"}
         onOpenChange={(open) => onActiveSheetChange(open ? "vendors" : null)}
-        title="Top vendors"
+        title="Merchants"
         description={formatAnalyticsSheetSubtitle(at, tab, currency)}
         snapPoints={["85%"]}
       >
@@ -150,8 +156,6 @@ export function AnalyticsDetailSheets({
             <AnalyticsVendorsSheetContent
               currency={currency}
               currencies={currencies}
-              scope={timeScope}
-              onScopeChange={onScopeChange}
               onCurrencyChange={onCurrencyChange}
               presentation={presentation}
               onViewTransactions={(vendor) => onOpenTransactions(vendorTransactionFocus(vendor))}
@@ -169,6 +173,42 @@ export function AnalyticsDetailSheets({
       >
         <ScrollView showsVerticalScrollIndicator={false}>
           {presentation ? <InsightsBudgetPanel data={presentation} /> : null}
+        </ScrollView>
+      </NativeBottomSheet>
+
+      <NativeBottomSheet
+        isOpen={activeSheet === "investments"}
+        onOpenChange={(open) => onActiveSheetChange(open ? "investments" : null)}
+        title="Investments"
+        description="Latest NAV from your fund messages"
+        snapPoints={["70%"]}
+      >
+        <ScrollView showsVerticalScrollIndicator={false}>
+          <InvestmentList investments={messageInsights.investments} />
+        </ScrollView>
+      </NativeBottomSheet>
+
+      <NativeBottomSheet
+        isOpen={activeSheet === "places"}
+        onOpenChange={(open) => onActiveSheetChange(open ? "places" : null)}
+        title="Where you spend"
+        description={`This month · ${currency}`}
+        snapPoints={["70%"]}
+      >
+        <ScrollView showsVerticalScrollIndicator={false}>
+          <PlaceList places={messageInsights.places} currency={currency} />
+        </ScrollView>
+      </NativeBottomSheet>
+
+      <NativeBottomSheet
+        isOpen={activeSheet === "online"}
+        onOpenChange={(open) => onActiveSheetChange(open ? "online" : null)}
+        title="Online vs in store"
+        description={`This month · ${currency}`}
+        snapPoints={["55%"]}
+      >
+        <ScrollView showsVerticalScrollIndicator={false}>
+          <OnlineMixSheetContent insights={messageInsights} currency={currency} />
         </ScrollView>
       </NativeBottomSheet>
     </>

@@ -5,7 +5,7 @@ import Animated, { FadeIn, useReducedMotion } from "react-native-reanimated";
 import { AppText as Text } from "@/components/app-text";
 import { AppIcon, type AppIconName } from "@/components/icon";
 
-import { duration, tick } from "./motion";
+import { duration, easeOutCss, tick } from "./motion";
 import { useThemeColors } from "./theme";
 
 // ── Segmented control ────────────────────────────────────────────────────
@@ -195,32 +195,41 @@ export function ProgressBar({
   const reducedMotion = useReducedMotion();
   const pct = Math.max(0, Math.min(1, value));
 
-  // Declarative: fills from empty once on mount (keyframes), then the width
-  // transitions whenever the value changes — no shared value, no effect.
+  // Declarative and transform-only (no layout per frame): the fill is always
+  // full width inside the clipped track, translated so its end sits at the
+  // value. It slides in from the left once on mount (keyframes on a wrapper),
+  // then a new value transitions the offset — no shared value, no effect.
   return (
     <View className={`overflow-hidden rounded-pill bg-fill ${className}`} style={{ height }}>
-      <Animated.View
-        className="h-full rounded-pill"
-        style={{
-          width: `${pct * 100}%`,
-          minWidth: pct > 0 ? height : 0,
-          backgroundColor: color ?? colors.ink,
-          transformOrigin: "left",
-          animationName: reducedMotion ? "none" : FILL_IN,
-          animationDuration: 600,
-          animationDelay: 120,
-          animationTimingFunction: "ease-out",
-          animationFillMode: "backwards",
-          transitionProperty: "width",
-          transitionDuration: reducedMotion ? 0 : 420,
-          transitionTimingFunction: "ease-out",
-        }}
-      />
+      {pct > 0 ? (
+        <Animated.View
+          style={{
+            position: "absolute",
+            inset: 0,
+            animationName: reducedMotion ? "none" : FILL_IN,
+            animationDuration: 300,
+            animationDelay: 80,
+            animationTimingFunction: easeOutCss,
+            animationFillMode: "backwards",
+          }}
+        >
+          <Animated.View
+            className="h-full w-full rounded-pill"
+            style={{
+              backgroundColor: color ?? colors.ink,
+              transform: [{ translateX: `${pct * 100 - 100}%` }],
+              transitionProperty: "transform",
+              transitionDuration: reducedMotion ? 0 : duration.base,
+              transitionTimingFunction: easeOutCss,
+            }}
+          />
+        </Animated.View>
+      ) : null}
     </View>
   );
 }
 
 const FILL_IN = {
-  from: { transform: [{ scaleX: 0 }] },
-  to: { transform: [{ scaleX: 1 }] },
-};
+  from: { transform: [{ translateX: "-100%" }] },
+  to: { transform: [{ translateX: "0%" }] },
+} as const;

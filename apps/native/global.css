@@ -134,7 +134,8 @@
       --app-warning: #ffb547;
       --app-warning-soft: rgba(255, 181, 71, 0.14);
 
-      --app-hero: #161618;
+      /* A step above the cards, so the hero keeps its identity on black. */
+      --app-hero: #1e1e22;
       --app-on-hero: #f5f5f7;
       --app-on-hero-muted: #9a9aa3;
 
@@ -242,8 +243,8 @@
   --text-subtitle--line-height: 22px;
   --text-title: 22px;
   --text-title--line-height: 28px;
-  --text-screen: 32px;
-  --text-screen--line-height: 38px;
+  --text-screen: 26px;
+  --text-screen--line-height: 32px;
   --text-hero: 40px;
   --text-hero--line-height: 46px;
   --text-display: 48px;

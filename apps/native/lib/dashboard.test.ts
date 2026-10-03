@@ -184,6 +184,87 @@ describe("deriveDashboard — account identity", () => {
     });
   });
 
+  it("shows the newest SMS's available balance when each transaction SMS carries one", () => {
+    // "₹200 debited … Avl Bal ₹800": the transaction is already inside the
+    // balance it reports — nothing to add on top, nothing unexplained.
+    const messages: ParsedSms[] = [
+      sms("first", "VM-TEST-A", 1000, {
+        bankName: "Test Bank",
+        trx: "100.00",
+        trxTypeRich: "EXPENSE",
+        bal: "1000.00",
+        acc: "XX1234",
+      }),
+      sms("second", "VM-TEST-A", 2000, {
+        bankName: "Test Bank",
+        trx: "200.00",
+        trxTypeRich: "EXPENSE",
+        bal: "800.00",
+        acc: "XX1234",
+      }),
+      sms("third", "VM-TEST-A", 3000, {
+        bankName: "Test Bank",
+        trx: "500.00",
+        trxTypeRich: "INCOME",
+        bal: "1300.00",
+        acc: "XX1234",
+      }),
+    ];
+
+    const { accounts } = deriveDashboard(messages);
+
+    expect(accounts[0]).toMatchObject({
+      balance: 1300,
+      estimatedBalance: 1300,
+      asOf: 3000,
+      capturedTransactionCount: 0,
+      reconciliationDelta: 0,
+    });
+  });
+
+  it("applies a balance SMS with no recognised bank to the one account with those digits", () => {
+    const messages: ParsedSms[] = [
+      sms("known", "VM-KVBANK", 1000, {
+        bankName: "KV Bank",
+        trx: "100.00",
+        trxTypeRich: "EXPENSE",
+        bal: "24000.00",
+        acc: "XXXXXXXXXXXX4626",
+      }),
+      // Same account, from a sender the parser doesn't map to a bank.
+      sms("unknown-sender", "JD-XYZSMS", 2000, {
+        bankName: null,
+        trx: "125.00",
+        trxTypeRich: "EXPENSE",
+        bal: "1015.08",
+        acc: "XXXXXXXXXXXX4626",
+      }),
+    ];
+
+    const { accounts } = deriveDashboard(messages);
+
+    expect(accounts).toHaveLength(1);
+    expect(accounts[0]).toMatchObject({
+      bankName: "KV Bank",
+      last4: "4626",
+      balance: 1015.08,
+      estimatedBalance: 1015.08,
+      asOf: 2000,
+    });
+  });
+
+  it("leaves a bankless balance unapplied when two accounts share its digits", () => {
+    const messages: ParsedSms[] = [
+      sms("a", "VM-HDFCBK", 1000, { bankName: "HDFC Bank", bal: "500.00", acc: "XX4626" }),
+      sms("b", "VM-KVBANK", 1000, { bankName: "KV Bank", bal: "700.00", acc: "XX4626" }),
+      sms("ambiguous", "JD-XYZSMS", 2000, { bankName: null, bal: "9.00", acc: "XX4626" }),
+    ];
+
+    const { accounts } = deriveDashboard(messages);
+
+    expect(accounts.map((account) => account.balance).sort()).toEqual([500, 700]);
+  });
+
   it("preserves reconciliation insights for every interval between balance readings", () => {
     const messages: ParsedSms[] = [
       sms("may-balance", "VM-TEST-A", 1000, {

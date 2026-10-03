@@ -71,6 +71,19 @@ const NEEDS_BUDGET_ALERTS_TABLE_SQL = `
   END AS value
 `;
 
+const NEEDS_MESSAGE_FACTS_TABLE_SQL = `
+  SELECT CASE
+    WHEN EXISTS (
+      SELECT 1 FROM sqlite_master
+      WHERE type = 'table' AND name = 'local_settings'
+    ) AND NOT EXISTS (
+      SELECT 1 FROM sqlite_master
+      WHERE type = 'table' AND name = 'message_facts'
+    )
+    THEN 1 ELSE 0
+  END AS value
+`;
+
 /**
  * Repairs additive schema changes made while the pre-release migration
  * history is still maintained as one squashed baseline. Existing development
@@ -129,6 +142,19 @@ export function repairLegacyNativeSchema(sqlite: NativeSchemaDatabase): void {
           PRIMARY KEY (category, currency),
           CONSTRAINT budget_alerts_level_check CHECK (level IN (0, 85, 100))
         );
+      `);
+    }
+    if (sqlite.getFirstSync(NEEDS_MESSAGE_FACTS_TABLE_SQL)?.value === 1) {
+      // A derived projection table: it fills on the next projection publish.
+      sqlite.execSync(`
+        CREATE TABLE message_facts (
+          id text PRIMARY KEY NOT NULL,
+          date integer NOT NULL,
+          sender text NOT NULL,
+          currency text NOT NULL,
+          payload text NOT NULL
+        );
+        CREATE INDEX message_facts_date_idx ON message_facts (date);
       `);
     }
     sqlite.execSync("COMMIT;");

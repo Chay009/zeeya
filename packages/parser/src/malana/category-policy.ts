@@ -314,6 +314,21 @@ export function isUnconfirmedPromotionalTransaction(
   return !hasIndependentCompletionEvidence;
 }
 
+// "Hi …, we have received a payment of Rs. 824.82 for your Airtel Black ID …"
+// is a biller confirming a payment the user MADE — not money coming in. From
+// a known biller sender it already routes to GRM_BILL; from an unknown sender
+// (a plain number, a forwarded or imported message) it fell to the bank
+// default, where "received" reads as income. A bank's own credit names the
+// account or the balance ("Received Rs.250 in your Kotak Bank AC X3333",
+// "credited to a/c … Avl Bal"), so any such mention keeps the bank reading.
+const PAYMENT_ACKNOWLEDGEMENT = /\b(?:we|i)\s+(?:have\s+)?(?:received|recieved)\s+(?:a\s+|your\s+)?payment\b/i;
+const ACCOUNT_OR_BALANCE_MENTION =
+  /\b(?:a\/?c|acct|account|avl|avbl|avail(?:able)?\s+bal|bal(?:ance)?)\b/i;
+
+export function isPaymentAcknowledgement(message: string): boolean {
+  return PAYMENT_ACKNOWLEDGEMENT.test(message) && !ACCOUNT_OR_BALANCE_MENTION.test(message);
+}
+
 export function qualifyCategoryEvidence(
   category: MalanaCategory,
   evidence: MalanaCategoryEvidence[],

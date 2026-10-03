@@ -12,6 +12,9 @@ import { ThisWeekCategoriesTab } from "./this-week-categories-tab";
 
 const CHART_LABELS = ["Cashflow", "Categories", "Calendar"] as const;
 const TAB_COUNT = CHART_LABELS.length;
+// Opens on Cashflow — this card is "This week". The month's categories have
+// their own art row above it on Home; the full list stays a tap away here.
+const DEFAULT_TAB = 0;
 const MORPH_DURATION_MS = 280;
 
 // Tabs crossfade (with a small rise) and the panel morphs to the incoming
@@ -35,13 +38,13 @@ export function CashflowCard({
 }) {
   // The previous tab rides along with the current one so the height
   // transition knows whether it is shrinking — set in the change handler.
-  const [chart, setChart] = useState({ index: 0, previous: 0 });
+  const [chart, setChart] = useState({ index: DEFAULT_TAB, previous: DEFAULT_TAB });
   const chartIndex = chart.index;
   // Panels mount the first time they're opened (then stay, so switching back
   // is instant). Mounting all three up front paid for a full
   // react-native-calendars month — ~35 day cells and a bottom sheet — plus
   // the categories list on Home's first paint and every re-render.
-  const [visited, setVisited] = useState<ReadonlySet<number>>(() => new Set([0]));
+  const [visited, setVisited] = useState<ReadonlySet<number>>(() => new Set([DEFAULT_TAB]));
   const [tabHeights, setTabHeights] = useState<Partial<Record<number, number>>>({});
   const reducedMotion = useReducedMotion();
   const activeCurrency = selectedCurrency ?? data.selectedCurrency;

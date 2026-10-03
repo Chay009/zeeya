@@ -28,6 +28,7 @@ import {
 import { queryBudgetOverview, saveCategoryBudget } from "@/db/budgets";
 import { homeDataSource } from "@/db/queries-home";
 import { queryInsightsOverview } from "@/db/queries-insights-overview";
+import { queryMessageInsights } from "@/db/queries-message-insights";
 
 import type { FinanceDataSource } from "@/lib/dashboard-data";
 
@@ -89,6 +90,10 @@ export const financeDataSource: FinanceDataSource = {
     loadCategoryTotals: async ({ currency, at }) => {
       await ensureProjectionReadable();
       return queryCategoryTotals(currency, new Date(at));
+    },
+    loadMessageInsights: async (input) => {
+      await ensureProjectionReadable();
+      return queryMessageInsights(input);
     },
   },
   home: homeDataSource,

@@ -36,7 +36,10 @@ export function SubscriptionsList({
 }) {
   const [filter, setFilter] = useState<Filter>("all");
   const visible = useMemo(
-    () => (filter === "all" ? subscriptions.items : subscriptions.items.filter((sub) => sub.type === filter)),
+    () =>
+      filter === "all"
+        ? subscriptions.items
+        : subscriptions.items.filter((sub) => sub.type === filter),
     [filter, subscriptions.items],
   );
   const active = visible.filter((item) => item.status === "Active");
@@ -53,11 +56,22 @@ export function SubscriptionsList({
             accessibilityLabel={`Open ${item.name}`}
             leading={
               <View style={{ opacity: isCancelled ? 0.5 : 1 }}>
-                <BrandLogo letter={item.letter} tile={item.tile} ink={item.ink} img={item.img} size={40} radius={20} iconRatio={0.6} />
+                <BrandLogo
+                  letter={item.letter}
+                  tile={item.tile}
+                  ink={item.ink}
+                  img={item.img}
+                  size={40}
+                  radius={20}
+                  iconRatio={0.6}
+                />
               </View>
             }
             title={
-              <Text numberOfLines={1} className={`text-body font-semibold ${isCancelled ? "text-muted" : "text-ink"}`}>
+              <Text
+                numberOfLines={1}
+                className={`text-body font-semibold ${isCancelled ? "text-muted" : "text-ink"}`}
+              >
                 {item.name}
               </Text>
             }
@@ -92,11 +106,23 @@ export function SubscriptionsList({
           </Text>
         </View>
 
-        <Segmented value={filter} options={FILTERS} onChange={setFilter} size="sm" className="mt-5" />
+        <Segmented
+          value={filter}
+          options={FILTERS}
+          onChange={setFilter}
+          size="sm"
+          className="mt-5"
+        />
 
         {visible.length === 0 ? (
           <View className="mt-5 rounded-card bg-card">
-            <EmptyState compact icon="repeat" title="Nothing here yet" body="Try another filter." />
+            <EmptyState
+              compact
+              icon="repeat"
+              art="hero-subscriptions"
+              title="Nothing here yet"
+              body="Try another filter."
+            />
           </View>
         ) : (
           <>
@@ -108,7 +134,9 @@ export function SubscriptionsList({
             ) : null}
             {cancelled.length > 0 ? (
               <View className="mt-6">
-                <Text className="mb-2 px-1 text-caption font-semibold text-ink-soft">Cancelled</Text>
+                <Text className="mb-2 px-1 text-caption font-semibold text-ink-soft">
+                  Cancelled
+                </Text>
                 {renderRows(cancelled)}
               </View>
             ) : null}

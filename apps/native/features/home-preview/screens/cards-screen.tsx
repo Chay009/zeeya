@@ -89,6 +89,7 @@ export function CardsScreen() {
               <View className="mt-6 rounded-card bg-card">
                 <EmptyState
                   icon="card"
+                  art="hero-cards"
                   title="No confirmed accounts yet"
                   body="An account appears once a bank message reports its balance."
                 />

@@ -7,6 +7,7 @@ import {
 } from "./subscriptions";
 import type { ParsedSms } from "./sms";
 import { hasVisibleActivityCategory } from "./activity-filters";
+import { toMessageFact, type MessageFact } from "./message-insights";
 
 export type { Subscription, SubscriptionConfidence } from "./subscriptions";
 
@@ -328,6 +329,10 @@ export interface DashboardProjection {
   // clock, instead of an unrelated projection rebuild permanently deleting
   // a subscription the moment it ages past the recency window.
   allSubscriptions: Subscription[];
+  // Persistence-only, like allSubscriptions: the rich parsed fields and
+  // spends that lib/message-insights.ts reads, one fact per message, so
+  // insight reads never touch sms_ledger. Dated, and filtered at read time.
+  messageFacts: MessageFact[];
 }
 
 // Orchestrates the Dashboard model: latest known balance per bank account,
@@ -369,10 +374,20 @@ export function deriveDashboardProjection(
   }
   const processedReferencedTransactions = new Set<string>();
   const deduplicatedMessages: ParsedSms[] = [];
+  // Balance SMS whose bank the parser couldn't name (an unknown sender code
+  // or sign-off) but whose account digits it did read — resolved after the
+  // loop against the accounts every other message established.
+  const banklessReadings: { message: ParsedSms; last4: string; balance: number }[] = [];
 
   for (const m of messages) {
     const { result } = m;
     if (!isParserRecognized(m)) continue;
+
+    if (result.bal && !result.bankName) {
+      const last4 = normalizeAcc(result.acc);
+      const balance = parseAmount(result.bal);
+      if (last4 && balance !== null) banklessReadings.push({ message: m, last4, balance });
+    }
 
     const detectedAccountKey = result.bankName ? accountKey(result.bankName, result.acc) : null;
     const detectedLast4 = normalizeAcc(result.acc);
@@ -558,6 +573,49 @@ export function deriveDashboardProjection(
     }
   }
 
+  // A bankless balance joins an account only when its digits leave exactly
+  // one possible account (same last four, same currency) — the same "single
+  // possible account" rule digit-less transactions use above, so it never
+  // guesses between two real accounts; an ambiguous one stays unapplied.
+  // Without this, a bank whose sender/sign-off the parser doesn't know yet
+  // froze its card on the last balance from a sender it did know.
+  for (const { message: m, last4, balance } of banklessReadings) {
+    const currency = m.result.currency ?? "INR";
+    const matches = [...accountsByKey.entries()].filter(
+      ([, account]) => account.last4 === last4 && account.currency === currency,
+    );
+    if (matches.length !== 1) continue;
+    const [key, account] = matches[0]!;
+    const reading: BalanceReading = {
+      balance,
+      currency,
+      asOf: m.date,
+      detectedBankName: account.bankName,
+      detectedAccount: m.result.acc,
+      association: { kind: "confirmed", accountLast4: last4 },
+      sender: m.sender,
+      smsId: m.id,
+      reconciliation: null,
+    };
+    account.history.push(reading);
+    if (account.anchorStatus === "unreported" || m.date > account.asOf) {
+      accountsByKey.set(key, {
+        ...account,
+        anchorStatus: "reported",
+        balance,
+        asOf: m.date,
+        sender: m.sender,
+        currency,
+        estimatedBalance: balance,
+        capturedIncome: 0,
+        capturedExpense: 0,
+        capturedChange: 0,
+        capturedTransactionCount: 0,
+        estimatedAsOf: m.date,
+      });
+    }
+  }
+
   // Ledger entries grouped by account, each list in the original message
   // order. Every loop below used to scan ALL entries once per account and
   // once per balance reading — O(readings × transactions), the dominant cost
@@ -585,8 +643,14 @@ export function deriveDashboardProjection(
     // are disjoint, so each entry belongs to at most one: the reading just
     // after it, found by binary search. Accumulated in entry order.
     const windows = readings.map(() => ({ income: 0, expense: 0, count: 0 }));
+    // A transaction reported in the same SMS as a balance ("₹500 debited …
+    // Avl Bal ₹9,800") is already inside that balance: it belongs to that
+    // reading's window. Matched by message id, so a separate SMS that merely
+    // shares the timestamp still follows the open-interval rule above.
+    const readingIndexBySms = new Map(readings.map((reading, index) => [reading.smsId, index]));
     for (const { change, message } of entries) {
-      const index = newestReadingAfter(readings, message.date);
+      const index =
+        readingIndexBySms.get(message.id) ?? newestReadingAfter(readings, message.date);
       const previous = readings[index + 1];
       if (index < 0 || !previous || message.date <= previous.asOf) continue;
       const window = windows[index]!;
@@ -710,6 +774,7 @@ export function deriveDashboardProjection(
       recent: recognized,
     },
     allSubscriptions,
+    messageFacts: deduplicatedMessages.flatMap((message) => toMessageFact(message) ?? []),
   };
 }
 

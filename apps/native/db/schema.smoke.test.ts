@@ -182,6 +182,7 @@ describe("local SQLite schema", () => {
         "local_settings",
         "mandate_events",
         "mandates",
+        "message_facts",
         "projection_state",
         "sms_arrivals",
         "sms_ledger",

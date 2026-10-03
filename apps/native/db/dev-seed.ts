@@ -31,18 +31,39 @@ function ddmmyyyy(ms: number): string {
 // Spends across the last ~100 days (subscriptions need 2-3 monthly cycles to
 // be detected as "likely"/"possible" — see lib/subscriptions.ts), weighted
 // toward the last few weeks so Today / This week / Recent activity are dense.
-function buildSampleMessages(now: number, runKey: string): RawSms[] {
-  const messages: RawSms[] = [];
-  let seq = 0;
-  let balance = 48_500;
+// Each message's "Avail Bal" is written AFTER every message exists, in time
+// order and per account — so the newest SMS for an account always carries
+// that account's current balance, as a real bank's would. (Writing it as each
+// helper was called made it follow call order: today's spends, written before
+// today's credits, reported balances from before those credits, and every
+// account shared one running total.)
+const OPENING_BALANCE = 48_500;
 
-  const push = (daysBack: number, hour: number, minute: number, sender: string, body: string) => {
-    seq += 1;
-    messages.push({
-      id: `dev-seed-${runKey}-${seq}`,
-      sender,
-      body,
+interface Draft {
+  seq: number;
+  date: number;
+  account: string;
+  change: number;
+  body: (balance: number) => string;
+}
+
+function buildSampleMessages(now: number, runKey: string): RawSms[] {
+  const drafts: Draft[] = [];
+
+  const draft = (
+    daysBack: number,
+    hour: number,
+    minute: number,
+    account: string,
+    change: number,
+    body: (balance: number) => string,
+  ) => {
+    drafts.push({
+      seq: drafts.length + 1,
       date: daysAgo(now, daysBack, hour, minute),
+      account,
+      change,
+      body,
     });
   };
 
@@ -54,15 +75,15 @@ function buildSampleMessages(now: number, runKey: string): RawSms[] {
     merchant: string,
     account = "XX1234",
   ) => {
-    balance -= amount;
-    push(
+    const on = ddmmyyyy(daysAgo(now, daysBack, hour, minute));
+    draft(
       daysBack,
       hour,
       minute,
-      "VM-HDFCBK",
-      `INR ${fmt(amount)} debited from account ${account} towards ${merchant} on ${ddmmyyyy(
-        daysAgo(now, daysBack, hour, minute),
-      )}. Avail Bal: INR ${fmt(balance)}`,
+      account,
+      -amount,
+      (balance) =>
+        `INR ${fmt(amount)} debited from account ${account} towards ${merchant} on ${on}. Avail Bal: INR ${fmt(balance)}`,
     );
   };
 
@@ -74,15 +95,15 @@ function buildSampleMessages(now: number, runKey: string): RawSms[] {
     label: string,
     account = "XX1234",
   ) => {
-    balance += amount;
-    push(
+    const on = ddmmyyyy(daysAgo(now, daysBack, hour, minute));
+    draft(
       daysBack,
       hour,
       minute,
-      "VM-HDFCBK",
-      `INR ${fmt(amount)} credited to account ${account} - ${label} on ${ddmmyyyy(
-        daysAgo(now, daysBack, hour, minute),
-      )}. Avail Bal: INR ${fmt(balance)}`,
+      account,
+      amount,
+      (balance) =>
+        `INR ${fmt(amount)} credited to account ${account} - ${label} on ${on}. Avail Bal: INR ${fmt(balance)}`,
     );
   };
 
@@ -90,15 +111,15 @@ function buildSampleMessages(now: number, runKey: string): RawSms[] {
   // verified to classify as trxTypeRich "AUTO_DEBIT"; repeating at a fixed
   // amount every ~30 days is what lib/subscriptions.ts needs for "likely".
   const autopay = (daysBack: number, hour: number, minute: number, amount: number, merchant: string) => {
-    balance -= amount;
-    push(
+    const on = ddmmyyyy(daysAgo(now, daysBack, hour, minute));
+    draft(
       daysBack,
       hour,
       minute,
-      "VM-HDFCBK",
-      `INR ${fmt(amount)} debited from account XX1234 towards ${merchant} for AutoPay MERCHANTMANDATE on ${ddmmyyyy(
-        daysAgo(now, daysBack, hour, minute),
-      )}. Avail Bal: INR ${fmt(balance)}`,
+      "XX1234",
+      -amount,
+      (balance) =>
+        `INR ${fmt(amount)} debited from account XX1234 towards ${merchant} for AutoPay MERCHANTMANDATE on ${on}. Avail Bal: INR ${fmt(balance)}`,
     );
   };
 
@@ -108,7 +129,21 @@ function buildSampleMessages(now: number, runKey: string): RawSms[] {
   seedTodayGlanceEdgeCases(spend, income);
   seedCategorySpread(spend, income);
 
-  return messages;
+  // Oldest first (ties keep the order they were written), one running
+  // balance per account.
+  const balances = new Map<string, number>();
+  return drafts
+    .sort((a, b) => a.date - b.date || a.seq - b.seq)
+    .map((item) => {
+      const balance = (balances.get(item.account) ?? OPENING_BALANCE) + item.change;
+      balances.set(item.account, balance);
+      return {
+        id: `dev-seed-${runKey}-${item.seq}`,
+        sender: "VM-HDFCBK",
+        body: item.body(balance),
+        date: item.date,
+      };
+    });
 }
 
 // Six likely subscriptions with the most recent charge 24–29 days ago so

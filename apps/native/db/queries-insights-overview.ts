@@ -6,6 +6,8 @@ import type {
   RankedSpendingComparison,
   SubscriptionSummary,
   VendorSpendingComparison,
+  IncomeSourceComparison,
+  LargestCredit,
 } from "../lib/dashboard-data";
 import { isCommittedSubscription, RECENCY_WINDOW_DAYS } from "../lib/subscriptions";
 import { sqlite } from "./client";
@@ -200,6 +202,49 @@ export async function queryInsightsOverviewUnsafe(
       limit,
     ],
   );
+  // Income by where it came from: the payer's brand or name, else the income
+  // category ("Salary", "Interest"), so a credit with no named payer still
+  // lands in a meaningful source.
+  const incomeSourceLabel = `COALESCE(NULLIF(TRIM(brand_name), ''), NULLIF(TRIM(vendor), ''),
+                                      NULLIF(TRIM(category), ''), 'Other income')`;
+  const incomeSourcesPromise = client.getAllAsync<ComparisonRow>(
+    `SELECT ${incomeSourceLabel} AS label,
+            SUM(CASE WHEN date >= ? AND date <= ? THEN amount_minor_units ELSE 0 END) AS currentMinorUnits,
+            SUM(CASE WHEN date >= ? AND date <= ? THEN amount_minor_units ELSE 0 END) AS previousMinorUnits,
+            SUM(CASE WHEN date >= ? AND date <= ? THEN 1 ELSE 0 END) AS transactionCount
+     FROM transactions
+     WHERE currency = ? AND direction = 'income' AND date >= ? AND date <= ?
+     GROUP BY label
+     HAVING SUM(CASE WHEN date >= ? AND date <= ? THEN amount_minor_units ELSE 0 END) > 0
+     ORDER BY currentMinorUnits DESC, label ASC
+     LIMIT ?`,
+    [
+      currentStart,
+      currentEnd,
+      previousStart,
+      previousEnd,
+      currentStart,
+      currentEnd,
+      query.currency,
+      previousStart,
+      currentEnd,
+      currentStart,
+      currentEnd,
+      limit,
+    ],
+  );
+  const largestCreditPromise = client.getAllAsync<{
+    label: string;
+    amountMinorUnits: number;
+    date: number;
+  }>(
+    `SELECT ${incomeSourceLabel} AS label, amount_minor_units AS amountMinorUnits, date
+     FROM transactions
+     WHERE currency = ? AND direction = 'income' AND date >= ? AND date <= ?
+     ORDER BY amount_minor_units DESC, date DESC
+     LIMIT 1`,
+    [query.currency, currentStart, currentEnd],
+  );
   const subscriptionsPromise = client.getAllAsync<SubscriptionSummary>(
     `SELECT id, merchant, amount_minor_units AS amountMinorUnits, currency, count,
             last_date AS lastDate, confidence
@@ -221,13 +266,31 @@ export async function queryInsightsOverviewUnsafe(
           [query.currency, historyStart, query.at],
         );
 
-  const [periodRows, categoryRows, vendorRows, subscriptions, dayRows] = await Promise.all([
-    periodsPromise,
-    categoriesPromise,
-    vendorsPromise,
-    subscriptionsPromise,
-    daysPromise,
-  ]);
+  const [periodRows, categoryRows, vendorRows, subscriptions, dayRows, incomeRows, creditRows] =
+    await Promise.all([
+      periodsPromise,
+      categoriesPromise,
+      vendorsPromise,
+      subscriptionsPromise,
+      daysPromise,
+      incomeSourcesPromise,
+      largestCreditPromise,
+    ]);
+  const topIncomeSources: IncomeSourceComparison[] = incomeRows.map((row) => ({
+    source: row.label,
+    currentMinorUnits: row.currentMinorUnits,
+    previousMinorUnits: row.previousMinorUnits,
+    deltaMinorUnits: row.currentMinorUnits - row.previousMinorUnits,
+    changePercent: percentChange(row.currentMinorUnits, row.previousMinorUnits),
+    transactionCount: row.transactionCount,
+  }));
+  const largestCredit: LargestCredit | null = creditRows[0]
+    ? {
+        source: creditRows[0].label,
+        amountMinorUnits: creditRows[0].amountMinorUnits,
+        date: creditRows[0].date,
+      }
+    : null;
   const currentMonth = periodSummary(periodRows.find((row) => row.period === "current"));
   const previousMonth = periodSummary(periodRows.find((row) => row.period === "previous"));
   const topCategories: RankedSpendingComparison[] = categoryRows.map((row) => ({
@@ -258,6 +321,8 @@ export async function queryInsightsOverviewUnsafe(
     ),
     topCategories,
     topVendors,
+    topIncomeSources,
+    largestCredit,
     subscriptions: {
       activeCount: subscriptions.length,
       likelyCount: likelySubscriptions.length,

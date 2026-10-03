@@ -8,20 +8,34 @@ const sheetsPath = path.join(__dirname, "..", "components", "analytics-detail-sh
 const componentsDir = path.join(__dirname, "..", "components");
 
 describe("Insights screen composition", () => {
-  it("composes hero + breakdown + detail sheets from useInsightsScreen", () => {
+  it("composes titled cards: the number + chart, highlights, where it went, spending, latest", () => {
     const source = readFileSync(screenPath, "utf8");
     const sheets = readFileSync(sheetsPath, "utf8");
 
     expect(source).toContain("useInsightsScreen");
-    expect(source).toContain("AnalyticsHeroCard");
-    expect(source).toContain("AnalyticsBreakdownCard");
-    expect(source).toContain("AnalyticsBudgetCard");
-    expect(source).toContain("AnalyticsDetailSheets");
-    expect(source).toContain("formatAnalyticsPeriod");
-    expect(source).toContain("TransactionRow");
+    // Simple by design: no dark chip band or layered sheets.
+    expect(source).not.toContain("ChipBand");
+    for (const part of [
+      "Card",
+      "HighlightsGrid",
+      "CategoryChangeList",
+      "VendorRankList",
+      "IncomeSourcesList",
+      "SoftBarChart",
+      "SpendingRing",
+      "LedgerRow",
+      "AnalyticsBudgetCard",
+      "MessageInsightsSection",
+      "AnalyticsDetailSheets",
+      "formatMonthToDate",
+    ]) {
+      expect(source).toContain(part);
+    }
     expect(source).not.toMatch(/^function Panel\(/m);
-    // Spending is the product word; "Outcome" never reaches the UI.
-    expect(source).not.toContain('"Outcome"');
+    // The chips and links open the four core sheets.
+    for (const sheet of ['"categories"', '"subscriptions"', '"transactions"', '"vendors"']) {
+      expect(source).toContain(`openSheet(${sheet}`);
+    }
 
     expect(sheets).toContain("AnalyticsCategoriesSheetContent");
     expect(sheets).toContain("AnalyticsTransactionsSheetContent");

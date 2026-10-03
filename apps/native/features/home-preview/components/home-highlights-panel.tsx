@@ -2,13 +2,13 @@ import type { ReactElement } from "react";
 import { View } from "react-native";
 
 import { EnterTransition } from "@/components/native-ui/enter-transition";
-import { Section } from "@/components/ui/section";
 import type { HomeHighlights } from "@/lib/dashboard-data";
+import type { BillDue } from "@/lib/message-insights";
 
 import type { PreviewSub } from "../data";
+import { ComingUpTimeline } from "./coming-up-timeline";
 import { ErrorHighlights, LoadingHighlights } from "./home-highlights/loading-error";
 import type { InsightsBudget } from "./home-highlights/insights-card";
-import { DueSoonCard, SubscriptionsPairCard } from "./home-highlights/pair-row";
 import { TodaySummary } from "./home-highlights/today-summary";
 
 // Home's middle band: Today → this week → what's coming up. The old
@@ -25,7 +25,13 @@ export function HomeHighlightsPanel({
   onOpenUpcoming,
   onOpenSubscriptions,
   onSelectTransaction,
+  showToday = true,
+  bills = [],
 }: {
+  /** Bills, EMIs and premiums due, from the user's messages. */
+  bills?: readonly BillDue[];
+  /** False where today's movement is already shown (Home's balance card line). */
+  showToday?: boolean;
   status: "loading" | "ready" | "error";
   error: string | null;
   highlights: HomeHighlights | null;
@@ -46,29 +52,26 @@ export function HomeHighlightsPanel({
 
   return (
     <View>
-      <EnterTransition index={0}>
-        <TodaySummary
-          data={highlights}
-          onSeeActivity={onSeeActivity}
-          onSelectTransaction={onSelectTransaction}
-        />
-      </EnterTransition>
+      {showToday ? (
+        <EnterTransition index={0}>
+          <TodaySummary
+            data={highlights}
+            onSeeActivity={onSeeActivity}
+            onSelectTransaction={onSelectTransaction}
+          />
+        </EnterTransition>
+      ) : null}
       {afterToday ? <EnterTransition index={1}>{afterToday}</EnterTransition> : null}
       <EnterTransition index={afterToday ? 2 : 1}>
-        <Section title="Coming up">
-          <View className="flex-row items-stretch gap-3">
-            <View className="min-w-0 flex-1">
-              <DueSoonCard data={highlights} onOpen={onOpenUpcoming} />
-            </View>
-            <View className="min-w-0 flex-1">
-              <SubscriptionsPairCard
-                data={highlights}
-                previewItems={subscriptionPreviewItems}
-                onOpen={onOpenSubscriptions}
-              />
-            </View>
-          </View>
-        </Section>
+        {/* One commitment timeline: bills confirmed by message and estimated
+            subscription charges, date-ordered (was two pair cards). */}
+        <ComingUpTimeline
+          highlights={highlights}
+          bills={bills}
+          subscriptionPreviewItems={subscriptionPreviewItems}
+          onOpenUpcoming={onOpenUpcoming}
+          onOpenSubscriptions={onOpenSubscriptions}
+        />
       </EnterTransition>
     </View>
   );

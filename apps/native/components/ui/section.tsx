@@ -6,7 +6,9 @@ import { headingFontFamily } from "@/lib/fonts";
 
 // Section = a heading that sits ON the page (not inside a card) plus its
 // content. Keeping headings outside cards is what gives the screen rhythm:
-// page → heading → card, repeated at one spacing.
+// page → heading → card, repeated at one spacing (24pt between sections,
+// 10pt from heading to card). The heading is 18/23 semibold — a clear step
+// above the 15pt body without shouting over the content it introduces.
 
 export function SectionHeader({
   title,
@@ -20,10 +22,15 @@ export function SectionHeader({
   accessory?: ReactNode;
 }) {
   return (
-    <View className="mb-3 min-h-7 flex-row items-center justify-between px-1">
+    <View className="mb-2.5 flex-row items-center justify-between px-1">
       <Text
-        className="text-subtitle font-bold tracking-tight text-ink"
-        style={{ fontFamily: headingFontFamily("bold") }}
+        className="font-semibold text-ink"
+        style={{
+          fontFamily: headingFontFamily("semibold"),
+          fontSize: 18,
+          lineHeight: 23,
+          letterSpacing: -0.3,
+        }}
       >
         {title}
       </Text>
@@ -53,9 +60,14 @@ export function Section({
   className?: string;
 }) {
   return (
-    <View className={`mt-7 ${className}`}>
+    <View className={`mt-6 ${className}`}>
       {title ? (
-        <SectionHeader title={title} actionLabel={actionLabel} onAction={onAction} accessory={accessory} />
+        <SectionHeader
+          title={title}
+          actionLabel={actionLabel}
+          onAction={onAction}
+          accessory={accessory}
+        />
       ) : null}
       {children}
     </View>

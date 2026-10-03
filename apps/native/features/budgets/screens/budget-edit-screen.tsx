@@ -5,13 +5,12 @@ import { ScrollView, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "@/components/app-text";
-import { IconTile } from "@/components/ui/controls";
 import { NavBar } from "@/components/ui/header";
 import { currencySymbol, moneyLabel } from "@/components/ui/money";
 import { tick } from "@/components/ui/motion";
 import { SkeletonRows } from "@/components/ui/states";
-import { useThemeColors, withAlpha } from "@/components/ui/theme";
-import { categoryIcon } from "@/features/insights/category-visual";
+import { useThemeColors } from "@/components/ui/theme";
+import { CategoryTile } from "@/components/finance/category-tile";
 import { usePrimaryCurrency } from "@/features/insights/hooks/use-dashboard-currencies";
 import { fromMinorUnits } from "@/lib/currency";
 import { moneyFontFamily } from "@/lib/fonts";
@@ -75,25 +74,26 @@ export function BudgetEditScreen() {
     spend && spend.averageMonthlyMinorUnits > 0
       ? { label: "10% less", minorUnits: Math.round((suggested ?? 0) * 0.9) }
       : null,
-  ].filter((chip): chip is { label: string; minorUnits: number } => chip !== null && chip.minorUnits > 0);
+  ].filter(
+    (chip): chip is { label: string; minorUnits: number } => chip !== null && chip.minorUnits > 0,
+  );
 
   const monthName = overview ? MONTH.format(overview.monthStart) : "this month";
 
   return (
     <View className="flex-1 bg-background">
-      <NavBar title={existing ? "Edit budget" : "New budget"} onBack={() => router.back()} topInset={insets.top} />
+      <NavBar
+        title={existing ? "Edit budget" : "New budget"}
+        onBack={() => router.back()}
+        topInset={insets.top}
+      />
       <ScrollView
         className="flex-1"
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 32 }}
       >
         <View className="mt-2 items-center rounded-card bg-card px-5 pb-6 pt-6">
-          <IconTile
-            icon={categoryIcon(category)}
-            color={colors.accentDeep}
-            background={withAlpha(colors.accentDeep, 0.14)}
-            size={48}
-          />
+          <CategoryTile label={category} color={colors.accentDeep} size={128} />
           <Text numberOfLines={1} className="mt-3 text-subtitle font-bold text-ink">
             {category}
           </Text>
@@ -138,7 +138,8 @@ export function BudgetEditScreen() {
               {spend.averageMonthlyMinorUnits > 0
                 ? `You usually spend about ${moneyLabel(fromMinorUnits(spend.averageMonthlyMinorUnits, currency), currency)} a month here · `
                 : ""}
-              {moneyLabel(fromMinorUnits(spend.thisMonthMinorUnits, currency), currency)} so far in {monthName}
+              {moneyLabel(fromMinorUnits(spend.thisMonthMinorUnits, currency), currency)} so far in{" "}
+              {monthName}
             </Text>
           ) : null}
 
@@ -174,10 +175,19 @@ export function BudgetEditScreen() {
           isDisabled={limit === null || saving}
           onPress={() => void commit(limit)}
         >
-          {saving ? <Spinner size="sm" color="default" /> : <Button.Label>Save budget</Button.Label>}
+          {saving ? (
+            <Spinner size="sm" color="default" />
+          ) : (
+            <Button.Label>Save budget</Button.Label>
+          )}
         </Button>
         {existing ? (
-          <Button variant="ghost" className="mt-2" isDisabled={saving} onPress={() => void commit(null)}>
+          <Button
+            variant="ghost"
+            className="mt-2"
+            isDisabled={saving}
+            onPress={() => void commit(null)}
+          >
             <Button.Label className="text-negative">Remove budget</Button.Label>
           </Button>
         ) : null}

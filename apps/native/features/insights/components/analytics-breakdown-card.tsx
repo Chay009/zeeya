@@ -3,16 +3,16 @@ import { View } from "react-native";
 
 import { AppText as Text } from "@/components/app-text";
 import { ShareBar } from "@/components/charts/share-bar";
-import { IconTile, Segmented } from "@/components/ui/controls";
+import { CategoryTile } from "@/components/finance/category-tile";
+import { Segmented } from "@/components/ui/controls";
 import { Row, RowGroup } from "@/components/ui/list";
 import { Money } from "@/components/ui/money";
 import { EmptyState } from "@/components/ui/states";
-import { useThemeColors, withAlpha } from "@/components/ui/theme";
 import { BrandLogo } from "@/features/home-preview/components/brand-logo";
 import { merchantVisual } from "@/features/home-preview/data";
 import { fromMinorUnits } from "@/lib/currency";
 
-import { categoryColor, categoryIcon } from "../category-visual";
+import { categoryTint } from "../category-visual";
 import type { InsightsCategorySlice, InsightsPresentation } from "../insights-presentation";
 
 // "Where it went": one card, two lenses (category / merchant). The share bar
@@ -53,14 +53,13 @@ export function AnalyticsBreakdownCard({
   onOpenMerchant: (merchant: string) => void;
   onSeeAll: (lens: Lens) => void;
 }) {
-  const colors = useThemeColors();
   const [lens, setLens] = useState<Lens>("categories");
   const ranked = presentation?.topCategories ?? [];
   const vendors = presentation?.topVendors ?? [];
 
-  const categoryRows = categories.slice(0, ROW_LIMIT).map((category, index) => ({
+  const categoryRows = categories.slice(0, ROW_LIMIT).map((category) => ({
     ...category,
-    color: categoryColor(colors.chart, index),
+    color: categoryTint(category.label),
     change: ranked.find((row) => row.category === category.label)?.changePercent ?? null,
     share: categoryTotal > 0 ? Math.round((category.value / categoryTotal) * 100) : 0,
   }));
@@ -79,10 +78,10 @@ export function AnalyticsBreakdownCard({
           <>
             <View className="px-4 pb-2 pt-4">
               <ShareBar
-                segments={categories.map((category, index) => ({
+                segments={categories.map((category) => ({
                   key: category.label,
                   value: category.value,
-                  color: categoryColor(colors.chart, index),
+                  color: categoryTint(category.label),
                 }))}
               />
             </View>
@@ -91,13 +90,7 @@ export function AnalyticsBreakdownCard({
                 <Row
                   key={row.label}
                   onPress={() => onOpenCategory(row.label)}
-                  leading={
-                    <IconTile
-                      icon={categoryIcon(row.label)}
-                      color={row.color}
-                      background={withAlpha(row.color, 0.14)}
-                    />
-                  }
+                  leading={<CategoryTile label={row.label} color={row.color} />}
                   title={row.label}
                   subtitle={`${row.share}% of spending`}
                   trailing={<Money value={row.value} currency={currency} size="body" />}
@@ -113,7 +106,8 @@ export function AnalyticsBreakdownCard({
         <RowGroup animated variant="transparent" inset={68} className="mt-2 rounded-none">
           {vendors.slice(0, ROW_LIMIT).map((vendor) => {
             const visual = merchantVisual(vendor.vendor);
-            const share = vendorTotal > 0 ? Math.round((vendor.currentMinorUnits / vendorTotal) * 100) : 0;
+            const share =
+              vendorTotal > 0 ? Math.round((vendor.currentMinorUnits / vendorTotal) * 100) : 0;
             return (
               <Row
                 key={vendor.identityKey ?? vendor.vendor}

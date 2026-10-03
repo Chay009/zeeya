@@ -263,6 +263,23 @@ export const budgetAlerts = sqliteTable(
   ],
 );
 
+// One row per message that carries a rich parsed field (a due date, a card's
+// available limit, cashback, a PNR, a tracking id, a NAV, …) or a captured
+// spend — only those fields, as JSON (lib/message-insights.ts's
+// MessageFactFields), never the body or tokens. Derived on ingest with the
+// rest of the projection, so insight reads never touch sms_ledger.
+export const messageFacts = sqliteTable(
+  "message_facts",
+  {
+    id: text("id").primaryKey(),
+    date: integer("date").notNull(),
+    sender: text("sender").notNull(),
+    currency: text("currency").notNull(),
+    payload: text("payload").notNull(),
+  },
+  (table) => [index("message_facts_date_idx").on(table.date)],
+);
+
 // ── Normalized layer ─────────────────────────────────────────────────────────
 // Derived from the ledger on ingest. Shaped close to what apps/native's
 // existing dashboard.ts (deriveDashboard) already computes in-memory, and

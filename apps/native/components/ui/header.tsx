@@ -24,7 +24,10 @@ export function LargeTitle({
   topInset: number;
 }) {
   return (
-    <View className="flex-row items-end justify-between gap-3" style={{ paddingTop: Math.max(12, topInset) + 12 }}>
+    <View
+      className="flex-row items-end justify-between gap-3"
+      style={{ paddingTop: Math.max(12, topInset) + 12 }}
+    >
       <View className="min-w-0 flex-1">
         {subtitle ? (
           <Text numberOfLines={1} className="text-caption font-medium text-muted">
@@ -33,8 +36,8 @@ export function LargeTitle({
         ) : null}
         <Text
           numberOfLines={1}
-          className="text-screen font-bold tracking-tight text-ink"
-          style={{ fontFamily: headingFontFamily("bold"), letterSpacing: -0.8 }}
+          className="text-screen font-semibold text-ink"
+          style={{ fontFamily: headingFontFamily("semibold"), letterSpacing: -0.5 }}
         >
           {title}
         </Text>
@@ -69,7 +72,10 @@ export function NavBar({
             />
           ) : null}
         </View>
-        <Text numberOfLines={1} className="min-w-0 flex-1 text-center text-body font-semibold text-ink">
+        <Text
+          numberOfLines={1}
+          className="min-w-0 flex-1 text-center text-body font-semibold text-ink"
+        >
           {title ?? ""}
         </Text>
         <View className="w-11 items-end">{right}</View>

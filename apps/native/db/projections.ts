@@ -39,6 +39,7 @@ import {
   DASHBOARD_PROJECTION_ID,
   detectedAccounts,
   mandateEvents,
+  messageFacts,
   mandates,
   projectionState,
   subscriptions,
@@ -325,7 +326,7 @@ export function replaceProjection(
   projection: DashboardProjection,
   afterReplace?: (transaction: SyncSqliteDatabase) => void,
 ): void {
-  const { dashboard, allSubscriptions } = projection;
+  const { dashboard, allSubscriptions, messageFacts: facts } = projection;
   const accountRows = dashboard.accounts.map(projectAccount);
   const detectedAccountRows = dashboard.detectedAccounts.map(projectDetectedAccount);
 
@@ -387,6 +388,14 @@ export function replaceProjection(
       })),
   );
 
+  const messageFactRows: (typeof messageFacts.$inferInsert)[] = facts.map((fact) => ({
+    id: fact.id,
+    date: fact.date,
+    sender: fact.sender,
+    currency: fact.currency,
+    payload: JSON.stringify(fact.fields),
+  }));
+
   // Parents (referenced by FKs) and children, each with its primary key.
   const parents: TableRows[] = [
     tableRows("accounts", accounts, accounts.id, accountRows, (row) => row.id),
@@ -399,6 +408,7 @@ export function replaceProjection(
     tableRows("activity", activity, activity.id, activityRows, (row) => row.id),
     tableRows("subscriptions", subscriptions, subscriptions.id, subscriptionRows, (row) => row.id),
     tableRows("mandateEvents", mandateEvents, mandateEvents.id, mandateEventRows, (row) => row.id),
+    tableRows("messageFacts", messageFacts, messageFacts.id, messageFactRows, (row) => row.id),
   ];
 
   let nextBaseline: PublishedBaseline | undefined;

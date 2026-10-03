@@ -59,8 +59,9 @@ function Total({ label, value, color }: { label: string; value: string; color: s
         <MoneyText
           key={`${index}-${line}`}
           numberOfLines={1}
-          weight="bold"
-          className="mt-1 text-title tracking-tight text-ink"
+          weight="semibold"
+          className="mt-1 text-ink"
+          style={{ fontSize: 20, lineHeight: 26, letterSpacing: -0.4 }}
         >
           {index === 0 ? line : `+ ${line}`}
         </MoneyText>
@@ -78,13 +79,17 @@ export function ThisWeekCashflowTab({ data }: { data: HomePreviewData["cashflow"
       <EmptyState
         compact
         icon="chart"
+        art="hero-insights"
         title="No money moved this week"
         body="Income and spending appear here as they happen."
       />
     );
   }
 
-  const max = Math.max(1, ...flowChart.days.flatMap((day) => [day.income.amount, day.expense.amount]));
+  const max = Math.max(
+    1,
+    ...flowChart.days.flatMap((day) => [day.income.amount, day.expense.amount]),
+  );
 
   return (
     <View>
@@ -93,18 +98,27 @@ export function ThisWeekCashflowTab({ data }: { data: HomePreviewData["cashflow"
         <Total label="Money out" value={data.expense} color={colors.chartLine} />
       </View>
 
-      <View className="mt-6 flex-row items-end justify-between border-b border-divider pb-2" style={{ height: PLOT_HEIGHT + 8 }}>
+      <View
+        className="mt-6 flex-row items-end justify-between border-b border-divider pb-2"
+        style={{ height: PLOT_HEIGHT + 8 }}
+      >
         {flowChart.days.map((day, index) => (
           <View key={day.label} className="flex-1 flex-row items-end justify-center gap-1">
             <Capsule ratio={day.income.amount / max} color={colors.positive} delay={index * 35} />
-            <Capsule ratio={day.expense.amount / max} color={colors.chartLine} delay={index * 35 + 20} />
+            <Capsule
+              ratio={day.expense.amount / max}
+              color={colors.chartLine}
+              delay={index * 35 + 20}
+            />
           </View>
         ))}
       </View>
       <View className="mt-2 flex-row">
         {flowChart.days.map((day) => (
           <View key={day.label} className="flex-1 items-center">
-            <Text className={`text-label ${day.active ? "font-bold text-ink" : "font-medium text-faint"}`}>
+            <Text
+              className={`text-label ${day.active ? "font-semibold text-ink" : "font-medium text-faint"}`}
+            >
               {day.label}
             </Text>
           </View>

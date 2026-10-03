@@ -56,6 +56,7 @@ export function HomeBudgetCard({
             ? `${summary.watchCount} to watch`
             : null
       }
+      statusTone={summary.overCount > 0 ? "negative" : "warning"}
       onOpen={open}
     />
   );

@@ -17,6 +17,7 @@ import { normalizeSmsForParsing } from "./sms-normalizer";
 import {
   categoryMarkerEvidence,
   deriveAmbiguousTransactionForms,
+  isPaymentAcknowledgement,
   isUnconfirmedPromotionalTransaction,
   isMalanaCategory,
   isProductCategory,
@@ -38,6 +39,7 @@ import {
   isMandateCancelled,
   extractMandateMerchant,
 } from "./enrichment";
+import { extractRichFields } from "./rich-field-extractor";
 
 // ── Grammar auto-routing ───────────────────────────────────────────────────────
 // ── Token merge ────────────────────────────────────────────────────────────────
@@ -309,7 +311,13 @@ export class MalanaEngine {
       detectedBankName,
     );
     const senderGrammar = grammarForSender(sender);
-    const requestedCategory = senderGrammar || defaultCategory;
+    // A biller's "we have received a payment …" from an unrecognised sender
+    // routes like the biller's own sender would (see isPaymentAcknowledgement).
+    const requestedCategory =
+      senderGrammar ||
+      (defaultCategory === "GRM_BANK" && isPaymentAcknowledgement(normalizedMessage)
+        ? "GRM_BILL"
+        : defaultCategory);
     const recognizedCategory = isMalanaCategory(requestedCategory) ? requestedCategory : null;
     const fallbackCategory: MalanaCategory =
       recognizedCategory && isProductCategory(recognizedCategory) ? recognizedCategory : "GRM_BANK";
@@ -356,12 +364,17 @@ export class MalanaEngine {
       parsedByCategory.set(category, parsed);
     }
 
-    return composeCategoryResults(
-      primaryCategory,
-      candidates,
-      parsedByCategory,
-      tokens,
-      suppressPromotionalTransaction,
+    // Precise rich fields (due dates, limits, PNRs, tracking ids, …) over
+    // the composed result — see rich-field-extractor.ts.
+    return extractRichFields(
+      normalizedMessage,
+      composeCategoryResults(
+        primaryCategory,
+        candidates,
+        parsedByCategory,
+        tokens,
+        suppressPromotionalTransaction,
+      ),
     );
   }
 

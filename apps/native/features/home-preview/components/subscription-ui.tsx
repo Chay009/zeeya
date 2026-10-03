@@ -10,7 +10,7 @@ export const previewCircleButtonClass =
 
 export const previewEyebrowClass = "text-label font-semibold uppercase tracking-widest text-muted";
 
-export const previewScreenTitleClass = "mt-1 text-title font-bold tracking-tight text-ink";
+export const previewScreenTitleClass = "mt-1 text-title font-semibold tracking-tight text-ink";
 
 export function SubscriptionSpendValue({ value, size = 28 }: { value: string; size?: number }) {
   const lines = value.split(" + ").map((part, index) => (index === 0 ? part : `+ ${part}`));
@@ -21,7 +21,12 @@ export function SubscriptionSpendValue({ value, size = 28 }: { value: string; si
         <View key={`${index}-${line}`} className="flex-row items-baseline">
           <Text
             className="text-ink"
-            style={{ fontFamily: moneyFontFamily("bold"), fontSize: size, lineHeight: size * 1.18, letterSpacing: -size * 0.03 }}
+            style={{
+              fontFamily: moneyFontFamily("bold"),
+              fontSize: size,
+              lineHeight: size * 1.18,
+              letterSpacing: -size * 0.03,
+            }}
           >
             {line}
           </Text>
@@ -42,7 +47,12 @@ const TYPE_COLOR: Record<PreviewSub["type"], "success" | "accent" | "warning"> =
 
 export function SubscriptionTypeBadge({ subscription }: { subscription: PreviewSub }) {
   return (
-    <Chip size="sm" variant="soft" color={TYPE_COLOR[subscription.type]} className="rounded-pill px-2">
+    <Chip
+      size="sm"
+      variant="soft"
+      color={TYPE_COLOR[subscription.type]}
+      className="rounded-pill px-2"
+    >
       <Chip.Label className="text-label font-semibold">{subscription.typeLabel}</Chip.Label>
     </Chip>
   );
@@ -56,7 +66,12 @@ export function SubscriptionStatusBadge({
 }) {
   const active = subscription.status === "Active";
   return (
-    <Chip size="sm" variant="soft" color={active ? "success" : "default"} className="rounded-pill px-2">
+    <Chip
+      size="sm"
+      variant="soft"
+      color={active ? "success" : "default"}
+      className="rounded-pill px-2"
+    >
       <Chip.Label className="text-label font-semibold">{subscription.status}</Chip.Label>
     </Chip>
   );

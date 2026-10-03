@@ -4,6 +4,7 @@ import { AppText as Text } from "@/components/app-text";
 import { Row } from "@/components/ui/list";
 import { Money } from "@/components/ui/money";
 import { BrandLogo } from "@/features/home-preview/components/brand-logo";
+import { moneyFontFamily } from "@/lib/fonts";
 
 // THE transaction row. Home, Transactions and Analytics all render money
 // movements through this, so a transaction looks identical everywhere:
@@ -54,7 +55,10 @@ export function TransactionRow({
         sign={isIncome ? "income" : "none"}
       />
     ) : amountLabel ? (
-      <Text className={`text-body font-semibold ${isIncome ? "text-positive" : "text-ink"}`}>
+      <Text
+        className={`text-body ${isIncome ? "text-positive" : "text-ink"}`}
+        style={{ fontFamily: moneyFontFamily("semibold"), letterSpacing: -0.2 }}
+      >
         {amountLabel.replace(/^-\s*/, "").replace(/^\+\s*/, "+")}
       </Text>
     ) : null;

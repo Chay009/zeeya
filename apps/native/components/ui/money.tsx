@@ -6,6 +6,8 @@ import { AppText as Text } from "@/components/app-text";
 import { moneyFontFamily, moneyTextStyle } from "@/lib/fonts";
 import { numberFormat } from "@/lib/intl-format";
 
+import { easeOutCss, VALUE_DURATION, VALUE_FADE, VALUE_IN } from "./motion";
+
 // The one way an amount is drawn. Spending renders in ink — only income is
 // coloured — and the whole number carries the weight while the symbol and
 // paise sit smaller and quieter, the way a designed finance app sets money.
@@ -14,13 +16,18 @@ type MoneySize = "display" | "hero" | "title" | "subtitle" | "body" | "caption";
 type MoneyTone = "default" | "income" | "muted" | "negative" | "onHero";
 type MoneySign = "none" | "income" | "expense" | "auto";
 
-const SIZE: Record<MoneySize, { main: number; minor: number; line: number; weight: "semibold" | "bold" }> = {
-  display: { main: 48, minor: 26, line: 54, weight: "bold" },
-  hero: { main: 40, minor: 22, line: 46, weight: "bold" },
-  title: { main: 26, minor: 16, line: 32, weight: "bold" },
-  subtitle: { main: 17, minor: 13, line: 22, weight: "semibold" },
-  body: { main: 15, minor: 12, line: 20, weight: "semibold" },
-  caption: { main: 13, minor: 11, line: 18, weight: "semibold" },
+// Medium-to-semibold, never heavy: size carries the hierarchy, so a screen's
+// one big number leads without every amount shouting.
+const SIZE: Record<
+  MoneySize,
+  { main: number; minor: number; line: number; weight: "medium" | "semibold" }
+> = {
+  display: { main: 44, minor: 24, line: 50, weight: "semibold" },
+  hero: { main: 36, minor: 20, line: 42, weight: "semibold" },
+  title: { main: 24, minor: 15, line: 30, weight: "semibold" },
+  subtitle: { main: 17, minor: 13, line: 22, weight: "medium" },
+  body: { main: 15, minor: 12, line: 20, weight: "medium" },
+  caption: { main: 13, minor: 11, line: 18, weight: "medium" },
 };
 
 const TONE: Record<MoneyTone, { main: string; minor: string }> = {
@@ -97,8 +104,19 @@ export function Money({
             ? "+"
             : "";
   const large = spec.main >= 26;
-  const main = { fontFamily: moneyFontFamily(spec.weight), fontSize: spec.main, lineHeight: spec.line, letterSpacing: large ? -1 : -0.2, ...moneyTextStyle };
-  const minor = { fontFamily: moneyFontFamily("semibold"), fontSize: spec.minor, lineHeight: spec.line, ...moneyTextStyle };
+  const main = {
+    fontFamily: moneyFontFamily(spec.weight),
+    fontSize: spec.main,
+    lineHeight: spec.line,
+    letterSpacing: large ? -1 : -0.2,
+    ...moneyTextStyle,
+  };
+  const minor = {
+    fontFamily: moneyFontFamily("medium"),
+    fontSize: spec.minor,
+    lineHeight: spec.line,
+    ...moneyTextStyle,
+  };
 
   if (animated) {
     return (
@@ -133,7 +151,11 @@ export function Money({
         {whole}
       </Text>
       {showFraction && fraction ? (
-        <Text numberOfLines={1} className={large ? colors.minor : colors.main} style={large ? minor : main}>
+        <Text
+          numberOfLines={1}
+          className={large ? colors.minor : colors.main}
+          style={large ? minor : main}
+        >
           .{fraction}
         </Text>
       ) : null}
@@ -149,11 +171,8 @@ export function Money({
 // restarted 900ms rolls on every chart scrub step. Unchanged values keep
 // their node (same key), so a re-render never re-animates; the first mount
 // doesn't animate either (the keyframe starts from the resting state's
-// neighbour, so it reads as settling, not flashing).
-const VALUE_IN = {
-  from: { opacity: 0, transform: [{ translateY: 6 }] },
-  to: { opacity: 1, transform: [{ translateY: 0 }] },
-};
+// neighbour, so it reads as settling, not flashing). The keyframes are the
+// shared VALUE_IN (motion.ts), so every changing amount moves the same way.
 
 function RollingNumber({
   value,
@@ -170,7 +189,7 @@ function RollingNumber({
   const text = (showFraction ? MONEY_WHOLE : MONEY_NO_FRACTION).format(value);
   // The first value renders at rest; only later values animate in.
   const [firstText] = useState(text);
-  const animate = !reducedMotion && text !== firstText;
+  const animate = text !== firstText;
   return (
     <Animated.Text
       key={text}
@@ -179,7 +198,11 @@ function RollingNumber({
       style={[
         style,
         animate
-          ? { animationName: VALUE_IN, animationDuration: 220, animationTimingFunction: "ease-out" }
+          ? {
+              animationName: reducedMotion ? VALUE_FADE : VALUE_IN,
+              animationDuration: VALUE_DURATION,
+              animationTimingFunction: easeOutCss,
+            }
           : null,
       ]}
     >

@@ -165,6 +165,15 @@ CREATE TABLE `mandates` (
 );
 --> statement-breakpoint
 CREATE INDEX `mandates_last_updated_mandate_id_idx` ON `mandates` (`last_updated`,`mandate_id`);--> statement-breakpoint
+CREATE TABLE `message_facts` (
+	`id` text PRIMARY KEY NOT NULL,
+	`date` integer NOT NULL,
+	`sender` text NOT NULL,
+	`currency` text NOT NULL,
+	`payload` text NOT NULL
+);
+--> statement-breakpoint
+CREATE INDEX `message_facts_date_idx` ON `message_facts` (`date`);--> statement-breakpoint
 CREATE TABLE `projection_state` (
 	`id` text PRIMARY KEY NOT NULL,
 	`source_revision` integer DEFAULT 0 NOT NULL,

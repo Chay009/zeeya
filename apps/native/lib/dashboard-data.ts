@@ -2,6 +2,7 @@
 // Today the source is local SQLite; a future server source should return the
 // same shape so screens do not need to know where the values came from.
 import type { ProductActivityCategory } from "./activity-filters";
+import type { MessageInsights } from "./message-insights";
 
 export interface MonthTotalsByCurrency {
   incomeByCurrency: Record<string, number>;
@@ -125,6 +126,23 @@ export interface InsightsPeriodRange {
   previousTo: number;
 }
 
+/** Where money came in from: an employer, a payer, or the income category. */
+export interface IncomeSourceComparison {
+  source: string;
+  currentMinorUnits: number;
+  previousMinorUnits: number;
+  deltaMinorUnits: number;
+  changePercent: number | null;
+  transactionCount: number;
+}
+
+/** The single biggest credit this period. */
+export interface LargestCredit {
+  source: string;
+  amountMinorUnits: number;
+  date: number;
+}
+
 export interface InsightsOverview {
   currency: string;
   currentMonth: FinancialPeriodSummary;
@@ -132,6 +150,9 @@ export interface InsightsOverview {
   spendingChangePercent: number | null;
   topCategories: RankedSpendingComparison[];
   topVendors: VendorSpendingComparison[];
+  /** Optional so overviews cached before income sources existed still load. */
+  topIncomeSources?: IncomeSourceComparison[];
+  largestCredit?: LargestCredit | null;
   subscriptions: SubscriptionInsightsSummary;
   budget: BudgetPerformance | null;
 }
@@ -1020,6 +1041,11 @@ export interface FinanceDataSource {
       months?: number;
     }): Promise<MonthlyValue[]>;
     loadCategoryTotals(input: { currency: string; at: number }): Promise<CategoryTotal[]>;
+    /**
+     * Bills due, card limits, cashback, trips, deliveries, NAVs, data packs
+     * and the payment mix — from the message_facts projection.
+     */
+    loadMessageInsights(input: { currency: string; at: number }): Promise<MessageInsights>;
   };
   home: HomeDataSource;
 }

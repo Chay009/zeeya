@@ -27,6 +27,7 @@ const dependencies = vi.hoisted(() => ({
   queryInsightsOverview: vi.fn(async () => ({}) as never),
   queryBudgetOverview: vi.fn(async () => ({}) as never),
   saveCategoryBudget: vi.fn(async () => undefined),
+  queryMessageInsights: vi.fn(async () => ({}) as never),
   homeDataSource: {
     load: vi.fn(async () => ({}) as never),
     loadHighlights: vi.fn(async () => ({}) as never),
@@ -92,6 +93,9 @@ vi.mock("@/db/queries-insights-overview", () => ({
 vi.mock("@/db/budgets", () => ({
   queryBudgetOverview: dependencies.queryBudgetOverview,
   saveCategoryBudget: dependencies.saveCategoryBudget,
+}));
+vi.mock("@/db/queries-message-insights", () => ({
+  queryMessageInsights: dependencies.queryMessageInsights,
 }));
 
 const { financeDataSource } = await import("./dashboard-data-source");
@@ -188,6 +192,12 @@ describe("dashboardDataSource", () => {
       currency: "INR",
       monthlyLimitMinorUnits: 800_000,
     });
+  });
+
+  it("exposes message insights behind the same storage-neutral boundary", async () => {
+    await financeDataSource.insights.loadMessageInsights({ currency: "INR", at: 1 });
+
+    expect(dependencies.queryMessageInsights).toHaveBeenCalledWith({ currency: "INR", at: 1 });
   });
 
   it("exposes the mandate family behind the same storage-neutral boundary", async () => {

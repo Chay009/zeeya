@@ -2,22 +2,32 @@ import { View } from "react-native";
 
 import { AppText as Text } from "@/components/app-text";
 import { ShareBar } from "@/components/charts/share-bar";
-import { IconTile } from "@/components/ui/controls";
+import { CategoryTile } from "@/components/finance/category-tile";
 import { EmptyState } from "@/components/ui/states";
 import { useThemeColors, withAlpha } from "@/components/ui/theme";
-import { categoryColor, categoryIcon } from "@/features/insights/category-visual";
 
 import type { HomePreviewData } from "../data";
 
 // Month's category mix: one share bar for the shape, then the top
-// categories with their share. Same colour order as Analytics.
+// categories with their share. The bar steps the one accent down by rank
+// (lime → paler lime → grey) instead of a hue per category.
 
 export function ThisWeekCategoriesTab({ data }: { data: HomePreviewData["cashflow"] }) {
   const colors = useThemeColors();
-
+  const step = (index: number) =>
+    index === 0
+      ? colors.accent
+      : index < 4
+        ? withAlpha(colors.accent, 0.7 - index * 0.15)
+        : colors.fillStrong;
   if (data.categories.length === 0) {
     return (
-      <EmptyState compact icon="pie-chart" title="No categories yet" body="Spending this month is grouped here." />
+      <EmptyState
+        compact
+        icon="pie-chart"
+        title="No categories yet"
+        body="Spending this month is grouped here."
+      />
     );
   }
 
@@ -29,21 +39,20 @@ export function ThisWeekCategoriesTab({ data }: { data: HomePreviewData["cashflo
           segments={data.categories.map((category, index) => ({
             key: category.label,
             value: category.pct,
-            color: categoryColor(colors.chart, index),
+            color: step(index),
           }))}
         />
       </View>
       <View className="mt-3">
-        {data.categories.slice(0, 5).map((category, index) => {
-          const color = categoryColor(colors.chart, index);
+        {data.categories.slice(0, 5).map((category) => {
           return (
-            <View key={category.label} className="flex-row items-center gap-3 py-2.5">
-              <IconTile icon={categoryIcon(category.label)} color={color} background={withAlpha(color, 0.14)} size={36} />
+            <View key={category.label} className="flex-row items-center gap-3 py-2">
+              <CategoryTile label={category.label} size={40} />
               <Text numberOfLines={1} className="min-w-0 flex-1 text-body font-medium text-ink">
                 {category.label}
               </Text>
-              <Text className="text-caption text-muted">{category.pct}%</Text>
-              <Text numberOfLines={1} className="w-24 text-right text-body font-semibold text-ink">
+              <Text className="w-10 text-right text-caption text-muted">{category.pct}%</Text>
+              <Text numberOfLines={1} className="w-24 text-right text-body font-medium text-ink">
                 {category.amount}
               </Text>
             </View>

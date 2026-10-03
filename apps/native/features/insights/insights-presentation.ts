@@ -5,6 +5,8 @@ import type {
   RankedSpendingComparison,
   SubscriptionSummary,
   VendorSpendingComparison,
+  IncomeSourceComparison,
+  LargestCredit,
 } from "@/lib/dashboard-data";
 import { fromMinorUnits } from "@/lib/currency";
 
@@ -24,6 +26,8 @@ export interface InsightsPresentation {
   spendingChangePercent: number | null;
   topCategories: RankedSpendingComparison[];
   topVendors: VendorSpendingComparison[];
+  topIncomeSources: IncomeSourceComparison[];
+  largestCredit: LargestCredit | null;
   subscriptions: {
     activeCount: number;
     likelyCount: number;
@@ -49,6 +53,8 @@ export function mapInsightsOverview(overview: InsightsOverview): InsightsPresent
     spendingChangePercent: overview.spendingChangePercent,
     topCategories: overview.topCategories,
     topVendors: overview.topVendors,
+    topIncomeSources: overview.topIncomeSources ?? [],
+    largestCredit: overview.largestCredit ?? null,
     subscriptions: overview.subscriptions,
     budget,
   };

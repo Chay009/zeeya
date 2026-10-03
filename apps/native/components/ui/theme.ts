@@ -82,6 +82,27 @@ export function useThemeColors(): ThemeColors {
 }
 
 /** Hex/rgb colour with an alpha applied, for tints built from a token. */
+/**
+ * `top` laid over `base` at `amount` (0..1), as one opaque colour — what
+ * withAlpha(top, amount) looks like on `base`, for surfaces that must hide
+ * whatever sits behind them. Both must be #rrggbb; otherwise `base` returns.
+ */
+export function mixColors(base: string, top: string, amount: number): string {
+  const parse = (color: string) => {
+    const hex = color.replace("#", "");
+    return /^[0-9a-f]{6}$/i.test(hex)
+      ? [0, 2, 4].map((at) => Number.parseInt(hex.slice(at, at + 2), 16))
+      : null;
+  };
+  const from = parse(base);
+  const to = parse(top);
+  if (!from || !to) return base;
+  return `#${from
+    .map((channel, index) => Math.round(channel + (to[index]! - channel) * amount))
+    .map((channel) => channel.toString(16).padStart(2, "0"))
+    .join("")}`;
+}
+
 export function withAlpha(color: string, alpha: number): string {
   const hex = color.replace("#", "");
   if (/^[0-9a-f]{6}$/i.test(hex)) {

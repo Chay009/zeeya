@@ -1,6 +1,7 @@
 import { View } from "react-native";
 
 import { AppText as Text } from "@/components/app-text";
+import { GlowLogos } from "@/components/finance/glow-logos";
 import type { HomeHighlights, UpcomingPayment } from "@/lib/dashboard-data";
 
 import type { PreviewSub } from "../../data";
@@ -39,7 +40,7 @@ export function DueSoonCard({
   const billLabel = totalCount === 1 ? "bill" : "bills";
 
   return (
-    <PairCardShell title="Upcoming" onPress={onOpen}>
+    <PairCardShell title="Upcoming" onPress={onOpen} art="hero-calendar" hue="#3B82F6">
       {totalCount === 0 ? (
         <Text className="mt-1 text-caption text-muted">Nothing due</Text>
       ) : (
@@ -81,6 +82,9 @@ function subscriptionPreviewItemsForCurrency(
   return items.filter((item) => item.currency === currency);
 }
 
+// How many services glow in the card before "+N more".
+const GLOW_LOGO_COUNT = 4;
+
 export function SubscriptionsPairCard({
   data,
   previewItems,
@@ -93,11 +97,15 @@ export function SubscriptionsPairCard({
   const subscriptions = data.subscriptions;
   const recurringCount = subscriptions.activeCount;
   const currencyItems = subscriptionPreviewItemsForCurrency(previewItems, data.currency);
-  const visible = currencyItems.slice(0, PAIR_VISIBLE_COUNT);
-  const overflow = Math.max(0, recurringCount - PAIR_VISIBLE_COUNT);
+  const glowing = currencyItems.slice(0, GLOW_LOGO_COUNT);
 
   return (
-    <PairCardShell title="Subscriptions" onPress={onOpen}>
+    <PairCardShell
+      title="Subscriptions"
+      onPress={onOpen}
+      art="hero-subscriptions"
+      hue="#8B5CF6"
+    >
       {recurringCount === 0 ? (
         <Text className="mt-1 text-caption text-muted">None detected yet</Text>
       ) : (
@@ -107,20 +115,21 @@ export function SubscriptionsPairCard({
             label="active"
             totalLabel={amount(subscriptions.expectedMonthlyMinorUnits, data.currency)}
           />
-          <View className="mt-3.5 gap-3">
-            {visible.map((item, index) => (
-              <PairMerchantRow
-                key={item.key}
-                letter={item.letter}
-                tile={item.tile}
-                ink={item.ink}
-                img={item.img}
-                name={item.name}
-                amountLabel={`${item.amount}/mo`}
-                faded={index === 1}
-              />
-            ))}
-            <PairOverflowHint count={overflow} />
+          {/* The services themselves, each glowing in its brand colour. */}
+          <View className="mt-3 flex-row items-end gap-2">
+            <GlowLogos
+              items={glowing.map((item) => ({
+                key: item.key,
+                letter: item.letter,
+                tile: item.tile,
+                ink: item.ink,
+                img: item.img ?? undefined,
+              }))}
+              size={32}
+              tail={40}
+              step={7}
+            />
+            <PairOverflowHint count={Math.max(0, recurringCount - glowing.length)} />
           </View>
         </>
       )}
