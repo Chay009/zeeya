@@ -12,6 +12,7 @@
   "scripts": {},
   "dependencies": {
     "@better-auth/expo": "catalog:",
+    "@sentry/cloudflare": "^11.2.0",
     "@zeeya/db": "workspace:*",
     "@zeeya/env": "workspace:*",
     "better-auth": "catalog:",
