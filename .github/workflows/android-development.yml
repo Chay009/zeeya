@@ -1,0 +1,86 @@
+name: Android development APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [integration/codex-claude]
+    paths: [.github/workflows/android-development.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-development-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      CI: "1"
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      EXPO_PUBLIC_SERVER_URL: ${{ vars.EXPO_PUBLIC_SERVER_URL }}
+      EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: ${{ vars.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID }}
+      EXPO_PUBLIC_LOGO_DEV_TOKEN: ${{ vars.EXPO_PUBLIC_LOGO_DEV_TOKEN }}
+      # Reduce concurrent native compilation on the standard GitHub runner.
+      GRADLE_OPTS: >-
+        -Dorg.gradle.jvmargs="-Xmx3g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8"
+        -Dorg.gradle.workers.max=2
+        -Dorg.gradle.parallel=false
+        -Dorg.gradle.daemon=false
+      CMAKE_BUILD_PARALLEL_LEVEL: "2"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Check configuration
+        shell: bash
+        run: |
+          test -n "$EXPO_TOKEN" || { echo "::error::Add the EXPO_TOKEN repository secret."; exit 1; }
+          test -n "$EXPO_PUBLIC_SERVER_URL" || { echo "::error::Add the EXPO_PUBLIC_SERVER_URL repository variable."; exit 1; }
+          test -n "$EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID" || { echo "::error::Add the EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID repository variable."; exit 1; }
+
+      - uses: pnpm/action-setup@v4
+        # Uses packageManager in the root package.json.
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v4
+        with:
+          log-accepted-android-sdk-licenses: false
+
+      - name: Install SDK 58 Android toolchain
+        run: sdkmanager "platform-tools" "platforms;android-37" "build-tools;37.0.0" "ndk;27.1.12297006" "cmake;3.22.1"
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: "25.2.0"
+          packager: npm
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Build signed development APK on this runner
+        working-directory: apps/native
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/.artifacts"
+          eas build --platform android --profile development --local --non-interactive --output "$GITHUB_WORKSPACE/.artifacts/zeeya-development.apk"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: zeeya-development-${{ github.sha }}
+          path: .artifacts/zeeya-development.apk
+          if-no-files-found: error
+          retention-days: 7
