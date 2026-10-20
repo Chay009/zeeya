@@ -57,13 +57,15 @@ entire build-log directory. Failed builds retain their normal Actions step logs.
 
 ## Toolchain and memory
 
-Node 22, Java 17, Android API/build-tools 37, NDK 27.1.12297006, and CMake 3.22.1
+Node 22, Java 17, Android API 37.0/build-tools 37.0.0, NDK 27.1.12297006, and CMake 3.22.1
 match the current SDK 58 / React Native toolchain requirements in this repository.
 EAS CLI is pinned to 25.2.0 and pnpm comes from the root `packageManager` field.
 Gradle has a 3 GB heap, two workers, and project parallelism disabled; native CMake
 parallelism is limited to two. All configured ABIs remain supported. These settings
 reduce concurrent memory demand; the previous daemon crash has not yet been
-reproduced or proven fixed on this runner.
+reproduced or proven fixed on this runner. Google's SDK repository lists the
+platform as `platforms;android-37.0`; the initial run failed before compilation
+because `platforms;android-37` is not a published package.
 
 References: [Expo local builds](https://docs.expo.dev/build-reference/local-builds/),
 [Expo GitHub action](https://github.com/expo/expo-github-action),

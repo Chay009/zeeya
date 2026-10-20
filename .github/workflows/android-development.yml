@@ -60,7 +60,8 @@ jobs:
           log-accepted-android-sdk-licenses: false
 
       - name: Install SDK 58 Android toolchain
-        run: sdkmanager "platform-tools" "platforms;android-37" "build-tools;37.0.0" "ndk;27.1.12297006" "cmake;3.22.1"
+        # Google's repository publishes API 37 as 37.0, not android-37.
+        run: sdkmanager "platform-tools" "platforms;android-37.0" "build-tools;37.0.0" "ndk;27.1.12297006" "cmake;3.22.1"
 
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
