@@ -10,7 +10,7 @@ import nativeCapabilities from "./native-capabilities.json";
 const require = createRequire(import.meta.url);
 const projectRoot = path.join(__dirname, "..");
 const appConfig = getConfig(projectRoot, { skipSDKVersionRequirement: true }).exp;
-const targetConfigFactory = require("../targets/app-intent/expo-target.config.js") as (
+const targetConfigFactory = require("../targets/apple/app-intent/expo-target.config.js") as (
   config: typeof appConfig,
 ) => {
   type: string;
@@ -20,10 +20,10 @@ const targetConfigFactory = require("../targets/app-intent/expo-target.config.js
   entitlements: Record<string, string[]>;
 };
 const targetInfoPlist = plist.parse(
-  readFileSync(path.join(projectRoot, "targets", "app-intent", "Info.plist"), "utf8"),
+  readFileSync(path.join(projectRoot, "targets", "apple", "app-intent", "Info.plist"), "utf8"),
 );
 const targetSource = readFileSync(
-  path.join(__dirname, "..", "targets", "app-intent", "extension.swift"),
+  path.join(__dirname, "..", "targets", "apple", "app-intent", "extension.swift"),
   "utf8",
 );
 const moduleSource = readFileSync(

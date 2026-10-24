@@ -8,6 +8,7 @@ import {
   type GestureResponderEvent,
   type PressableProps,
   type StyleProp,
+  type ViewInstance,
   type ViewStyle,
 } from "react-native";
 
@@ -37,7 +38,7 @@ export type GlassButtonProps = Omit<PressableProps, "children" | "style" | "onPr
  * The iOS implementation gets Expo's real interactive glass material when
  * available; Android and web retain a normal, themed pressable surface.
  */
-export const GlassButton = forwardRef<View, GlassButtonProps>(function GlassButton(
+export const GlassButton = forwardRef<ViewInstance, GlassButtonProps>(function GlassButton(
   {
     children,
     label,

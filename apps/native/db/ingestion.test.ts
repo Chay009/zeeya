@@ -26,6 +26,10 @@ import * as schema from "./schema";
 import { initializeNativeDatabase } from "./native-init";
 import { asyncSqlite } from "./testing/async-sqlite";
 import type { RawSms } from "../lib/sms";
+import {
+  currentLocalMessageTime,
+  importSharedMessage,
+} from "../features/share-import/import-shared-message";
 
 const MIGRATIONS_DIR = path.join(__dirname, "migrations");
 
@@ -123,6 +127,26 @@ describe("ingestSmsBatch", () => {
     expect(testDb.select().from(schema.smsArrivals).all()).toEqual([
       { sequence: 1, smsId: rows[0]!.id },
     ]);
+  });
+
+  it("imports a confirmed share into the projection without advancing inbox sync or recording an arrival", async () => {
+    const draft = {
+      sender: "VM-HDFCBK",
+      body: HDFC_DEBIT,
+      receivedAt: currentLocalMessageTime(),
+    };
+
+    expect(await importSharedMessage(draft)).toBe(1);
+    expect(testDb.select().from(schema.smsLedger).all()).toHaveLength(1);
+    expect(testDb.select().from(schema.transactions).all()).toHaveLength(1);
+    expect(testDb.select().from(schema.smsArrivals).all()).toEqual([]);
+    await expect(getSyncStatus()).resolves.toEqual({
+      lastIngestedDate: null,
+      lastIngestedProviderId: null,
+      initialScanCompletedAt: null,
+    });
+    expect(await importSharedMessage(draft)).toBe(0);
+    expect(testDb.select().from(schema.smsLedger).all()).toHaveLength(1);
   });
 
   it("is idempotent AND does not re-parse already-ingested messages", async () => {

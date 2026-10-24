@@ -30,6 +30,7 @@ export function useBudgets(currency: string): UseBudgetsResult {
   const { data, status, error, reload } = useLocalQuery({
     queryKey: localQueryKeys.budgets(currency),
     queryFn: () => financeDataSource.budgets.load({ currency, at: Date.now() }),
+    keepPrevious: false,
   });
   // Pace depends on the day; `today` re-derives it at midnight.
   const today = useToday();

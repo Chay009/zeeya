@@ -1,7 +1,13 @@
-name: Android development APK
+name: Android APK
 
 on:
   workflow_dispatch:
+    inputs:
+      profile:
+        description: APK type (preview runs without Metro)
+        type: choice
+        default: preview
+        options: [preview, development]
   push:
     branches: [integration/codex-claude]
     paths: [.github/workflows/android-development.yml]
@@ -19,6 +25,7 @@ jobs:
     timeout-minutes: 90
     env:
       CI: "1"
+      BUILD_PROFILE: ${{ inputs.profile || 'preview' }}
       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
       EXPO_PUBLIC_SERVER_URL: ${{ vars.EXPO_PUBLIC_SERVER_URL }}
       EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: ${{ vars.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID }}
@@ -72,16 +79,20 @@ jobs:
           packager: npm
           token: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Build signed development APK on this runner
+      - name: Verify native TypeScript
+        working-directory: apps/native
+        run: pnpm exec tsc --noEmit
+
+      - name: Build signed APK on this runner
         working-directory: apps/native
         run: |
           mkdir -p "$GITHUB_WORKSPACE/.artifacts"
-          eas build --platform android --profile development --local --non-interactive --output "$GITHUB_WORKSPACE/.artifacts/zeeya-development.apk"
+          eas build --platform android --profile "$BUILD_PROFILE" --local --non-interactive --output "$GITHUB_WORKSPACE/.artifacts/zeeya-$BUILD_PROFILE.apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: zeeya-development-${{ github.sha }}
-          path: .artifacts/zeeya-development.apk
+          name: zeeya-${{ env.BUILD_PROFILE }}-${{ github.sha }}
+          path: .artifacts/zeeya-${{ env.BUILD_PROFILE }}.apk
           if-no-files-found: error
           retention-days: 7

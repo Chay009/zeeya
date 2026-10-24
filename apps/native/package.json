@@ -85,7 +85,7 @@
     "tailwind-merge": "catalog:",
     "tailwind-variants": "^3.2.2",
     "tailwindcss": "catalog:",
-    "uniwind": "^1.10.0",
+    "uniwind": "^1.13.0",
     "victory-native": "41.26.0",
     "zod": "catalog:",
     "zustand": "^5.0.15"

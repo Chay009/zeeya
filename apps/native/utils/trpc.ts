@@ -1,5 +1,6 @@
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
 import { createTRPCOptionsProxy } from "@trpc/tanstack-react-query";
+import { TRPC_MAX_BATCH_SIZE } from "@zeeya/api/limits";
 import type { AppRouter } from "@zeeya/api/routers/index";
 import { env } from "@zeeya/env/native";
 import { Platform } from "react-native";
@@ -13,6 +14,8 @@ const trpcClient = createTRPCClient<AppRouter>({
   links: [
     httpBatchLink({
       url: `${env.EXPO_PUBLIC_SERVER_URL}/trpc`,
+      // Must match the server's maxBatchSize, or larger batches get a 400.
+      maxItems: TRPC_MAX_BATCH_SIZE,
       fetch: function (url, options) {
         return fetch(url, {
           ...options,

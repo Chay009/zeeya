@@ -14,6 +14,7 @@ export function useHomeHighlights(query: HomeHighlightsQuery): UseHomeHighlights
   const { data, status, error, reload } = useLocalQuery({
     queryKey: localQueryKeys.homeHighlights(query),
     queryFn: () => financeDataSource.home.loadHighlights({ ...query, at: Date.now() }),
+    keepPrevious: false,
   });
   return { status, error, highlights: data ?? null, reload };
 }

@@ -19,6 +19,7 @@ export function useMessageInsights(currency: string): UseMessageInsightsResult {
   const { data, status, reload } = useLocalQuery({
     queryKey: localQueryKeys.messageInsights(currency),
     queryFn: () => financeDataSource.insights.loadMessageInsights({ currency, at: Date.now() }),
+    keepPrevious: false,
   });
   return { status, insights: data ?? EMPTY_MESSAGE_INSIGHTS, reload };
 }

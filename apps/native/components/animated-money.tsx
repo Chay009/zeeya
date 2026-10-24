@@ -21,7 +21,6 @@ export function AnimatedMoney({
   animated?: boolean;
 }) {
   const flattened = StyleSheet.flatten(style) ?? {};
-  const resolvedContainerStyle = StyleSheet.flatten(containerStyle) ?? undefined;
   const weight = String(flattened?.fontWeight ?? "400");
   const fallbackFamily =
     weight === "800" || weight === "900" || weight === "bold" ? "extrabold" : "regular";
@@ -36,7 +35,7 @@ export function AnimatedMoney({
       animated={animated}
       respectMotionPreference
       style={{ ...flattened, fontFamily }}
-      containerStyle={resolvedContainerStyle}
+      containerStyle={containerStyle}
     />
   );
 }

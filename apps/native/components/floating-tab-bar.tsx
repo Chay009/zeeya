@@ -42,7 +42,15 @@ const TAB_POP = {
   "100%": { transform: [{ scale: 1 }] },
 };
 
-function TabIcon({ name, selected, color }: { name: AppIconName; selected: boolean; color: string }) {
+function TabIcon({
+  name,
+  selected,
+  color,
+}: {
+  name: AppIconName;
+  selected: boolean;
+  color: string;
+}) {
   const reducedMotion = useReducedMotion();
   return (
     <Animated.View
@@ -64,7 +72,7 @@ const TAB_ICONS: Record<string, AppIconName> = {
   profile: "user",
 };
 
-export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
+export function FloatingTabBar({ state, descriptors, emitter, navigateToTab }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const activeRoute = state.routes[state.index]?.name ?? "";
@@ -72,12 +80,12 @@ export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarP
   const selectTab = (routeName: string) => {
     const route = state.routes.find((candidate) => candidate.name === routeName);
     if (!route) return;
-    const event = navigation.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
+    const event = emitter.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
     if (route.key !== state.routes[state.index]?.key && !event.defaultPrevented) {
       if (Platform.OS !== "web" && process.env.NODE_ENV !== "test") {
         void Haptics.selectionAsync().catch(() => undefined);
       }
-      navigation.navigate(route.name);
+      navigateToTab(route.key);
     }
   };
 

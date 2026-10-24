@@ -1,4 +1,6 @@
-import { type server } from "@zeeya/infra/alchemy.run";
+// `import type` (not `import { type … }`): under verbatimModuleSyntax the
+// latter survives as a side-effect import and bundles the infra script.
+import type { server } from "@zeeya/infra/alchemy.run";
 
 // This file infers types for the cloudflare:workers environment from your Alchemy Worker.
 // @see https://alchemy.run/concepts/bindings/#type-safe-bindings

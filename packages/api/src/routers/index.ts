@@ -1,13 +1,19 @@
-import { protectedProcedure, publicProcedure, router } from "../index";
+import { createAuth } from "@zeeya/auth";
+
+import { publicProcedure, router } from "../index";
 
 export const appRouter = router({
   healthCheck: publicProcedure.query(() => {
     return "OK";
   }),
-  privateData: protectedProcedure.query(({ ctx }) => {
+  // Which sign-in providers this deployment accepts, read from Better Auth's
+  // own config, so the app never shows a button the server would reject.
+  authProviders: publicProcedure.query(() => {
+    const { google, apple } = createAuth().options.socialProviders;
     return {
-      message: "This is private",
-      user: ctx.session.user,
+      google: google.enabled === true,
+      apple: apple.enabled === true,
+      googleBrowser: google.enabled === true && Boolean(google.clientSecret),
     };
   }),
 });

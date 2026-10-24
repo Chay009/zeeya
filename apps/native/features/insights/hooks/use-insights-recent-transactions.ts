@@ -45,6 +45,7 @@ export function useInsightsRecentTransactions(
   const { data, status, error, reload } = useLocalQuery({
     queryKey: localQueryKeys.recentTransactions(direction, currency, limit),
     queryFn: () => loadRecentInsightsTransactions({ direction, currency, limit }),
+    keepPrevious: false,
   });
   // loadRecentInsightsTransactions already normalizes; this only keeps the
   // empty fallback referentially stable.

@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import { Avatar, Button, ListGroup, Surface } from "heroui-native";
+import { Button, ListGroup, Surface } from "heroui-native";
 import { useState } from "react";
 import { Alert, RefreshControl, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText as Text } from "@/components/app-text";
 import { AppIcon, type AppIconName } from "@/components/icon";
 import { useFloatingTabBarClearance } from "@/components/floating-tab-bar";
+import { AccountCard } from "@/features/auth/components/account-card";
 import { useDashboardSync } from "@/features/dashboard/hooks/dashboard-sync-provider";
 import { useThemeColors } from "@/components/ui/theme";
 import { seedSampleTransactions } from "@/db/dev-seed";
@@ -64,7 +65,10 @@ export function ProfileScreen() {
         `Inserted ${result.inserted} SMS message${result.inserted === 1 ? "" : "s"} with recurring bills, due-soon projections, and today's glance edge cases. Tap again to add another batch.`,
       );
     } catch (error) {
-      Alert.alert("Couldn't seed sample data", error instanceof Error ? error.message : String(error));
+      Alert.alert(
+        "Couldn't seed sample data",
+        error instanceof Error ? error.message : String(error),
+      );
     } finally {
       setSeeding(false);
     }
@@ -118,15 +122,7 @@ export function ProfileScreen() {
         </Button>
       </View>
 
-      <View className="mt-6 items-center">
-        <Avatar size="lg">
-          <Avatar.Fallback>
-            <AppIcon name="user" size={30} color={colors.ink} />
-          </Avatar.Fallback>
-        </Avatar>
-        <Text className="mt-3 text-title font-extrabold text-foreground">Your profile</Text>
-        <Text className="mt-1 text-caption text-muted">Zeeya data and app settings</Text>
-      </View>
+      <AccountCard />
 
       <SettingsGroup
         title="ACCOUNT"
@@ -162,12 +158,6 @@ export function ProfileScreen() {
         title="APP"
         links={[
           {
-            icon: "wrench",
-            title: "Dashboard dev",
-            description: "Open the preserved developer dashboard",
-            onPress: () => router.push("/dashboard-dev"),
-          },
-          {
             icon: "reload",
             title: "Refresh data",
             description: "Read the latest available inbox data on this device",
@@ -175,6 +165,12 @@ export function ProfileScreen() {
           },
           ...(__DEV__
             ? [
+                {
+                  icon: "wrench" as AppIconName,
+                  title: "Dashboard dev",
+                  description: "Open the preserved developer dashboard",
+                  onPress: () => router.push("/dashboard-dev"),
+                },
                 {
                   icon: "wrench" as AppIconName,
                   title: seeding ? "Seeding sample data…" : "Seed sample data (dev)",

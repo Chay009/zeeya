@@ -1,4 +1,4 @@
-const nativeCapabilities = require("../../config/native-capabilities.json");
+const nativeCapabilities = require("../../../config/native-capabilities.json");
 
 /** @type {import('@bacons/apple-targets/app.plugin').ConfigFunction} */
 module.exports = (config) => {

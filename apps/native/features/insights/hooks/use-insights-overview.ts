@@ -14,6 +14,7 @@ export function useInsightsOverview(query: InsightsOverviewQuery): UseInsightsOv
   const { data, status, error, reload } = useLocalQuery({
     queryKey: localQueryKeys.insightsOverview(query),
     queryFn: () => financeDataSource.insights.loadOverview({ ...query, at: Date.now() }),
+    keepPrevious: false,
   });
   return { status, error, overview: data ?? null, reload };
 }

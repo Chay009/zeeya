@@ -5,6 +5,9 @@ export const env = createEnv({
   clientPrefix: "EXPO_PUBLIC_",
   client: {
     EXPO_PUBLIC_SERVER_URL: z.url(),
+    // Google sign-in (public OAuth client IDs). Unset hides the Google button.
+    EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: z.string().optional(),
+    EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: z.string().optional(),
   },
   runtimeEnv: process.env,
   emptyStringAsUndefined: true,

@@ -1,6 +1,12 @@
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 
+import {
+  TRANSACTION_NOTIFICATION_CATEGORY,
+  VIEW_TRANSACTIONS_ACTION,
+} from "@/integrations/shared/notifications/transaction-notification";
+import { postTransactionNotification } from "@/integrations/shared/notifications/post-transaction-notification";
+
 const TRANSACTION_CHANNEL_ID = "financial-activity";
 
 Notifications.setNotificationHandler({
@@ -22,8 +28,19 @@ async function ensureTransactionChannel(): Promise<void> {
   });
 }
 
+async function ensureTransactionNotificationCategory(): Promise<void> {
+  await Notifications.setNotificationCategoryAsync(TRANSACTION_NOTIFICATION_CATEGORY, [
+    {
+      identifier: VIEW_TRANSACTIONS_ACTION,
+      buttonTitle: "View transactions",
+      options: { opensAppToForeground: true },
+    },
+  ]);
+}
+
 export async function requestTransactionNotificationPermission(): Promise<boolean> {
   await ensureTransactionChannel();
+  await ensureTransactionNotificationCategory();
   const current = await Notifications.getPermissionsAsync();
   if (current.granted) return true;
   const requested = await Notifications.requestPermissionsAsync();
@@ -35,16 +52,7 @@ export async function requestTransactionNotificationPermission(): Promise<boolea
 export async function notifyNewFinancialTransactions(count: number): Promise<void> {
   if (count <= 0) return;
   await ensureTransactionChannel();
+  await ensureTransactionNotificationCategory();
 
-  await Notifications.scheduleNotificationAsync({
-    content: {
-      title: count === 1 ? "New transaction detected" : "New transactions detected",
-      body:
-        count === 1
-          ? "1 new transaction was added to Zeeya."
-          : `${count} new transactions were added to Zeeya.`,
-      data: { route: "/" },
-    },
-    trigger: Platform.OS === "android" ? { channelId: TRANSACTION_CHANNEL_ID } : null,
-  });
+  await postTransactionNotification(count, TRANSACTION_CHANNEL_ID);
 }

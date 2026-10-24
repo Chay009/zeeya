@@ -1,0 +1,1 @@
+export { QuickActionRegistration } from "./registration";

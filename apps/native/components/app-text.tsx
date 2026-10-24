@@ -1,5 +1,5 @@
 import { forwardRef } from "react";
-import { StyleSheet, Text, type TextProps, type TextStyle } from "react-native";
+import { StyleSheet, Text, type TextInstance, type TextProps, type TextStyle } from "react-native";
 
 import { appFontFamily, type AppFontWeight } from "@/lib/fonts";
 
@@ -44,7 +44,7 @@ function weightOf(style: TextProps["style"]): AppFontWeight {
 // system SF Pro completely untouched (see lib/fonts.ts). Existing
 // `style={{ fontWeight: "800" }}` usages get the correct font automatically
 // without every call site needing a manual fontFamily.
-export const AppText = forwardRef<Text, TextProps>(({ style, ...props }, ref) => {
+export const AppText = forwardRef<TextInstance, TextProps>(({ style, ...props }, ref) => {
   const base = fontStyle(weightOf(style));
   return <Text ref={ref} style={style ? [base, style] : base} {...props} />;
 });

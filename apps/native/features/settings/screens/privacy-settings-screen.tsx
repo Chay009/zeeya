@@ -8,6 +8,7 @@ import { type CapabilityPreference, useCapabilities } from "@/features/capabilit
 import { useFloatingTabBarClearance } from "@/components/floating-tab-bar";
 import { ShortcutsSetupCard } from "@/features/shortcuts/components/shortcuts-setup-card";
 import { deviceMessagePolicy } from "@/lib/device-message-policy";
+import { NativeIntegrationsCard } from "../components/native-integrations-card";
 
 interface PreferenceRowProps {
   title: string;
@@ -103,6 +104,7 @@ export function PrivacySettingsScreen() {
       </Surface>
 
       {policy.showsShortcutsSetup ? <ShortcutsSetupCard /> : null}
+      <NativeIntegrationsCard />
 
       {pending ? (
         <View className="mt-4 flex-row items-center gap-3">

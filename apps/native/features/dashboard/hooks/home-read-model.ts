@@ -23,6 +23,7 @@ export function useHomeReadModel(currency: string): UseHomeReadModelResult {
   const { data, status, error, reload } = useLocalQuery({
     queryKey: localQueryKeys.homeReadModel(currency),
     queryFn: () => loadHomeReadModel(currency),
+    keepPrevious: false,
   });
   return { status, error, model: data ?? null, currency, reload };
 }

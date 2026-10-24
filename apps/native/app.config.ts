@@ -18,7 +18,7 @@ function plistString(source: PlistObject, key: string): string | null {
 }
 
 function assertAppIntentInfoPlistContract(): void {
-  const infoPlistPath = path.join(__dirname, "targets", "app-intent", "Info.plist");
+  const infoPlistPath = path.join(__dirname, "targets", "apple", "app-intent", "Info.plist");
   const infoPlist = plist.parse(readFileSync(infoPlistPath, "utf8"));
   const extensionAttributes = infoPlist.EXAppExtensionAttributes;
   const extensionPoint =
@@ -57,6 +57,12 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   assertAppIntentInfoPlistContract();
 
   const appleTeamId = process.env.EXPO_APPLE_TEAM_ID?.trim();
+  // Google sign-in on iOS needs the reversed iOS client ID as a URL scheme
+  // (react-native-nitro-google-signin, setup without Firebase).
+  const googleIosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID?.trim();
+  const googleIosUrlScheme = googleIosClientId
+    ? `com.googleusercontent.apps.${googleIosClientId.replace(".apps.googleusercontent.com", "")}`
+    : undefined;
 
   return {
     ...config,
@@ -71,6 +77,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       ...config.ios,
       bundleIdentifier: nativeCapabilities.iosBundleIdentifier,
       ...(appleTeamId ? { appleTeamId } : {}),
+      usesAppleSignIn: true,
       infoPlist: {
         ...config.ios?.infoPlist,
         NSFaceIDUsageDescription: "Use Face ID to protect your financial information in Zeeya.",
@@ -100,14 +107,71 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       "expo-background-task",
       "expo-local-authentication",
       "expo-notifications",
+      [
+        "expo-widgets",
+        {
+          groupIdentifier: nativeCapabilities.iosAppGroup,
+          enableAndroid: true,
+          enablePushNotifications: true,
+          widgets: [
+            {
+              name: "ZeeyaOverviewWidget",
+              displayName: "Zeeya overview",
+              description: "A private, count-only overview of your finances",
+              ios: {
+                supportedFamilies: ["systemSmall", "systemMedium"],
+                initialLayout: "./integrations/apple/home-screen-widgets/overview-widget.tsx",
+              },
+              android: {
+                minWidth: 180,
+                minHeight: 110,
+                targetCellWidth: 3,
+                targetCellHeight: 2,
+                resizeMode: "both",
+                initialLayout: "./integrations/android/home-screen-widgets/overview-widget.tsx",
+              },
+            },
+            {
+              name: "ZeeyaLockScreenWidget",
+              displayName: "Zeeya quick view",
+              description: "A private, count-only Lock Screen overview",
+              ios: {
+                supportedFamilies: ["accessoryCircular", "accessoryRectangular", "accessoryInline"],
+                initialLayout: "./integrations/apple/lock-screen-widgets/overview-widget.tsx",
+              },
+              android: null,
+            },
+          ],
+        },
+      ],
+      [
+        "expo-sharing",
+        {
+          ios: {
+            enabled: true,
+            appGroupId: nativeCapabilities.iosAppGroup,
+            activationRule: { supportsText: true },
+          },
+          android: { enabled: true, singleShareMimeTypes: ["text/plain"] },
+        },
+      ],
       "expo-secure-store",
+      "expo-apple-authentication",
+      ...(googleIosUrlScheme
+        ? [
+            ["react-native-nitro-google-signin", { iosUrlScheme: googleIosUrlScheme }] as [
+              string,
+              { iosUrlScheme: string },
+            ],
+          ]
+        : []),
       ["expo-sqlite", { useSQLCipher: true }],
       [
         "expo-build-properties",
         { ios: { deploymentTarget: nativeCapabilities.iosDeploymentTarget } },
       ],
       "./plugins/withRealtimeSmsReceiver",
-      "@bacons/apple-targets",
+      ["@bacons/apple-targets", { root: "./targets/apple" }],
     ],
   };
 };

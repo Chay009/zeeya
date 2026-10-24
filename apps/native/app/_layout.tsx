@@ -3,6 +3,8 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
+import { useEffect } from "react";
+import { Text, View } from "react-native";
 import { HeroUINativeProvider } from "heroui-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
@@ -13,13 +15,14 @@ import { DatabaseProvider } from "@/db/provider";
 import { CapabilityProvider } from "@/features/capabilities/provider";
 import "@/features/capabilities/background/task";
 import { DashboardSyncProvider } from "@/features/dashboard/hooks/dashboard-sync-provider";
+import { OnboardingGate } from "@/features/onboarding/onboarding-gate";
 import { appFontsToLoad } from "@/lib/fonts";
 import { queryClient } from "@/utils/trpc";
 
 void SplashScreen.preventAutoHideAsync();
 
 export const unstable_settings = {
-  initialRouteName: "(tabs)",
+  anchor: "(tabs)",
 };
 
 const STACK_SCREEN_OPTIONS = { freezeOnBlur: true } as const;
@@ -48,6 +51,7 @@ function StackLayout() {
       <Stack.Screen name="transaction/[id]" options={{ title: "Transaction" }} />
       <Stack.Screen name="subscriptions/index" options={{ headerShown: false }} />
       <Stack.Screen name="subscriptions/[key]" options={{ headerShown: false }} />
+      <Stack.Screen name="import-shared-message" options={{ title: "Import shared message" }} />
     </Stack>
   );
 }
@@ -59,7 +63,20 @@ export default function Layout() {
   // and headings — the app's own display identity, which
   // BOTH platforms need since neither OS provides either. So both
   // platforms wait here — iOS's blocking load is small and happens once.
-  const [fontsLoaded] = useFonts(appFontsToLoad);
+  const [fontsLoaded, fontError] = useFonts(appFontsToLoad);
+
+  useEffect(() => {
+    if (fontError) void SplashScreen.hideAsync();
+  }, [fontError]);
+
+  if (fontError) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", padding: 24 }}>
+        <Text accessibilityRole="alert">Unable to load app fonts. Please reopen the app.</Text>
+        {__DEV__ ? <Text>{fontError.message}</Text> : null}
+      </View>
+    );
+  }
 
   if (!fontsLoaded) return null;
 
@@ -73,7 +90,9 @@ export default function Layout() {
               <DatabaseProvider>
                 <DashboardSyncProvider>
                   <CapabilityProvider>
-                    <StackLayout />
+                    <OnboardingGate>
+                      <StackLayout />
+                    </OnboardingGate>
                   </CapabilityProvider>
                 </DashboardSyncProvider>
               </DatabaseProvider>

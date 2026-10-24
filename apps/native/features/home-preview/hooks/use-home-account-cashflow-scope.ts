@@ -18,14 +18,17 @@ export function useHomeAccountCashflowScope(
 } {
   const { data, status, error, isRevalidating } = useLocalQuery({
     queryKey: localQueryKeys.accountCashflowScope(accountId ?? "", currency),
-    queryFn: () => financeDataSource.home.loadAccountCashflowScope({
+    queryFn: () =>
+      financeDataSource.home.loadAccountCashflowScope({
         accountId: accountId!,
         currency,
         at: Date.now(),
       }),
     enabled: accountId !== undefined,
     keepPrevious: (previousKey) =>
-      previousKey[1] === "account-cashflow-scope" && previousKey[2] === accountId,
+      previousKey[1] === "account-cashflow-scope" &&
+      previousKey[2] === accountId &&
+      previousKey[3] === currency,
   });
 
   if (!accountId) return { status: "idle", error: null, scope: null };

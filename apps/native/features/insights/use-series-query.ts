@@ -19,7 +19,6 @@ export function useSeriesQuery<T>(
   deps: readonly unknown[],
   enabled = true,
 ): SeriesQueryState<T> {
-
   const { data, error, isInitialLoading } = useLocalQuery<T>({
     queryKey: localQueryKeys.series(seriesKey, deps),
     queryFn: async () => {
@@ -31,6 +30,9 @@ export function useSeriesQuery<T>(
       }
     },
     enabled,
+    // A different key can represent a different currency/date scope. Cached
+    // data for this exact key still stays visible during same-scope refreshes.
+    keepPrevious: false,
   });
 
   return {

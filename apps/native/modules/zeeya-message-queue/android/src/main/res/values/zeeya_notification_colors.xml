@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <color name="zeeya_notification_primary">#18181B</color>
+  <color name="zeeya_notification_secondary">#52525B</color>
+</resources>

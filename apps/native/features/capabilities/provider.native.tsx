@@ -22,6 +22,8 @@ import {
   requestSmsCapturePermissions,
 } from "@/lib/sms";
 import AndroidMessageQueueModule from "@/modules/zeeya-message-queue/src/ZeeyaMessageQueueModule.android";
+import { WidgetSnapshotPublisher } from "@/integrations/shared/widgets/snapshot-publisher";
+import { useDashboardStore } from "@/stores/dashboard-store";
 import { setBackgroundSyncRegistration } from "./background/task";
 import { publishMessageSync } from "./message-sync-events";
 import { requestTransactionNotificationPermission } from "./notifications/notifications";
@@ -61,6 +63,8 @@ export function useCapabilities(): CapabilityContextValue {
 export function CapabilityProvider({ children }: PropsWithChildren) {
   const [settings, setSettings] = useState<LocalSettings>({ ...DEFAULT_LOCAL_SETTINGS });
   const [loaded, setLoaded] = useState(false);
+  const [settingsAttempt, setSettingsAttempt] = useState(0);
+  const inboxReady = useDashboardStore((state) => state.status === "ready");
   const [unlocked, setUnlocked] = useState(false);
   // Latches on the first successful unlock (set while rendering — no effect).
   const [hasUnlockedOnce, setHasUnlockedOnce] = useState(false);
@@ -114,6 +118,7 @@ export function CapabilityProvider({ children }: PropsWithChildren) {
 
   useEffect(() => {
     let active = true;
+    setError(null);
     void getLocalSettings()
       .then(async (stored) => {
         if (!active) return;
@@ -138,13 +143,15 @@ export function CapabilityProvider({ children }: PropsWithChildren) {
       .catch((cause: unknown) => {
         if (!active) return;
         setError(cause instanceof Error ? cause.message : String(cause));
-        setLoaded(true);
-        setUnlocked(true);
+        // Never infer that app lock is disabled when its persisted policy
+        // could not be read. Keep all financial screens behind the retry gate.
+        setLoaded(false);
+        setUnlocked(false);
       });
     return () => {
       active = false;
     };
-  }, [unlock]);
+  }, [unlock, settingsAttempt]);
 
   useEffect(() => {
     if (!loaded || !shouldSubscribeToRealtimeSms(Platform.OS, appState === "active", true)) return;
@@ -170,7 +177,7 @@ export function CapabilityProvider({ children }: PropsWithChildren) {
       cancelled = true;
       stop();
     };
-  }, [appState, loaded, notifyRealtimeSync]);
+  }, [appState, loaded, inboxReady, settings.backgroundSyncEnabled, notifyRealtimeSync]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
@@ -235,8 +242,20 @@ export function CapabilityProvider({ children }: PropsWithChildren) {
 
   if (!loaded) {
     return (
-      <View className="flex-1 items-center justify-center bg-background">
-        <Spinner />
+      <View className="flex-1 items-center justify-center gap-4 bg-background p-8">
+        {error ? (
+          <>
+            <Text className="text-title font-bold text-foreground">
+              Couldn't load privacy settings
+            </Text>
+            <Text accessibilityRole="alert" className="text-center text-body text-muted">
+              Your financial information remains locked. Try loading your settings again.
+            </Text>
+            <Button onPress={() => setSettingsAttempt((value) => value + 1)}>Retry</Button>
+          </>
+        ) : (
+          <Spinner />
+        )}
       </View>
     );
   }
@@ -269,6 +288,7 @@ export function CapabilityProvider({ children }: PropsWithChildren) {
         importantForAccessibility={unlocked ? "auto" : "no-hide-descendants"}
       >
         {children}
+        {unlocked ? <WidgetSnapshotPublisher /> : null}
       </View>
       {!unlocked ? (
         <View style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0 }}>

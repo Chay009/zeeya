@@ -10,7 +10,7 @@
     "slug": "zeeya",
     "version": "1.0.0",
     "runtimeVersion": {
-      "policy": "appVersion"
+      "policy": "fingerprint"
     },
     "updates": {
       "url": "https://u.expo.dev/eda40d60-d791-4e4a-bbf4-3f58d941a4eb"
