@@ -9,6 +9,13 @@ export const env = createEnv({
     EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: z.string().optional(),
     EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: z.string().optional(),
   },
-  runtimeEnv: process.env,
+  // Expo only embeds statically referenced EXPO_PUBLIC_* properties. Passing
+  // process.env itself works in Node tests but leaves native release builds
+  // without their API URL and sign-in configuration.
+  runtimeEnvStrict: {
+    EXPO_PUBLIC_SERVER_URL: process.env.EXPO_PUBLIC_SERVER_URL,
+    EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+    EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+  },
   emptyStringAsUndefined: true,
 });

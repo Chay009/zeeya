@@ -1,8 +1,7 @@
 // On-device SQLite schema (local-first — see GitHub issue #17). Deliberately
-// separate from packages/db/src/schema/transactions.ts: that schema is
-// Postgres-specific, FK'd to an authenticated server user, and stores raw
-// SMS server-side — none of that shape belongs on-device. A future sync
-// layer maps rows between the two; it does not require either to change.
+// separate from packages/db: the cloud Postgres database stores authentication
+// identities and sessions only. Financial records and raw messages stay here.
+// A future financial sync service is not part of the current backend.
 //
 // Foreign keys are declared here but SQLite ignores them unless the
 // connection runs `PRAGMA foreign_keys = ON` — see db/native-init.ts.

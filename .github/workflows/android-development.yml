@@ -89,10 +89,26 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/.artifacts"
           eas build --platform android --profile "$BUILD_PROFILE" --local --non-interactive --output "$GITHUB_WORKSPACE/.artifacts/zeeya-$BUILD_PROFILE.apk"
 
+      - name: Verify APK signature and embedded bundle
+        shell: bash
+        run: |
+          APK="$GITHUB_WORKSPACE/.artifacts/zeeya-$BUILD_PROFILE.apk"
+          "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose --print-certs "$APK" | tee "$GITHUB_WORKSPACE/.artifacts/signing-certificate.txt"
+          if [ "$BUILD_PROFILE" = preview ]; then
+            unzip -l "$APK" | grep 'assets/index.android.bundle'
+            BADGING="$("$ANDROID_HOME/build-tools/37.0.0/aapt" dump badging "$APK")"
+            if grep '^application-debuggable' <<< "$BADGING" > /dev/null; then
+              echo "::error::The standalone APK must not be debuggable."
+              exit 1
+            fi
+          fi
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: zeeya-${{ env.BUILD_PROFILE }}-${{ github.sha }}
-          path: .artifacts/zeeya-${{ env.BUILD_PROFILE }}.apk
+          path: |
+            .artifacts/zeeya-${{ env.BUILD_PROFILE }}.apk
+            .artifacts/signing-certificate.txt
           if-no-files-found: error
           retention-days: 7
