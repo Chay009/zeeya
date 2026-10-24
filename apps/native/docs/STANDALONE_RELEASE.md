@@ -5,9 +5,10 @@
 The `Android APK` GitHub workflow builds the `preview` EAS profile by default.
 It embeds the JS bundle and does not need Metro, a QR code, or an Expo development
 server. `development` remains an explicit workflow option for debugging.
-Both use the existing application ID and EAS signing credentials; install the
-new APK over the existing app to preserve its financial database. Do not uninstall
-or clear storage as a troubleshooting step.
+The release uses the existing application ID and EAS signing credentials. An
+in-place update also requires the installed app's signing certificate to match;
+a locally signed debug installation may differ. Do not uninstall or clear
+storage as a troubleshooting step if Android rejects the update.
 
 ## Included product paths
 
@@ -53,3 +54,26 @@ This release does not add financial cloud sync, billing, Live Activities, App
 Clips, iMessage, or an autonomous background widget refresh service. Those are
 not hidden behind placeholder UI; their requirements/platform setup remain
 separate from this Android release.
+
+## Verified build
+
+- Source commit: `bee900c67789d77f2fe83d818235eeb9894f15a0`.
+- [Successful standalone APK build](https://github.com/Chay009/zeeya/actions/runs/40095541094).
+- [APK and signing certificate artifact](https://github.com/Chay009/zeeya/actions/runs/40095541094/artifacts/12562241310).
+- CI verified APK v2 signing, an embedded `assets/index.android.bundle`, and
+  absence of the debuggable manifest flag.
+- Package: `com.anonymous.zeeya`.
+- Release SHA-1: `83:10:86:C3:9F:49:55:93:52:92:6C:61:B9:7B:37:B1:4A:E3:D9:A4`.
+- Release SHA-256: `65:A4:2C:88:8B:6C:22:29:14:CA:BE:90:DD:EC:CE:6F:24:72:B1:C6:F3:E8:C7:C6:99:35:DA:01:39:AC:92:6E`.
+
+Register this package/SHA-1 pair as an Android OAuth client in the same Google
+project as the configured Web client ID if it is not already registered. The
+local debug certificate previously used during setup is different; registration
+for that certificate alone does not authorize this release APK. Google Console
+registration and signed-in device testing were not verified by CI.
+
+Local verification: 762 native tests passed (two DST-dependent tests skipped in
+IST and covered separately by the 48/48 DST run), plus 18 API/server/auth-migration
+tests. Native TypeScript, formatting, lint, production JS export, and native
+configuration inspection passed. The backend's built-in deletion configuration
+was deployed; anonymous deletion requests correctly return 401.
