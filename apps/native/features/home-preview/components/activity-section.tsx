@@ -7,6 +7,7 @@ import { TransactionRow } from "@/components/finance/transaction-row";
 import { RowGroup } from "@/components/ui/list";
 import { tick } from "@/components/ui/motion";
 import { Section } from "@/components/ui/section";
+import { EmptyReceipt } from "@/components/art/state-marks";
 import { EmptyState, ErrorState, SkeletonRows } from "@/components/ui/states";
 
 import type { ActivityCategoryFilter } from "@/lib/activity-filters";
@@ -150,6 +151,8 @@ export function ActivitySection<Item extends ActivityRowPresentation>({
           <EmptyState
             compact
             icon="rupee-receipt"
+            art={hasActivity ? undefined : "hero-calendar"}
+            visual={hasActivity ? <EmptyReceipt size={72} /> : undefined}
             title={hasActivity ? "Nothing in this filter" : "No activity yet"}
             body={hasActivity ? "Try another category." : "Payments show up here once messages are captured."}
           />

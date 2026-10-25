@@ -1,6 +1,10 @@
 import { useSyncExternalStore } from "react";
 import { AppState, type NativeEventSubscription } from "react-native";
 
+import { startOfDay } from "./calendar";
+
+export { startOfDay } from "./calendar";
+
 // "Today" as a store: the local start-of-day timestamp, which changes only
 // when the calendar day rolls over. Two consumers:
 //  - screens (useToday) — day-dependent UI like "Day 12" or month labels
@@ -12,11 +16,6 @@ import { AppState, type NativeEventSubscription } from "react-native";
 //
 // Timers don't fire while the app is suspended, so returning to the
 // foreground re-checks the day too.
-
-export function startOfDay(at: number = Date.now()): number {
-  const date = new Date(at);
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
-}
 
 let today = startOfDay();
 const listeners = new Set<() => void>();

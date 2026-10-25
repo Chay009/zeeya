@@ -1,3 +1,4 @@
+import { daysInMonth, isSameMonth, startOfMonth } from "./calendar";
 import type { BudgetMonthPerformance, BudgetPerformance } from "./dashboard-data";
 
 export interface DailySpendBucket {
@@ -8,14 +9,6 @@ export interface DailySpendBucket {
 export interface MonthlyDailySpend {
   monthStart: number;
   dailySpend: DailySpendBucket[];
-}
-
-function sameLocalMonth(left: Date, right: Date): boolean {
-  return left.getFullYear() === right.getFullYear() && left.getMonth() === right.getMonth();
-}
-
-function daysInMonth(date: Date): number {
-  return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
 }
 
 function evaluateMonth(
@@ -78,11 +71,11 @@ export function computeBudgetPerformance(input: {
   if (!Number.isFinite(now.getTime()))
     throw new Error(`at must be a valid timestamp, got ${input.at}`);
 
-  const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const currentMonthStart = startOfMonth(now);
   const normalizedMonths = [...input.months].sort((a, b) => a.monthStart - b.monthStart);
   const months = normalizedMonths.map((month) => {
     const monthDate = new Date(month.monthStart);
-    const evaluatedDays = sameLocalMonth(monthDate, now) ? now.getDate() : daysInMonth(monthDate);
+    const evaluatedDays = isSameMonth(monthDate, now) ? now.getDate() : daysInMonth(monthDate);
     return evaluateMonth(month, input.dailyBudgetMinorUnits!, evaluatedDays);
   });
   const current =

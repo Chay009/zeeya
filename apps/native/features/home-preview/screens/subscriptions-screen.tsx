@@ -3,6 +3,7 @@ import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { NavBar } from "@/components/ui/header";
+import { SCREEN_PADDING_X } from "@/components/ui/screen";
 import { ErrorState, SkeletonHero, SkeletonRows } from "@/components/ui/states";
 import { SubscriptionsList } from "../components/subscriptions-list";
 import { useSubscriptionsCatalog } from "../hooks/use-subscriptions-catalog";
@@ -21,7 +22,7 @@ export function SubscriptionsScreen() {
     return (
       <View className="flex-1 bg-background">
         <NavBar title="Subscriptions" onBack={() => router.back()} topInset={insets.top} />
-        <View className="px-4 pt-2">
+        <View className="pt-2" style={{ paddingHorizontal: SCREEN_PADDING_X }}>
           <SkeletonHero />
           <View className="mt-6">
             <SkeletonRows count={4} />

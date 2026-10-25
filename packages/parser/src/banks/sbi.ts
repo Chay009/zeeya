@@ -1,11 +1,7 @@
 // Exact 1:1 port of SBIBankParser.kt from Cashiro parser-core
 import { BankParser } from "../base-parser.js";
+import { parseAmount } from "../normalize.js";
 import type { ParsedTransaction, BalanceUpdateInfo, TransactionType } from "../types.js";
-
-function parseNum(str: string): number | null {
-  const n = parseFloat(str.replace(/,/g, ""));
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
 
 export class SBIBankParser extends BankParser {
   getBankName(): string {
@@ -73,7 +69,7 @@ export class SBIBankParser extends BankParser {
     for (const pattern of patterns) {
       const m = pattern.exec(message);
       if (m?.[1]) {
-        const val = parseNum(m[1]);
+        const val = parseAmount(m[1]);
         if (val !== null) return val;
       }
     }
@@ -103,7 +99,7 @@ export class SBIBankParser extends BankParser {
     for (const [pattern, group] of patterns) {
       const m = pattern.exec(message);
       if (m?.[group]) {
-        const val = parseNum(m[group]);
+        const val = parseAmount(m[group]);
         if (val !== null) return val;
       }
     }
@@ -222,19 +218,19 @@ export class SBIBankParser extends BankParser {
 
   protected override extractBalance(message: string): number | null {
     const p1 = /Avl\s+Bal\s+(?:Rs\.?|INR)\s*([0-9,]+(?:\.\d{2})?)/i.exec(message);
-    if (p1?.[1]) return parseNum(p1[1]);
+    if (p1?.[1]) return parseAmount(p1[1]);
 
     const p2 =
       /Your\s+updated\s+available\s+balance\s+is\s+(?:Rs\.?|INR)\s*([0-9,]+(?:\.\d{2})?)/i.exec(
         message,
       );
-    if (p2?.[1]) return parseNum(p2[1]);
+    if (p2?.[1]) return parseAmount(p2[1]);
 
     const p3 = /Available\s+Balance:?\s+(?:Rs\.?|INR)\s*([0-9,]+(?:\.\d{2})?)/i.exec(message);
-    if (p3?.[1]) return parseNum(p3[1]);
+    if (p3?.[1]) return parseAmount(p3[1]);
 
     const p4 = /Bal:?\s+(?:Rs\.?|INR)\s*([0-9,]+(?:\.\d{2})?)/i.exec(message);
-    if (p4?.[1]) return parseNum(p4[1]);
+    if (p4?.[1]) return parseAmount(p4[1]);
 
     return super.extractBalance(message);
   }
@@ -309,7 +305,7 @@ export class SBIBankParser extends BankParser {
     for (const pattern of totalDuePatterns) {
       const m = pattern.exec(message);
       if (m?.[1]) {
-        outstanding = parseNum(m[1]);
+        outstanding = parseAmount(m[1]);
         if (outstanding !== null) break;
       }
     }

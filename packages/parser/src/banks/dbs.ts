@@ -1,11 +1,7 @@
 // Exact 1:1 port of DBSBankParser.kt from Cashiro parser-core
 import { BankParser } from "../base-parser.js";
+import { parseAmount } from "../normalize.js";
 import type { TransactionType } from "../types.js";
-
-function parseNum(str: string): number | null {
-  const n = parseFloat(str.replace(/,/g, ""));
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
 
 export class DBSBankParser extends BankParser {
   getBankName(): string {
@@ -35,7 +31,7 @@ export class DBSBankParser extends BankParser {
     for (const pattern of patterns) {
       const match = pattern.exec(message);
       if (match?.[1]) {
-        const val = parseNum(match[1]);
+        const val = parseAmount(match[1]);
         if (val !== null) return val;
       }
     }
@@ -66,7 +62,7 @@ export class DBSBankParser extends BankParser {
     for (const pattern of patterns) {
       const match = pattern.exec(message);
       if (match?.[1]) {
-        const val = parseNum(match[1]);
+        const val = parseAmount(match[1]);
         if (val !== null) return val;
       }
     }

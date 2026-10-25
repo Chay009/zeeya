@@ -9,8 +9,10 @@ import { useFloatingTabBarClearance } from "@/components/floating-tab-bar";
 import { AppIcon } from "@/components/icon";
 import { Segmented, SelectPill } from "@/components/ui/controls";
 import { LargeTitle } from "@/components/ui/header";
+import { SCREEN_PADDING_X } from "@/components/ui/screen";
 import { Money } from "@/components/ui/money";
 import { tick } from "@/components/ui/motion";
+import { EmptyReceipt } from "@/components/art/state-marks";
 import { EmptyState, SkeletonRows } from "@/components/ui/states";
 import { useThemeColors } from "@/components/ui/theme";
 import { HOME_ACTIVITY_SEARCH_MAX_LIMIT } from "@/db/queries-home";
@@ -585,6 +587,7 @@ export function ActivityList({
                 <EmptyState
                   icon="rupee-receipt"
                   art={inMonthItems.length > 0 ? undefined : "hero-search"}
+                  visual={inMonthItems.length > 0 ? <EmptyReceipt size={88} /> : undefined}
                   title={
                     inMonthItems.length > 0
                       ? ACTIVITY_COPY.emptyFilteredTitle
@@ -596,6 +599,7 @@ export function ActivityList({
                 <EmptyState
                   icon="rupee-receipt"
                   art={inMonthItems.length > 0 ? undefined : "hero-calendar"}
+                  visual={inMonthItems.length > 0 ? <EmptyReceipt size={88} /> : undefined}
                   title={
                     inMonthItems.length > 0
                       ? ACTIVITY_COPY.emptyFilteredTitle
@@ -609,7 +613,7 @@ export function ActivityList({
         }
         renderSectionHeader={renderSectionHeader}
         renderItem={renderItem}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: tabBarClearance }}
+        contentContainerStyle={{ paddingHorizontal: SCREEN_PADDING_X, paddingBottom: tabBarClearance }}
         showsVerticalScrollIndicator={false}
         // A tap on a result opens it straight away; scrolling puts the
         // keyboard away.

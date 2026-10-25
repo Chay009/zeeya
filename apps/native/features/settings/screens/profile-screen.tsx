@@ -1,16 +1,19 @@
 import { useRouter } from "expo-router";
-import { Button, ListGroup, Surface } from "heroui-native";
+import { ListGroup, Surface } from "heroui-native";
 import { useState } from "react";
 import { Alert, RefreshControl, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "@/components/app-text";
-import { AppIcon, type AppIconName } from "@/components/icon";
 import { useFloatingTabBarClearance } from "@/components/floating-tab-bar";
-import { AccountCard } from "@/features/auth/components/account-card";
-import { useDashboardSync } from "@/features/dashboard/hooks/dashboard-sync-provider";
+import { AppIcon, type AppIconName } from "@/components/icon";
+import { LargeTitle } from "@/components/ui/header";
+import { SCREEN_PADDING_X } from "@/components/ui/screen";
 import { useThemeColors } from "@/components/ui/theme";
 import { seedSampleTransactions } from "@/db/dev-seed";
+import { AccountCard } from "@/features/auth/components/account-card";
+import { useDashboardSync } from "@/features/dashboard/hooks/dashboard-sync-provider";
+
 import { useAccountScopeCounts } from "../hooks/use-account-scope-counts";
 
 type SettingsLink = {
@@ -74,122 +77,88 @@ export function ProfileScreen() {
     }
   };
 
-  const accountSummary =
+  const cardsDescription =
     accountScopeCounts.status === "ready"
-      ? accountScopeCounts.confirmedCount === 0
-        ? "No confirmed balance accounts"
-        : `${accountScopeCounts.confirmedCount} confirmed balance account${accountScopeCounts.confirmedCount === 1 ? "" : "s"}`
-      : "Loading confirmed accounts…";
-
-  const detectedSummary =
-    accountScopeCounts.status === "ready"
-      ? accountScopeCounts.detectedCount === 0
-        ? "No pending account identities"
-        : accountScopeCounts.detectedCount === 1
-          ? "1 detected identity"
-          : `${accountScopeCounts.detectedCount} detected identities`
-      : "Loading detected identities…";
+      ? [
+          accountScopeCounts.confirmedCount === 0
+            ? "No accounts"
+            : `${accountScopeCounts.confirmedCount} account${accountScopeCounts.confirmedCount === 1 ? "" : "s"}`,
+          accountScopeCounts.detectedCount > 0
+            ? `${accountScopeCounts.detectedCount} to confirm`
+            : null,
+        ]
+          .filter((part) => part !== null)
+          .join(", ")
+      : "Loading accounts…";
 
   return (
-    <ScrollView
-      className="flex-1 bg-background"
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          tintColor={colors.accent}
-          colors={[colors.accent]}
+    <View className="flex-1 bg-background">
+      <ScrollView
+        className="flex-1"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.muted}
+            colors={[colors.ink]}
+          />
+        }
+        contentContainerStyle={{
+          paddingHorizontal: SCREEN_PADDING_X,
+          paddingBottom: tabBarClearance,
+        }}
+        showsVerticalScrollIndicator={false}
+      >
+        <LargeTitle title="You" topInset={insets.top} />
+
+        <AccountCard />
+
+        <SettingsGroup
+          title="Account"
+          links={[
+            {
+              icon: "shield",
+              title: "Privacy & automation",
+              description: "SMS access, sync, notifications, biometric lock, and screen protection",
+              onPress: () => router.push("/settings"),
+            },
+            {
+              icon: "card",
+              title: "Cards & accounts",
+              description: cardsDescription,
+              onPress: () => router.push("/cards"),
+            },
+          ]}
         />
-      }
-      contentContainerStyle={{
-        paddingHorizontal: 24,
-        paddingTop: Math.max(insets.top, 18),
-        paddingBottom: tabBarClearance,
-      }}
-      showsVerticalScrollIndicator={false}
-    >
-      <View className="flex-row items-center justify-between">
-        <View style={{ width: 40 }} />
-        <Text className="text-title font-extrabold text-foreground">Profile</Text>
-        <Button
-          isIconOnly
-          variant="tertiary"
-          size="sm"
-          accessibilityLabel="Refresh profile data"
-          onPress={() => void onRefresh()}
-        >
-          <AppIcon name="reload" size={19} color={colors.ink} />
-        </Button>
-      </View>
 
-      <AccountCard />
+        <Surface variant="secondary" className="mt-6 flex-row items-start gap-2 rounded-tile p-3">
+          <AppIcon name="lock" size={17} color={colors.inkSoft} />
+          <Text className="flex-1 text-meta leading-4 text-muted">
+            Zeeya only shows what the messages on this device support.
+          </Text>
+        </Surface>
 
-      <SettingsGroup
-        title="ACCOUNT"
-        links={[
-          {
-            icon: "shield",
-            title: "Privacy & automation",
-            description: "SMS access, sync, notifications, biometric lock, and screen protection",
-            onPress: () => router.push("/settings"),
-          },
-          {
-            icon: "card",
-            title: "Cards & accounts",
-            description: accountSummary,
-            onPress: () => router.push("/cards"),
-          },
-          {
-            icon: "receipt",
-            title: "Recent activity",
-            description: "Review real imported transactions and message details",
-            onPress: () => router.navigate("/activity"),
-          },
-          {
-            icon: "alert",
-            title: "Detected identities",
-            description: detectedSummary,
-            onPress: () => router.push("/cards"),
-          },
-        ]}
-      />
-
-      <SettingsGroup
-        title="APP"
-        links={[
-          {
-            icon: "reload",
-            title: "Refresh data",
-            description: "Read the latest available inbox data on this device",
-            onPress: () => void onRefresh(),
-          },
-          ...(__DEV__
-            ? [
-                {
-                  icon: "wrench" as AppIconName,
-                  title: "Dashboard dev",
-                  description: "Open the preserved developer dashboard",
-                  onPress: () => router.push("/dashboard-dev"),
-                },
-                {
-                  icon: "wrench" as AppIconName,
-                  title: seeding ? "Seeding sample data…" : "Seed sample data (dev)",
-                  description:
-                    "Ingest realistic SMS (recurring subs → due soon, tied largest today, this-week charts). Safe to tap again.",
-                  onPress: () => void seedSampleData(),
-                },
-              ]
-            : []),
-        ]}
-      />
-
-      <Surface variant="secondary" className="mt-6 flex-row items-start gap-2 rounded-tile p-3">
-        <AppIcon name="lock" size={17} color={colors.inkSoft} />
-        <Text className="flex-1 text-meta leading-4 text-muted">
-          Your financial data is derived from the messages available on this device. Zeeya does not
-          invent balances or activity when evidence is missing.
-        </Text>
-      </Surface>
-    </ScrollView>
+        {__DEV__ ? (
+          <SettingsGroup
+            title="Developer"
+            links={[
+              {
+                icon: "wrench",
+                title: "Dashboard dev",
+                description: "Open the preserved developer dashboard",
+                onPress: () => router.push("/dashboard-dev"),
+              },
+              {
+                icon: "wrench",
+                title: seeding ? "Seeding sample data…" : "Seed sample data (dev)",
+                description:
+                  "Ingest realistic SMS (recurring subs → due soon, tied largest today, this-week charts). Safe to tap again.",
+                onPress: () => void seedSampleData(),
+              },
+            ]}
+          />
+        ) : null}
+      </ScrollView>
+    </View>
   );
 }

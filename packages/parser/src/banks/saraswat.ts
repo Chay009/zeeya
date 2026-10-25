@@ -1,11 +1,7 @@
 // Exact 1:1 port of SaraswatBankParser.kt from Cashiro parser-core
 import { BankParser } from "../base-parser.js";
+import { parseAmount } from "../normalize.js";
 import type { TransactionType } from "../types.js";
-
-function parseNum(str: string): number | null {
-  const n = parseFloat(str.replace(/,/g, ""));
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
 
 export class SaraswatBankParser extends BankParser {
   getBankName(): string {
@@ -28,14 +24,14 @@ export class SaraswatBankParser extends BankParser {
     // Pattern 1: "INR 115.50" or "INR 10,000.00"
     const inrMatch = /INR\s+(\d+(?:,\d{3})*(?:\.\d{2})?)/i.exec(message);
     if (inrMatch?.[1]) {
-      const val = parseNum(inrMatch[1]);
+      const val = parseAmount(inrMatch[1]);
       if (val !== null) return val;
     }
 
     // Pattern 2: Rs. format
     const rsMatch = /Rs\.?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)/i.exec(message);
     if (rsMatch?.[1]) {
-      const val = parseNum(rsMatch[1]);
+      const val = parseAmount(rsMatch[1]);
       if (val !== null) return val;
     }
 
@@ -121,14 +117,14 @@ export class SaraswatBankParser extends BankParser {
     const currentBalMatch =
       /Current\s+Bal\s+is\s+INR\s+(\d+(?:,\d{3})*(?:\.\d{2})?)\s*(?:CR|DR)?/i.exec(message);
     if (currentBalMatch?.[1]) {
-      const val = parseNum(currentBalMatch[1]);
+      const val = parseAmount(currentBalMatch[1]);
       if (val !== null) return val;
     }
 
     // Pattern 2: "Bal: Rs. 1000.00"
     const balMatch = /Bal[:\s]+Rs\.?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)/i.exec(message);
     if (balMatch?.[1]) {
-      const val = parseNum(balMatch[1]);
+      const val = parseAmount(balMatch[1]);
       if (val !== null) return val;
     }
 

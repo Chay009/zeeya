@@ -63,3 +63,4 @@ describe("detailState", () => {
     );
   });
 });
+

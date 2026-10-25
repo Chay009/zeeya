@@ -2,6 +2,7 @@ import type { ParsedTransaction, TransactionType, BalanceUpdateInfo } from "./ty
 import { CompiledPatterns } from "./patterns.js";
 import { Constants } from "./constants.js";
 import { SmsFilter } from "./filters.js";
+import { parseDecimalAmount } from "./normalize.js";
 
 const MAX_SMS_LENGTH = 5000;
 
@@ -107,9 +108,8 @@ export abstract class BankParser {
     for (const pattern of CompiledPatterns.Amount.ALL_PATTERNS) {
       const match = pattern.exec(message);
       if (match?.[1]) {
-        const amountStr = match[1].replace(/,/g, "");
-        const val = parseFloat(amountStr);
-        if (!isNaN(val)) return val;
+        const amount = parseDecimalAmount(match[1]);
+        if (amount !== null) return amount;
       }
     }
     return null;
@@ -254,9 +254,8 @@ export abstract class BankParser {
     for (const pattern of CompiledPatterns.Balance.ALL_PATTERNS) {
       const match = pattern.exec(message);
       if (match?.[1]) {
-        const balanceStr = match[1].replace(/,/g, "");
-        const val = parseFloat(balanceStr);
-        if (!isNaN(val)) return val;
+        const balance = parseDecimalAmount(match[1]);
+        if (balance !== null) return balance;
       }
     }
     return null;
@@ -274,9 +273,8 @@ export abstract class BankParser {
     for (const pattern of creditLimitPatterns) {
       const match = pattern.exec(message);
       if (match?.[1]) {
-        const limitStr = match[1].replace(/,/g, "");
-        const val = parseFloat(limitStr);
-        if (!isNaN(val)) return val;
+        const limit = parseDecimalAmount(match[1]);
+        if (limit !== null) return limit;
       }
     }
     return null;

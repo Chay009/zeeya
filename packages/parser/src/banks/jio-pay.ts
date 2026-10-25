@@ -1,11 +1,7 @@
 // Exact 1:1 port of JioPayParser.kt from Cashiro parser-core
 import { BankParser } from "../base-parser.js";
+import { parseAmount } from "../normalize.js";
 import type { TransactionType } from "../types.js";
-
-function parseNum(str: string): number | null {
-  const n = parseFloat(str.replace(/,/g, ""));
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
 
 export class JioPayParser extends BankParser {
   getBankName(): string {
@@ -20,13 +16,13 @@ export class JioPayParser extends BankParser {
   protected override extractAmount(message: string): number | null {
     const planMatch = /Plan\s+Name\s*:\s*([0-9,]+(?:\.\d{2})?)/i.exec(message);
     if (planMatch?.[1]) {
-      const val = parseNum(planMatch[1]);
+      const val = parseAmount(planMatch[1]);
       if (val !== null) return val;
     }
 
     const rsMatch = /Rs\.?\s*([0-9,]+(?:\.\d{2})?)/i.exec(message);
     if (rsMatch?.[1]) {
-      const val = parseNum(rsMatch[1]);
+      const val = parseAmount(rsMatch[1]);
       if (val !== null) return val;
     }
 

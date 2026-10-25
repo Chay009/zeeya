@@ -1,14 +1,18 @@
 import { router } from "expo-router";
+import { Button, Spinner } from "heroui-native";
 import { useCallback, useEffect, useState } from "react";
-import { Spinner } from "heroui-native";
-import { Pressable, View } from "react-native";
+import { ScrollView, View } from "react-native";
+import { Calendar, type DateData } from "react-native-calendars";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "@/components/app-text";
-import { AppIcon } from "@/components/icon";
-import { Calendar, type DateData } from "react-native-calendars";
-
-import { Container } from "@/components/container";
-import { dashboardTheme as t } from "@/constants/dashboard-theme";
+import { MessageArrived } from "@/components/art/message-arrived";
+import { Card } from "@/components/ui/card";
+import { NavBar } from "@/components/ui/header";
+import { Row, RowGroup } from "@/components/ui/list";
+import { SCREEN_PADDING_X } from "@/components/ui/screen";
+import { EmptyState, ErrorState } from "@/components/ui/states";
+import { useThemeColors } from "@/components/ui/theme";
 import { backfillSms } from "@/db/backfill";
 import {
   hasSmsReadPermission,
@@ -16,6 +20,7 @@ import {
   readSmsInbox,
   requestSmsReadPermission,
 } from "@/lib/sms";
+
 import {
   calendarSelectionToEpochRange,
   selectCalendarDay,
@@ -39,6 +44,8 @@ const PRESETS: { label: string; days: number | null }[] = [
 ];
 
 export function BackfillScreen() {
+  const colors = useThemeColors();
+  const insets = useSafeAreaInsets();
   const [status, setStatus] = useState<BackfillStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [ingestedCount, setIngestedCount] = useState<number | null>(null);
@@ -117,144 +124,103 @@ export function BackfillScreen() {
         [customRange.from]: {
           startingDay: true,
           endingDay: customRange.to === customRange.from,
-          color: t.accent,
-          textColor: t.background,
+          color: colors.accent,
+          textColor: colors.onAccent,
         },
         ...(customRange.to
           ? {
               [customRange.to]: {
                 startingDay: customRange.to === customRange.from,
                 endingDay: true,
-                color: t.accent,
-                textColor: t.background,
+                color: colors.accent,
+                textColor: colors.onAccent,
               },
             }
           : {}),
       }
     : {};
 
-  return (
-    <Container>
-      <View style={{ flex: 1, padding: 20, backgroundColor: t.background }}>
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginBottom: 20,
-          }}
-        >
-          <Text style={{ color: t.textPrimary, fontSize: 20, fontWeight: "800" }}>
-            Backfill history
-          </Text>
-          <Pressable onPress={handleClose} hitSlop={12}>
-            <AppIcon name="close" size={24} color={t.textMuted} />
-          </Pressable>
-        </View>
+  const running = status === "running";
 
+  return (
+    <View className="flex-1 bg-background">
+      <NavBar title="Backfill history" onBack={handleClose} topInset={insets.top} />
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{
+          paddingHorizontal: SCREEN_PADDING_X,
+          paddingBottom: insets.bottom + 32,
+        }}
+        showsVerticalScrollIndicator={false}
+      >
         {!isSmsReadSupported() ? (
-          <View style={{ gap: 10 }}>
-            <Text style={{ color: t.textPrimary, fontSize: 15, fontWeight: "700" }}>
-              Historical Messages are unavailable on iOS
-            </Text>
-            <Text style={{ color: t.textMuted, fontSize: 13, lineHeight: 20 }}>
-              Apple does not provide apps access to your existing Messages history. Zeeya can
-              capture new financial messages after you configure its Personal Automation in
-              Shortcuts from Privacy & automation settings.
-            </Text>
-          </View>
+          <EmptyState
+            icon="shield"
+            art="hero-shield"
+            title="Historical messages are unavailable on iOS"
+            body="Apple does not provide apps access to your existing Messages history. Zeeya can capture new financial messages after you configure its Personal Automation in Shortcuts from Privacy & automation settings."
+          />
         ) : permission === "checking" ? (
-          <Text style={{ color: t.textMuted, fontSize: 13 }}>Checking permissions…</Text>
+          <Text className="mt-4 text-caption text-muted">Checking permissions…</Text>
         ) : permission === "error" ? (
-          <View>
-            <Text style={{ color: t.negative, fontSize: 13, marginBottom: 14 }}>
-              Couldn't check SMS permission.
-            </Text>
-            <Pressable
-              onPress={() => void grantPermission()}
-              style={{
-                backgroundColor: t.accent,
-                paddingVertical: 12,
-                borderRadius: 12,
-                alignItems: "center",
-              }}
-            >
-              <Text style={{ color: t.background, fontWeight: "700" }}>Try again</Text>
-            </Pressable>
-          </View>
+          <ErrorState
+            compact
+            title="Couldn't check SMS permission."
+            body="Grant message access, then try again."
+            onRetry={() => void grantPermission()}
+          />
         ) : permission === "needs-permission" ? (
-          <View>
-            <Text style={{ color: t.textMuted, fontSize: 13, marginBottom: 14 }}>
-              Backfill needs SMS read access, same as the dashboard.
-            </Text>
-            <Pressable
-              onPress={() => void grantPermission()}
-              style={{
-                backgroundColor: t.accent,
-                paddingVertical: 12,
-                borderRadius: 12,
-                alignItems: "center",
-              }}
-            >
-              <Text style={{ color: t.background, fontWeight: "700" }}>Allow SMS Access</Text>
-            </Pressable>
-          </View>
+          <EmptyState
+            compact
+            icon="shield"
+            art="hero-shield"
+            title="SMS access needed"
+            body="Backfill needs SMS read access, same as the dashboard."
+            actionLabel="Allow SMS Access"
+            onAction={() => void grantPermission()}
+          />
         ) : (
           <>
-            <Text style={{ color: t.textMuted, fontSize: 13, marginBottom: 18 }}>
-              Import older bank and transaction messages beyond what zeeya has already synced.
-              Already-ingested messages are recognized and never re-parsed, so it's safe to run this
-              more than once or with overlapping ranges.
+            <Text className="mt-2 text-caption leading-5 text-muted">
+              Import older bank messages Zeeya hasn't read yet.
+            </Text>
+            <Text className="mt-1 text-caption leading-5 text-muted">
+              Messages already imported are skipped, so you can run this again.
             </Text>
 
-            <View style={{ gap: 10 }}>
-              {PRESETS.map((preset) => {
-                const isActive = status === "running" && selectedLabel === preset.label;
-                return (
-                  <Pressable
-                    key={preset.label}
-                    disabled={status === "running"}
-                    onPress={() => void runBackfill(preset.label, preset.days)}
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      backgroundColor: t.surface,
-                      borderRadius: 14,
-                      borderWidth: 1,
-                      borderColor: t.border,
-                      paddingVertical: 14,
-                      paddingHorizontal: 16,
-                      opacity: status === "running" && !isActive ? 0.5 : 1,
-                    }}
-                  >
-                    <Text style={{ color: t.textPrimary, fontWeight: "600", fontSize: 14 }}>
-                      {preset.label}
-                    </Text>
-                    {isActive && <Spinner size="sm" color={t.accent} />}
-                  </Pressable>
-                );
-              })}
-              <Pressable
-                disabled={status === "running"}
-                onPress={() => setShowCustomRange((visible) => !visible)}
-                style={{
-                  backgroundColor: t.surface,
-                  borderRadius: 14,
-                  borderWidth: 1,
-                  borderColor: t.accent,
-                  paddingVertical: 14,
-                  paddingHorizontal: 16,
-                }}
-              >
-                <Text style={{ color: t.textPrimary, fontWeight: "600", fontSize: 14 }}>
-                  Choose custom dates
-                </Text>
-              </Pressable>
+            <View className="mt-4">
+              <RowGroup>
+                {PRESETS.map((preset) => {
+                  const isActive = running && selectedLabel === preset.label;
+                  return (
+                    <View
+                      key={preset.label}
+                      style={{ opacity: running && !isActive ? 0.5 : 1 }}
+                    >
+                      <Row
+                        title={preset.label}
+                        trailing={isActive ? <Spinner size="sm" /> : undefined}
+                        onPress={
+                          running ? undefined : () => void runBackfill(preset.label, preset.days)
+                        }
+                      />
+                    </View>
+                  );
+                })}
+              </RowGroup>
             </View>
 
+            <Button
+              variant="secondary"
+              className="mt-3 w-full"
+              isDisabled={running}
+              onPress={() => setShowCustomRange((visible) => !visible)}
+            >
+              <Button.Label>Choose custom dates</Button.Label>
+            </Button>
+
             {showCustomRange ? (
-              <View style={{ marginTop: 16, borderRadius: 16, overflow: "hidden" }}>
+              <Card className="mt-4">
                 <Calendar
                   markingType="period"
                   markedDates={markedDates}
@@ -264,54 +230,50 @@ export function BackfillScreen() {
                     setCustomRange((current) => selectCalendarDay(current, day.dateString))
                   }
                   theme={{
-                    calendarBackground: t.surface,
-                    dayTextColor: t.textPrimary,
-                    monthTextColor: t.textPrimary,
-                    textDisabledColor: t.textMuted,
-                    arrowColor: t.accent,
-                    todayTextColor: t.accent,
+                    calendarBackground: colors.card,
+                    dayTextColor: colors.ink,
+                    monthTextColor: colors.ink,
+                    textDisabledColor: colors.muted,
+                    arrowColor: colors.accent,
+                    todayTextColor: colors.accent,
                   }}
                 />
-                <Pressable
-                  disabled={!customRange?.to || status === "running"}
+                <Button
+                  className="mt-3 w-full"
+                  isDisabled={!customRange?.to || running}
                   onPress={() => void runCustomBackfill()}
-                  style={{
-                    alignItems: "center",
-                    backgroundColor: t.accent,
-                    paddingVertical: 13,
-                    opacity: customRange?.to && status !== "running" ? 1 : 0.45,
-                  }}
                 >
-                  <Text style={{ color: t.background, fontWeight: "800" }}>
+                  <Button.Label>
                     {customRange?.to
                       ? `Import ${customRange.from} to ${customRange.to}`
                       : "Choose a start and end date"}
-                  </Text>
-                </Pressable>
-              </View>
+                  </Button.Label>
+                </Button>
+              </Card>
             ) : null}
 
             {status === "done" && (
-              <Text style={{ color: t.positive, fontSize: 13, marginTop: 18 }}>
-                Backfill complete
-                {ingestedCount !== null
-                  ? // insertedCount is every newly-persisted message, not
-                    // just financial transactions — it includes parser
-                    // errors and non-transaction categories too, so "N new
-                    // messages imported" is what this number actually is.
-                    ` — ${ingestedCount} new message${ingestedCount === 1 ? "" : "s"} imported.`
-                  : "."}
-              </Text>
+              <View className="mt-5 items-center gap-3">
+                <MessageArrived size={88} />
+                <Text className="text-center text-caption text-positive">
+                  Backfill complete
+                  {ingestedCount !== null
+                    ? // insertedCount is every newly-persisted message, not
+                      // just financial transactions — it includes parser
+                      // errors and non-transaction categories too, so "N new
+                      // messages imported" is what this number actually is.
+                      ` — ${ingestedCount} new message${ingestedCount === 1 ? "" : "s"} imported.`
+                    : "."}
+                </Text>
+              </View>
             )}
 
             {status === "error" && (
-              <Text style={{ color: t.negative, fontSize: 13, marginTop: 18 }}>
-                Backfill failed: {error}
-              </Text>
+              <Text className="mt-4 text-caption text-negative">Backfill failed: {error}</Text>
             )}
           </>
         )}
-      </View>
-    </Container>
+      </ScrollView>
+    </View>
   );
 }

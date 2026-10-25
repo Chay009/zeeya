@@ -1,12 +1,8 @@
 // Exact 1:1 port of JKBankParser.kt from Cashiro parser-core
 import { BankParser } from "../base-parser.js";
+import { parseAmount } from "../normalize.js";
 import type { ParsedTransaction, TransactionType } from "../types.js";
 import { createHash } from "node:crypto";
-
-function parseNum(str: string): number | null {
-  const n = parseFloat(str.replace(/,/g, ""));
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
 
 export class JKBankParser extends BankParser {
   getBankName(): string {
@@ -280,7 +276,7 @@ export class JKBankParser extends BankParser {
     for (const pattern of patterns) {
       const m = pattern.exec(message);
       if (m?.[1]) {
-        const val = parseNum(m[1]);
+        const val = parseAmount(m[1]);
         if (val !== null) return val;
       }
     }

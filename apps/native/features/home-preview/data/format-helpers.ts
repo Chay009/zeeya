@@ -1,6 +1,10 @@
 import { formatDate, formatMoney } from "../../dashboard/utils/format";
+import { isSameMonth, monthKey, startOfDay } from "../../../lib/calendar";
 import { dateFormat } from "../../../lib/intl-format";
 import { titleCase } from "../../../lib/transaction-category";
+
+export { monthKey, startOfDay };
+export const sameMonth = isSameMonth;
 
 const SUBCATEGORY_LABELS: Record<string, string> = {
   upi: "UPI",
@@ -48,20 +52,6 @@ export function formatSignedAmount(amount: number, currency: string): string {
   // compactCalendarNet's sign-sniffing would otherwise mistake for a
   // parse failure and silently miscolor as an expense.
   return `±${formatMoney(0, currency)}`;
-}
-
-export function monthKey(timestamp: number): string {
-  const date = new Date(timestamp);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-}
-
-export function sameMonth(timestamp: number, date: Date): boolean {
-  const value = new Date(timestamp);
-  return value.getFullYear() === date.getFullYear() && value.getMonth() === date.getMonth();
-}
-
-export function startOfDay(date: Date): number {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
 }
 
 export function formatCapturedChange(change: number, currency: string): string {

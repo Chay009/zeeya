@@ -1,6 +1,7 @@
 import { View } from "react-native";
 
 import { AppText as Text } from "@/components/app-text";
+import { MessageArrived } from "@/components/art/message-arrived";
 import { NativeBottomSheet } from "@/components/native-ui/native-bottom-sheet";
 import { Row, RowGroup } from "@/components/ui/list";
 
@@ -24,6 +25,9 @@ export function NewTransactionsDialog({
       title={total === 1 ? "1 new transaction" : `${total} new transactions`}
       description="Caught up with your latest activity."
     >
+      <View className="mb-3 items-center">
+        <MessageArrived size={72} on="card" />
+      </View>
       <RowGroup variant="transparent" inset={0} className="rounded-none">
         {transactions.slice(0, 8).map((transaction) => (
           <Row

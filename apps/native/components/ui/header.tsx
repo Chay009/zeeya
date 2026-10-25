@@ -6,6 +6,7 @@ import { AppIcon } from "@/components/icon";
 import { GlassButton } from "@/components/native-ui/glass-button";
 import { headingFontFamily } from "@/lib/fonts";
 
+import { SCREEN_PADDING_X } from "./screen";
 import { useThemeColors } from "./theme";
 
 // Two header shapes, used everywhere:
@@ -60,7 +61,7 @@ export function NavBar({
 }) {
   const colors = useThemeColors();
   return (
-    <View className="px-4" style={{ paddingTop: Math.max(8, topInset) }}>
+    <View style={{ paddingTop: Math.max(8, topInset), paddingHorizontal: SCREEN_PADDING_X }}>
       <View className="min-h-12 flex-row items-center gap-2">
         <View className="w-11">
           {onBack ? (

@@ -1,11 +1,7 @@
 // Exact 1:1 port of CentralBankOfIndiaParser.kt from Cashiro parser-core
 import { BankParser } from "../base-parser.js";
+import { parseAmount, parseDecimalAmount } from "../normalize.js";
 import type { TransactionType } from "../types.js";
-
-function parseNum(str: string): number | null {
-  const n = parseFloat(str.replace(/,/g, ""));
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
 
 export class CentralBankOfIndiaParser extends BankParser {
   getBankName(): string {
@@ -28,14 +24,14 @@ export class CentralBankOfIndiaParser extends BankParser {
     // Pattern 1: Credited by Rs.50.00 / Debited by Rs.100.50
     const p1 = /(?:Credited|Debited)\s+by\s+Rs\.?\s*([\d,]+(?:\.\d{2})?)/i.exec(message);
     if (p1?.[1]) {
-      const val = parseNum(p1[1]);
+      const val = parseAmount(p1[1]);
       if (val !== null) return val;
     }
 
     // Pattern 2: Rs.XXX credited/debited
     const p2 = /Rs\.?\s*([\d,]+(?:\.\d{2})?)\s+(?:credited|debited)/i.exec(message);
     if (p2?.[1]) {
-      const val = parseNum(p2[1]);
+      const val = parseAmount(p2[1]);
       if (val !== null) return val;
     }
 
@@ -87,20 +83,18 @@ export class CentralBankOfIndiaParser extends BankParser {
     // Pattern 1: Total Bal Rs.0000.99 CR/DR
     const totalBalMatch = /Total\s+Bal\s+Rs\.?\s*([\d,]+(?:\.\d{2})?)\s+(CR|DR)/i.exec(message);
     if (totalBalMatch?.[1] && totalBalMatch?.[2]) {
-      const balStr = totalBalMatch[1].replace(/,/g, "");
-      const val = parseFloat(balStr);
-      if (!isNaN(val)) {
-        return totalBalMatch[2].toUpperCase() === "DR" ? -val : val;
+      const magnitude = parseDecimalAmount(totalBalMatch[1]);
+      if (magnitude !== null) {
+        return totalBalMatch[2].toUpperCase() === "DR" ? -magnitude : magnitude;
       }
     }
 
     // Pattern 2: Clear Bal Rs.XXX CR/DR
     const clearBalMatch = /Clear\s+Bal\s+Rs\.?\s*([\d,]+(?:\.\d{2})?)\s+(CR|DR)/i.exec(message);
     if (clearBalMatch?.[1] && clearBalMatch?.[2]) {
-      const balStr = clearBalMatch[1].replace(/,/g, "");
-      const val = parseFloat(balStr);
-      if (!isNaN(val)) {
-        return clearBalMatch[2].toUpperCase() === "DR" ? -val : val;
+      const magnitude = parseDecimalAmount(clearBalMatch[1]);
+      if (magnitude !== null) {
+        return clearBalMatch[2].toUpperCase() === "DR" ? -magnitude : magnitude;
       }
     }
 

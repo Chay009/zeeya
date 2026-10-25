@@ -4,6 +4,7 @@ import { ScrollView, View } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 
 import { AppText as Text } from "@/components/app-text";
+import { EmptyBars, EmptyReceipt, RepeatMark } from "@/components/art/state-marks";
 import { TransactionRow } from "@/components/finance/transaction-row";
 import { AppIcon } from "@/components/icon";
 import { SelectPill } from "@/components/ui/controls";
@@ -240,7 +241,14 @@ export function AnalyticsCategoriesSheetContent({
 
   if (isLoading) return <SkeletonRows count={5} />;
   if (ranked.length === 0) {
-    return <EmptyState compact icon="pie-chart" title="No categorised spending yet" />;
+    return (
+      <EmptyState
+        compact
+        icon="pie-chart"
+        visual={<EmptyBars size={72} />}
+        title="No categorised spending yet"
+      />
+    );
   }
 
   // The ring and legend: the top five, then the rest as "Others".
@@ -367,6 +375,8 @@ export function AnalyticsTransactionsSheetContent({
         <EmptyState
           compact
           icon="receipt"
+          art={filtering ? "hero-search" : undefined}
+          visual={filtering ? undefined : <EmptyReceipt size={72} />}
           title={
             filtering ? "No matches" : direction === "income" ? "No income yet" : "No spending yet"
           }
@@ -455,7 +465,7 @@ export function AnalyticsSubscriptionsSheetContent({
       </View>
 
       {filtered.length === 0 ? (
-        <EmptyState compact icon="repeat" title="Nothing in this group" />
+        <EmptyState compact icon="repeat" visual={<RepeatMark size={72} />} title="Nothing in this group" />
       ) : (
         <RowGroup variant="transparent" className="mt-3 rounded-none">
           {filtered.map((subscription) => {

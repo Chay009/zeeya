@@ -29,8 +29,9 @@ describe("flow-chart-scale", () => {
 
   it("formats compact INR axis labels", () => {
     expect(compactAxisLabel(0, "INR")).toBe("₹0");
-    expect(compactAxisLabel(2500, "INR")).toBe("₹3k");
+    expect(compactAxisLabel(2500, "INR")).toBe("₹2.5K");
     expect(compactAxisLabel(125_000, "INR")).toBe("₹1.3L");
+    expect(compactAxisLabel(10_000_000, "INR")).toBe("₹1Cr");
   });
 
   it("returns a non-zero chart max for empty weeks", () => {

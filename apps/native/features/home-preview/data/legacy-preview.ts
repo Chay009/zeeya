@@ -13,6 +13,7 @@ import type { ParsedSms } from "../../../lib/sms";
 import { subscriptionMonthlyTotals, type Subscription } from "../../../lib/subscriptions";
 import { trxDirection, type TrxDirection } from "../../../lib/transaction-direction";
 import { minorUnitExponent, toMinorUnits } from "../../../lib/currency";
+import { parseDecimalAmount } from "@zeeya/parser/normalize";
 import type { DashboardAggregates } from "../../../lib/dashboard-data";
 import { titleCase } from "../../../lib/transaction-category";
 import { emptyAccountPreview } from "./account-helpers";
@@ -44,7 +45,6 @@ import {
   bankVisualFor,
   merchantName,
   normalized,
-  parseAmount,
   subscriptionVisual,
   visualStyleFor,
 } from "./visual";
@@ -58,7 +58,7 @@ type FinancialEntry = {
 
 function financialEntries(dashboard: Dashboard): FinancialEntry[] {
   return dashboard.recent.flatMap((message) => {
-    const amount = parseAmount(message.result.trx);
+    const amount = parseDecimalAmount(message.result.trx);
     const direction = trxDirection(message.result.trxTypeRich);
     if (amount === null || direction === "neutral") return [];
     return [

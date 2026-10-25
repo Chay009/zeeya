@@ -1,11 +1,7 @@
 // Exact 1:1 port of DOPBankParser.kt from Cashiro parser-core
 import { BankParser } from "../base-parser.js";
+import { parseAmount } from "../normalize.js";
 import type { ParsedTransaction, TransactionType } from "../types.js";
-
-function parseNum(str: string): number | null {
-  const n = parseFloat(str.replace(/,/g, ""));
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
 
 function normalizeUnicodeText(text: string): string {
   return (
@@ -45,7 +41,7 @@ export class DOPBankParser extends BankParser {
     const amountPattern = /amount\s+(?:Rs\.?|INR)?\s*([\d,]+(?:\.\d{2})?)/i;
     const match = amountPattern.exec(message);
     if (match?.[1]) {
-      const val = parseNum(match[1]);
+      const val = parseAmount(match[1]);
       if (val !== null) return val;
     }
     return super.extractAmount(message);
@@ -71,7 +67,7 @@ export class DOPBankParser extends BankParser {
     const balancePattern = /Bal(?:ance)?\s*(?::)?\s*(?:Rs\.?|INR)?\s*([\d,]+(?:\.\d{2})?)/i;
     const match = balancePattern.exec(message);
     if (match?.[1]) {
-      const val = parseNum(match[1]);
+      const val = parseAmount(match[1]);
       if (val !== null) return val;
     }
     return super.extractBalance(message);

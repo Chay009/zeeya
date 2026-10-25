@@ -1,28 +1,9 @@
+import { addCalendarMonths } from "./calendar";
 import type { SubscriptionSummary, UpcomingPayment } from "./dashboard-data";
 
 // Same band as lib/subscriptions.ts's MIN/MAX_RECURRING_GAP_DAYS.
 const MIN_SUBSCRIPTION_CADENCE_DAYS = 20;
 const MAX_SUBSCRIPTION_CADENCE_DAYS = 45;
-
-function daysInMonth(year: number, month: number): number {
-  return new Date(year, month + 1, 0).getDate();
-}
-
-function monthlyOccurrence(origin: Date, monthOffset: number): number {
-  const targetMonthStart = new Date(origin.getFullYear(), origin.getMonth() + monthOffset, 1);
-  return new Date(
-    targetMonthStart.getFullYear(),
-    targetMonthStart.getMonth(),
-    Math.min(
-      origin.getDate(),
-      daysInMonth(targetMonthStart.getFullYear(), targetMonthStart.getMonth()),
-    ),
-    origin.getHours(),
-    origin.getMinutes(),
-    origin.getSeconds(),
-    origin.getMilliseconds(),
-  ).getTime();
-}
 
 /**
  * Returns the median observed interval for one normalized subscription.
@@ -78,7 +59,7 @@ export function nextSubscriptionExpectedAt(
   } else {
     const origin = new Date(lastDate);
     for (let offset = 1; offset <= 120; offset++) {
-      const candidate = monthlyOccurrence(origin, offset);
+      const candidate = addCalendarMonths(origin, offset);
       if (candidate > at) return candidate;
     }
   }

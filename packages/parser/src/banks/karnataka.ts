@@ -1,10 +1,6 @@
 // Exact 1:1 port of KarnatakaBankParser.kt from Cashiro parser-core
 import { BankParser } from "../base-parser.js";
-
-function parseNum(str: string): number | null {
-  const n = parseFloat(str.replace(/,/g, ""));
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
+import { parseAmount } from "../normalize.js";
 
 export class KarnatakaBankParser extends BankParser {
   getBankName(): string {
@@ -34,14 +30,14 @@ export class KarnatakaBankParser extends BankParser {
     // Pattern 1: "DEBITED for Rs.6368/-"
     const debitMatch = /DEBITED\s+for\s+Rs\.?([0-9,]+(?:\.\d{2})?)\/?-?/i.exec(message);
     if (debitMatch?.[1]) {
-      const val = parseNum(debitMatch[1]);
+      const val = parseAmount(debitMatch[1]);
       if (val !== null) return val;
     }
 
     // Pattern 2: "credited by Rs.6600.00"
     const creditMatch = /credited\s+by\s+Rs\.?([0-9,]+(?:\.\d{2})?)/i.exec(message);
     if (creditMatch?.[1]) {
-      const val = parseNum(creditMatch[1]);
+      const val = parseAmount(creditMatch[1]);
       if (val !== null) return val;
     }
 
@@ -100,7 +96,7 @@ export class KarnatakaBankParser extends BankParser {
     // Pattern: "Balance is Rs.705.92"
     const balanceMatch = /Balance\s+is\s+Rs\.?([0-9,]+(?:\.\d{2})?)/i.exec(message);
     if (balanceMatch?.[1]) {
-      const val = parseNum(balanceMatch[1]);
+      const val = parseAmount(balanceMatch[1]);
       if (val !== null) return val;
     }
 

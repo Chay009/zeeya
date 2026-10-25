@@ -3,6 +3,7 @@ import { View } from "react-native";
 import { AppText as Text } from "@/components/app-text";
 import { ShareBar } from "@/components/charts/share-bar";
 import { CategoryTile } from "@/components/finance/category-tile";
+import { EmptyBars } from "@/components/art/state-marks";
 import { EmptyState } from "@/components/ui/states";
 import { useThemeColors, withAlpha } from "@/components/ui/theme";
 
@@ -25,6 +26,7 @@ export function ThisWeekCategoriesTab({ data }: { data: HomePreviewData["cashflo
       <EmptyState
         compact
         icon="pie-chart"
+        visual={<EmptyBars size={72} />}
         title="No categories yet"
         body="Spending this month is grouped here."
       />

@@ -1,4 +1,6 @@
 import type { TrxTypeRich } from "@zeeya/parser/malana";
+import { parseDecimalAmount } from "@zeeya/parser/normalize";
+
 import type { ParsedSms } from "./sms";
 
 // "likely": 3+ distinct-day occurrences with 2+ consecutive gaps that all
@@ -14,15 +16,6 @@ export interface Subscription {
   count: number;
   lastDate: number;
   confidence: SubscriptionConfidence;
-}
-
-// Duplicated from dashboard.ts rather than imported — this module must not
-// depend on dashboard.ts (dashboard.ts depends on this one), and a 4-line
-// pure parser isn't worth a shared-utility module of its own.
-function parseAmount(raw: string | null): number | null {
-  if (!raw) return null;
-  const n = Number.parseFloat(raw.replace(/,/g, ""));
-  return Number.isFinite(n) ? n : null;
 }
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -170,7 +163,7 @@ export function allQualifyingSubscriptions(messages: ParsedSms[]): Subscription[
       !result.mandateId
     ) {
       const rawMerchant = result.brandName ?? result.vendor;
-      const amount = parseAmount(result.trx);
+      const amount = parseDecimalAmount(result.trx);
       const currency = result.currency ?? "INR";
       const key = rawMerchant ? subscriptionIdentityKey(rawMerchant, currency) : null;
       if (rawMerchant && amount !== null && key) {
@@ -283,7 +276,7 @@ export function isInferredRecurringTransaction(
 ): boolean {
   const { result } = item;
   const merchant = result.brandName ?? result.vendor;
-  const amount = parseAmount(result.trx);
+  const amount = parseDecimalAmount(result.trx);
   const currency = result.currency ?? "INR";
   if (merchant && amount !== null) {
     const normalized = normalizeMerchant(merchant);

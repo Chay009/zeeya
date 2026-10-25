@@ -1,3 +1,5 @@
+import { niceStep } from "@/components/charts/axis-scale";
+
 import { formatCompactMoney } from "../../dashboard/utils/format";
 
 export const FLOW_CHART_PLOT_HEIGHT = 103;
@@ -31,16 +33,6 @@ export type FlowDayValue = {
   active: boolean;
   label: string;
 };
-
-function niceStep(raw: number): number {
-  if (raw <= 0) return 1;
-  const magnitude = 10 ** Math.floor(Math.log10(raw));
-  const normalized = raw / magnitude;
-  if (normalized <= 1) return magnitude;
-  if (normalized <= 2) return 2 * magnitude;
-  if (normalized <= 5) return 5 * magnitude;
-  return 10 * magnitude;
-}
 
 export function niceChartMax(value: number): number {
   if (value <= 0) return 1;

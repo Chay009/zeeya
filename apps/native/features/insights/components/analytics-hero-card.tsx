@@ -11,6 +11,7 @@ import { Money, moneyLabel } from "@/components/ui/money";
 import { duration, tick } from "@/components/ui/motion";
 import { ErrorState } from "@/components/ui/states";
 import { useThemeColors, withAlpha } from "@/components/ui/theme";
+import { dateFormat } from "@/lib/intl-format";
 
 import type { InsightsTimeScope } from "../analytics-scope";
 import type { MonthlySpendComparison, MonthlyValue, SpendingPoint } from "../insights-data";
@@ -26,11 +27,11 @@ const CHART_HEIGHT = 148;
 // A series point's `day` is that bucket's local-midnight timestamp
 // (insights-data's SpendingPoint), not a day-of-month number.
 function dayLabel(day: number): string {
-  return new Date(day).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+  return dateFormat("en-IN", { day: "numeric", month: "short" }).format(day);
 }
 
 function monthName(monthStart: number): string {
-  return new Date(monthStart).toLocaleDateString("en-IN", { month: "long" });
+  return dateFormat("en-IN", { month: "long" }).format(monthStart);
 }
 
 const SCOPE_OPTIONS: { value: InsightsTimeScope; label: string }[] = [

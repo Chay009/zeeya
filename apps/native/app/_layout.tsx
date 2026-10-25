@@ -43,10 +43,10 @@ function StackLayout() {
       />
       <Stack.Screen
         name="backfill"
-        options={{ title: "Backfill history", presentation: "modal" }}
+        options={{ headerShown: false, presentation: "modal" }}
       />
       <Stack.Screen name="cards" options={{ headerShown: false }} />
-      <Stack.Screen name="settings" options={{ title: "Privacy & automation" }} />
+      <Stack.Screen name="settings" options={{ headerShown: false }} />
       <Stack.Screen name="dashboard-dev" options={{ title: "Dashboard dev" }} />
       <Stack.Screen name="transaction/[id]" options={{ title: "Transaction" }} />
       <Stack.Screen name="subscriptions/index" options={{ headerShown: false }} />

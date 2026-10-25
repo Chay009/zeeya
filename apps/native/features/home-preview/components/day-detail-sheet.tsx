@@ -3,9 +3,11 @@ import { useCallback, useMemo, useState } from "react";
 import { ScrollView, View } from "react-native";
 
 import { AppText as Text } from "@/components/app-text";
+import { EmptyReceipt } from "@/components/art/state-marks";
 import { TransactionRow } from "@/components/finance/transaction-row";
 import { Money } from "@/components/ui/money";
 import { EmptyState, SkeletonRows } from "@/components/ui/states";
+import { localDateKey, parseLocalDateKey } from "@/lib/calendar";
 import { fromMinorUnits } from "@/lib/currency";
 import { NativeBottomSheet } from "@/components/native-ui/native-bottom-sheet";
 import { formatMoney } from "@/features/dashboard/utils/format";
@@ -15,22 +17,6 @@ import { merchantVisual } from "../data";
 import { useThemeColors } from "@/components/ui/theme";
 import { BrandLogo } from "./brand-logo";
 import { useDayTransactions } from "../hooks/use-day-transactions";
-
-// 'yyyy-MM-dd', local calendar date — react-native-calendars' own dateString
-// format, used by CalendarProvider/WeekCalendar's `date`/`current` props.
-function toDateString(ms: number): string {
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-// The inverse of toDateString. Parses the plain 'yyyy-MM-dd' pieces as
-// numbers and builds a local-midnight epoch from them directly — no UTC
-// parsing ambiguity, unlike DateData.timestamp (see this-week-calendar-tab.tsx's
-// openDay for why that field isn't trusted directly).
-function fromDateString(dateString: string): number {
-  const [year, month, day] = dateString.split("-").map(Number);
-  return new Date(year!, month! - 1, day!).getTime();
-}
 
 function amount(value: number, currency: string): string {
   return formatMoney(fromMinorUnits(value, currency), currency);
@@ -111,11 +97,12 @@ export function DayDetailSheet({
   // work (and thus the visible delay) on every single tap. The provider's
   // `date` prop below is only ever set once, from the openKey the sheet
   // was opened with, and never re-derived from shownDayMs afterward.
-  const openKey = isOpen ? toDateString(dayStartMs ?? Date.now()) : null;
+  const openKey = isOpen ? localDateKey(dayStartMs ?? Date.now()) : null;
   const onCalendarDateChanged = useCallback((dateString: string) => {
-    setShownDayMs(fromDateString(dateString));
+    const parsed = parseLocalDateKey(dateString);
+    if (parsed !== null) setShownDayMs(parsed);
   }, []);
-  const shownDateString = shownDayMs !== null ? toDateString(shownDayMs) : null;
+  const shownDateString = shownDayMs !== null ? localDateKey(shownDayMs) : null;
   const markedDates = useMemo(
     () => (shownDateString ? { [shownDateString]: { selected: true } } : undefined),
     [shownDateString],
@@ -155,7 +142,7 @@ export function DayDetailSheet({
           <SkeletonRows count={3} />
         </View>
       ) : status !== "loading" && items.length === 0 ? (
-        <EmptyState compact icon="rupee-receipt" title="No transactions this day" />
+        <EmptyState compact icon="rupee-receipt" visual={<EmptyReceipt size={72} />} title="No transactions this day" />
       ) : (
         <>
           <View className="mt-3 flex-row items-end justify-between rounded-card bg-fill px-4 py-3.5">

@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "@/components/app-text";
 import { NavBar } from "@/components/ui/header";
+import { SCREEN_PADDING_X } from "@/components/ui/screen";
 import { Section } from "@/components/ui/section";
 import {
   Delayed,
@@ -34,7 +35,7 @@ export function CardsScreen() {
       <NavBar title="Accounts" onBack={() => router.back()} topInset={insets.top} />
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }}
+        contentContainerStyle={{ paddingHorizontal: SCREEN_PADDING_X, paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
       >
         <View className="mt-2 rounded-card bg-card p-5">

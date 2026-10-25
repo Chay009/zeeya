@@ -1,11 +1,7 @@
 // Exact 1:1 port of IPPBParser.kt from Cashiro parser-core
 import { BankParser } from "../base-parser.js";
+import { parseAmount } from "../normalize.js";
 import type { TransactionType } from "../types.js";
-
-function parseNum(str: string): number | null {
-  const n = parseFloat(str.replace(/,/g, ""));
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
 
 export class IPPBParser extends BankParser {
   getBankName(): string {
@@ -22,7 +18,7 @@ export class IPPBParser extends BankParser {
     // Pattern: Rs.1.00 or Rs. 1.00
     const m = /Rs\.?\s*([\d,]+(?:\.\d{2})?)/i.exec(message);
     if (m?.[1]) {
-      const val = parseNum(m[1]);
+      const val = parseAmount(m[1]);
       if (val !== null) return val;
     }
     return super.extractAmount(message);
@@ -42,7 +38,7 @@ export class IPPBParser extends BankParser {
     // Pattern: Avl Bal Rs.436.91
     const m = /Avl\s+Bal\s+Rs\.?\s*([\d,]+(?:\.\d{2})?)/i.exec(message);
     if (m?.[1]) {
-      const val = parseNum(m[1]);
+      const val = parseAmount(m[1]);
       if (val !== null) return val;
     }
     return super.extractBalance(message);

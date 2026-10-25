@@ -1,4 +1,5 @@
 import { computeBudgetPerformance, type MonthlyDailySpend } from "../lib/budget-analytics";
+import { addCalendarMonths, parseLocalDateKey, startOfMonth } from "../lib/calendar";
 import type {
   FinancialPeriodSummary,
   InsightsOverview,
@@ -65,37 +66,27 @@ function periodSummary(row?: PeriodRow): FinancialPeriodSummary {
 }
 
 function localDayStart(dayKey: string): number {
-  const [year, month, day] = dayKey.split("-").map(Number);
-  if (!year || !month || !day) throw new Error(`SQLite returned an invalid local day: ${dayKey}`);
-  return new Date(year, month - 1, day).getTime();
+  const start = parseLocalDateKey(dayKey);
+  if (start === null) throw new Error(`SQLite returned an invalid local day: ${dayKey}`);
+  return start;
 }
 
 // The same day-of-month and time last month, clamped to that month's length
 // (31 March → 28/29 February) and kept strictly before this month begins.
 function samePointLastMonth(at: Date, currentStart: number): number {
-  const lastDay = new Date(at.getFullYear(), at.getMonth(), 0).getDate();
-  const point = new Date(
-    at.getFullYear(),
-    at.getMonth() - 1,
-    Math.min(at.getDate(), lastDay),
-    at.getHours(),
-    at.getMinutes(),
-    at.getSeconds(),
-    at.getMilliseconds(),
-  ).getTime();
-  return Math.min(point, currentStart - 1);
+  return Math.min(addCalendarMonths(at, -1), currentStart - 1);
 }
 
 function monthlyDailySpend(rows: DaySpendRow[], at: Date, months: number): MonthlyDailySpend[] {
   const byMonth = new Map<number, MonthlyDailySpend>();
   for (let offset = months - 1; offset >= 0; offset--) {
-    const monthStart = new Date(at.getFullYear(), at.getMonth() - offset, 1).getTime();
+    const monthStart = startOfMonth(addCalendarMonths(startOfMonth(at), -offset));
     byMonth.set(monthStart, { monthStart, dailySpend: [] });
   }
   for (const row of rows) {
     const dayStart = localDayStart(row.dayKey);
     const day = new Date(dayStart);
-    const monthStart = new Date(day.getFullYear(), day.getMonth(), 1).getTime();
+    const monthStart = startOfMonth(day);
     byMonth.get(monthStart)?.dailySpend.push({ dayStart, spentMinorUnits: row.spentMinorUnits });
   }
   return [...byMonth.values()];
@@ -111,15 +102,15 @@ export async function queryInsightsOverviewUnsafe(
   const limit = positiveInteger(query.limit, 5, "limit", 20);
   const historyMonths = positiveInteger(query.historyMonths, 6, "historyMonths", 24);
   const currentStart =
-    query.period?.currentFrom ?? new Date(at.getFullYear(), at.getMonth(), 1).getTime();
+    query.period?.currentFrom ?? startOfMonth(at);
   const currentEnd = query.period?.currentTo ?? query.at;
   const previousStart =
-    query.period?.previousFrom ?? new Date(at.getFullYear(), at.getMonth() - 1, 1).getTime();
+    query.period?.previousFrom ?? startOfMonth(addCalendarMonths(startOfMonth(at), -1));
   // Like for like: this month so far against last month up to the same
   // point, not the whole of last month — on the 5th, a full-month baseline
   // reads as "−85% vs last month" and trips the material-change notice.
   const previousEnd = query.period?.previousTo ?? samePointLastMonth(at, currentStart);
-  const historyStart = new Date(at.getFullYear(), at.getMonth() - historyMonths + 1, 1).getTime();
+  const historyStart = startOfMonth(addCalendarMonths(startOfMonth(at), -(historyMonths - 1)));
   const recencyThreshold = query.at - RECENCY_WINDOW_DAYS * 24 * 60 * 60 * 1000;
 
   const periodsPromise = client.getAllAsync<PeriodRow>(

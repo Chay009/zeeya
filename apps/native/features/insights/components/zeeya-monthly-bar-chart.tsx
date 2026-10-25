@@ -1,40 +1,14 @@
 import { Pressable, View } from "react-native";
 
 import { AppText as Text } from "@/components/app-text";
+import { axisMaxFor } from "@/components/charts/axis-scale";
 import { useThemeColors } from "@/components/ui/theme";
+import { formatCompactMoney } from "@/features/dashboard/utils/format";
 
 import type { MonthlyValue } from "../insights-data";
 
 const PLOT_HEIGHT = 150;
 const LABEL_WIDTH = 34;
-
-function currencyMark(currency: string): string {
-  if (currency === "INR") return "₹";
-  if (currency === "USD") return "$";
-  if (currency === "EUR") return "€";
-  if (currency === "GBP") return "£";
-  return `${currency} `;
-}
-
-function compactMoney(value: number, currency: string): string {
-  const mark = currencyMark(currency);
-  if (value >= 1000) {
-    const decimals = value >= 10000 ? 0 : 1;
-    return `${mark}${(value / 1000).toFixed(decimals).replace(/\.0$/, "")}k`;
-  }
-  return `${mark}${Math.round(value).toLocaleString("en-IN")}`;
-}
-
-function axisMaxFor(maxValue: number): number {
-  if (maxValue <= 0) return 0;
-
-  const rawStep = maxValue / 4;
-  const magnitude = 10 ** Math.floor(Math.log10(rawStep));
-  const normalized = rawStep / magnitude;
-  const step = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
-  const fourSteps = step * magnitude * 4;
-  return fourSteps >= maxValue ? fourSteps : step * magnitude * 5;
-}
 
 export function ZeeyaMonthlyBarChart({
   data,
@@ -79,7 +53,7 @@ export function ZeeyaMonthlyBarChart({
         >
           {ticks.map((tick) => (
             <Text key={tick} style={{ fontSize: 10, color: labelColor }}>
-              {compactMoney(tick, currency)}
+              {formatCompactMoney(tick, currency)}
             </Text>
           ))}
         </View>
@@ -125,7 +99,7 @@ export function ZeeyaMonthlyBarChart({
 
               const bar = (
                 <View
-                  accessibilityLabel={`${point.label}: ${compactMoney(point.value, currency)}`}
+                  accessibilityLabel={`${point.label}: ${formatCompactMoney(point.value, currency)}`}
                   style={{
                     width: 30,
                     height: barHeight,

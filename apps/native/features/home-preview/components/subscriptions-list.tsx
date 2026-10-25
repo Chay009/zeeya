@@ -4,6 +4,7 @@ import { ScrollView, View } from "react-native";
 import { AppText as Text } from "@/components/app-text";
 import { Segmented } from "@/components/ui/controls";
 import { NavBar } from "@/components/ui/header";
+import { SCREEN_PADDING_X } from "@/components/ui/screen";
 import { Row, RowGroup } from "@/components/ui/list";
 import { EmptyState } from "@/components/ui/states";
 
@@ -95,7 +96,7 @@ export function SubscriptionsList({
       <NavBar title="Subscriptions" onBack={onBack} topInset={topInset} />
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }}
+        contentContainerStyle={{ paddingHorizontal: SCREEN_PADDING_X, paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
       >
         <View className="mt-2 rounded-card bg-card p-5">

@@ -1,11 +1,7 @@
 // Exact 1:1 port of IndianOverseasBankParser.kt from Cashiro parser-core
 import { BankParser } from "../base-parser.js";
+import { parseAmount } from "../normalize.js";
 import type { TransactionType } from "../types.js";
-
-function parseNum(str: string): number | null {
-  const n = parseFloat(str.replace(/,/g, ""));
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
 
 export class IndianOverseasBankParser extends BankParser {
   getBankName(): string {
@@ -31,7 +27,7 @@ export class IndianOverseasBankParser extends BankParser {
     for (const pattern of patterns) {
       const m = pattern.exec(message);
       if (m?.[1]) {
-        const val = parseNum(m[1]);
+        const val = parseAmount(m[1]);
         if (val !== null) return val;
       }
     }
@@ -157,7 +153,7 @@ export class IndianOverseasBankParser extends BankParser {
   protected override extractBalance(message: string): number | null {
     const p1 = /AcBal:\s*([0-9,]+(?:\.\d{2})?)/i.exec(message);
     if (p1?.[1]) {
-      const val = parseNum(p1[1]);
+      const val = parseAmount(p1[1]);
       if (val !== null) return val;
     }
 
@@ -165,7 +161,7 @@ export class IndianOverseasBankParser extends BankParser {
       message,
     );
     if (p2?.[1]) {
-      const val = parseNum(p2[1]);
+      const val = parseAmount(p2[1]);
       if (val !== null) return val;
     }
 

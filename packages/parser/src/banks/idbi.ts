@@ -1,10 +1,6 @@
 // Exact 1:1 port of IDBIBankParser.kt from Cashiro parser-core
 import { BankParser } from "../base-parser.js";
-
-function parseNum(str: string): number | null {
-  const n = parseFloat(str.replace(/,/g, ""));
-  return Number.isFinite(n) ? n : null;
-}
+import { parseDecimalAmount } from "../normalize.js";
 
 export class IDBIBankParser extends BankParser {
   getBankName(): string {
@@ -30,21 +26,21 @@ export class IDBIBankParser extends BankParser {
     // Pattern 1: "debited with Rs 59.00"
     const c1 = /debited\s+with\s+Rs\.?\s*([0-9,]+(?:\.\d{2})?)/i.exec(message)?.[1];
     if (c1) {
-      const v = parseNum(c1);
+      const v = parseDecimalAmount(c1);
       if (v !== null) return v;
     }
 
     // Pattern 2: "debited for Rs 1040.00"
     const c2 = /debited\s+for\s+Rs\.?\s*([0-9,]+(?:\.\d{2})?)/i.exec(message)?.[1];
     if (c2) {
-      const v = parseNum(c2);
+      const v = parseDecimalAmount(c2);
       if (v !== null) return v;
     }
 
     // Pattern 3: "credited with Rs XXX"
     const c3 = /credited\s+with\s+Rs\.?\s*([0-9,]+(?:\.\d{2})?)/i.exec(message)?.[1];
     if (c3) {
-      const v = parseNum(c3);
+      const v = parseDecimalAmount(c3);
       if (v !== null) return v;
     }
 
@@ -103,7 +99,7 @@ export class IDBIBankParser extends BankParser {
     // Pattern: "Bal Rs 3694.38"
     const c = /Bal\s+Rs\.?\s*([0-9,]+(?:\.\d{2})?)/i.exec(message)?.[1];
     if (c) {
-      const v = parseNum(c);
+      const v = parseDecimalAmount(c);
       if (v !== null) return v;
     }
 

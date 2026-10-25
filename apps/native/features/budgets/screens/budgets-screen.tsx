@@ -8,6 +8,7 @@ import { CategoryTile } from "@/components/finance/category-tile";
 import { AppIcon } from "@/components/icon";
 import { IconTile } from "@/components/ui/controls";
 import { NavBar } from "@/components/ui/header";
+import { SCREEN_PADDING_X } from "@/components/ui/screen";
 import { headingFontFamily } from "@/lib/fonts";
 import { HeroAmount } from "@/components/ui/hero-amount";
 import { RowGroup, Row } from "@/components/ui/list";
@@ -208,7 +209,10 @@ export function BudgetsScreen() {
       <NavBar title="Budgets" onBack={() => router.back()} topInset={insets.top} />
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 32 }}
+        contentContainerStyle={{
+          paddingHorizontal: SCREEN_PADDING_X,
+          paddingBottom: insets.bottom + 32,
+        }}
         showsVerticalScrollIndicator={false}
       >
         {status === "loading" ? (

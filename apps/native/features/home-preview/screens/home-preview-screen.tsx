@@ -11,6 +11,7 @@ import { useFloatingTabBarClearance } from "@/components/floating-tab-bar";
 import { EnterTransition } from "@/components/native-ui/enter-transition";
 import { useToday } from "@/lib/today";
 import { LargeTitle } from "@/components/ui/header";
+import { SCREEN_PADDING_X } from "@/components/ui/screen";
 import { Section } from "@/components/ui/section";
 import { Delayed, ErrorState, SkeletonHero, SkeletonRows } from "@/components/ui/states";
 
@@ -223,7 +224,10 @@ export function HomePreviewScreen() {
             colors={[colors.ink]}
           />
         }
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8 + tabBarClearance }}
+        contentContainerStyle={{
+          paddingHorizontal: SCREEN_PADDING_X,
+          paddingBottom: 8 + tabBarClearance,
+        }}
         showsVerticalScrollIndicator={false}
       >
         <LargeTitle

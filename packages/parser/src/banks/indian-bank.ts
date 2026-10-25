@@ -1,11 +1,7 @@
 // Exact 1:1 port of IndianBankParser.kt from Cashiro parser-core
 import { BankParser } from "../base-parser.js";
+import { parseAmount } from "../normalize.js";
 import type { TransactionType, MandateInfo } from "../types.js";
-
-function parseNum(str: string): number | null {
-  const n = parseFloat(str.replace(/,/g, ""));
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
 
 export interface IndianMandateInfo extends MandateInfo {
   dateFormat: "d-MMM-yy";
@@ -47,14 +43,14 @@ export class IndianBankParser extends BankParser {
     // Pattern 1: debited Rs. 19000.00
     const debitMatch = /debited\s+Rs\.?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)/i.exec(message);
     if (debitMatch?.[1]) {
-      const val = parseNum(debitMatch[1]);
+      const val = parseAmount(debitMatch[1]);
       if (val !== null) return val;
     }
 
     // Pattern 2: credited Rs. 5000.00
     const creditMatch = /credited\s+Rs\.?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)/i.exec(message);
     if (creditMatch?.[1]) {
-      const val = parseNum(creditMatch[1]);
+      const val = parseAmount(creditMatch[1]);
       if (val !== null) return val;
     }
 
@@ -63,21 +59,21 @@ export class IndianBankParser extends BankParser {
       message,
     );
     if (creditReverseMatch?.[1]) {
-      const val = parseNum(creditReverseMatch[1]);
+      const val = parseAmount(creditReverseMatch[1]);
       if (val !== null) return val;
     }
 
     // Pattern 3: withdrawn Rs. 2000
     const withdrawnMatch = /withdrawn\s+Rs\.?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)/i.exec(message);
     if (withdrawnMatch?.[1]) {
-      const val = parseNum(withdrawnMatch[1]);
+      const val = parseAmount(withdrawnMatch[1]);
       if (val !== null) return val;
     }
 
     // Pattern 4: UPI payment of Rs. 500
     const upiMatch = /UPI\s+payment\s+of\s+Rs\.?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)/i.exec(message);
     if (upiMatch?.[1]) {
-      const val = parseNum(upiMatch[1]);
+      const val = parseAmount(upiMatch[1]);
       if (val !== null) return val;
     }
 
@@ -162,14 +158,14 @@ export class IndianBankParser extends BankParser {
     // Pattern 1: Bal Rs. 50000.00
     const balMatch1 = /Bal\s+Rs\.?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)/i.exec(message);
     if (balMatch1?.[1]) {
-      const val = parseNum(balMatch1[1]);
+      const val = parseAmount(balMatch1[1]);
       if (val !== null) return val;
     }
 
     // Pattern 2: Available Balance: Rs. 25000
     const balMatch2 = /Available\s+Balance:?\s+Rs\.?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)/i.exec(message);
     if (balMatch2?.[1]) {
-      const val = parseNum(balMatch2[1]);
+      const val = parseAmount(balMatch2[1]);
       if (val !== null) return val;
     }
 
@@ -218,8 +214,8 @@ export class IndianBankParser extends BankParser {
       const dateStr = match[1] ?? "";
       const amountStr = match[2] ?? "";
       const merchantStr = match[3] ?? "";
-      const amount = parseFloat(amountStr);
-      if (!isNaN(amount) && amount > 0) {
+      const amount = parseAmount(amountStr);
+      if (amount !== null) {
         return {
           amount,
           nextDeductionDate: dateStr || null,

@@ -1,9 +1,10 @@
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, View } from "react-native";
+import { RefreshControl, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "@/components/app-text";
+import { EmptyBars, EmptyReceipt } from "@/components/art/state-marks";
 import { SoftBarChart } from "@/components/charts/soft-bar-chart";
 import { SpendingRing } from "@/components/charts/spending-ring";
 import { LedgerRow } from "@/components/finance/ledger-row";
@@ -11,6 +12,8 @@ import { useFloatingTabBarClearance } from "@/components/floating-tab-bar";
 import { AppIcon } from "@/components/icon";
 import { Card } from "@/components/ui/card";
 import { Segmented, SelectPill } from "@/components/ui/controls";
+import { LargeTitle } from "@/components/ui/header";
+import { SCREEN_PADDING_X } from "@/components/ui/screen";
 import { HeroAmount } from "@/components/ui/hero-amount";
 import { SheetLinkCard } from "@/components/ui/layered";
 import { moneyLabel } from "@/components/ui/money";
@@ -377,43 +380,26 @@ export function InsightsScreen() {
           />
         }
         contentContainerStyle={{
-          paddingHorizontal: 16,
-          paddingTop: Math.max(12, insets.top) + 10,
+          paddingHorizontal: SCREEN_PADDING_X,
           paddingBottom: tabBarClearance + 8,
         }}
         showsVerticalScrollIndicator={false}
       >
-        <View className="flex-row items-center justify-between gap-3">
-          <View className="min-w-0 flex-1">
-            <Text
-              numberOfLines={1}
-              className="text-screen font-semibold text-ink"
-              style={{ fontFamily: headingFontFamily("semibold"), letterSpacing: -0.5 }}
-            >
-              Analytics
-            </Text>
-            <Text numberOfLines={1} className="text-caption text-muted">
-              {formatMonthToDate(screen.atDate)}
-            </Text>
-          </View>
-          {screen.currencies.length > 1 ? (
-            <SelectPill
-              value={currency}
-              options={screen.currencies.map((code) => ({ value: code, label: code }))}
-              onChange={screen.setSelectedCurrency}
-              accessibilityLabel={`Currency ${currency}`}
-            />
-          ) : null}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Refresh"
-            onPress={screen.refresh}
-            hitSlop={8}
-            className="h-10 w-10 items-center justify-center rounded-full bg-card"
-          >
-            <AppIcon name="reload" size={17} color={colors.ink} />
-          </Pressable>
-        </View>
+        <LargeTitle
+          title="Analytics"
+          subtitle={formatMonthToDate(screen.atDate)}
+          topInset={insets.top}
+          right={
+            screen.currencies.length > 1 ? (
+              <SelectPill
+                value={currency}
+                options={screen.currencies.map((code) => ({ value: code, label: code }))}
+                onChange={screen.setSelectedCurrency}
+                accessibilityLabel={`Currency ${currency}`}
+              />
+            ) : undefined
+          }
+        />
 
         <Segmented
           value={tab}
@@ -440,6 +426,7 @@ export function InsightsScreen() {
               <Card>
                 <EmptyState
                   icon="pie-chart"
+                  art="hero-target"
                   title="No budget yet"
                   body="Set a monthly limit to see your pace here."
                 />
@@ -519,7 +506,8 @@ export function InsightsScreen() {
                     selectedColor={isIncome ? colors.positive : colors.ink}
                   />
                 ) : (
-                  <View className="h-32 items-center justify-center rounded-tile bg-fill">
+                  <View className="h-32 items-center justify-center gap-1 rounded-tile bg-fill">
+                    <EmptyBars size={56} />
                     <Text className="text-caption text-muted">
                       {isIncome ? "No income recorded yet" : "No spending yet"}
                     </Text>
@@ -681,7 +669,7 @@ export function InsightsScreen() {
                 onRetry={screen.reloadTransactions}
               />
             ) : recent.length === 0 ? (
-              <EmptyState compact icon="receipt" title="Nothing here yet" />
+              <EmptyState compact icon="receipt" visual={<EmptyReceipt size={72} />} title="Nothing here yet" />
             ) : (
               recent.map((item) => (
                 <LedgerRow

@@ -1,11 +1,7 @@
 // Exact 1:1 port of KeralaGraminBankParser.kt from Cashiro parser-core
 import { BankParser } from "../base-parser.js";
+import { parseAmount } from "../normalize.js";
 import type { TransactionType } from "../types.js";
-
-function parseNum(str: string): number | null {
-  const n = parseFloat(str.replace(/,/g, ""));
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
 
 export class KeralaGraminBankParser extends BankParser {
   getBankName(): string {
@@ -27,7 +23,7 @@ export class KeralaGraminBankParser extends BankParser {
       message,
     );
     if (m?.[1]) {
-      const val = parseNum(m[1]);
+      const val = parseAmount(m[1]);
       if (val !== null) return val;
     }
     return null;

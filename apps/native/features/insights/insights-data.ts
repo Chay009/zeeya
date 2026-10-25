@@ -1,3 +1,5 @@
+import { parseDecimalAmount } from "@zeeya/parser/normalize";
+
 import type { ParsedSms } from "@/lib/sms";
 import { financeDataSource } from "@/features/dashboard/dashboard-data-source";
 import { fromMinorUnits } from "../../lib/currency";
@@ -28,9 +30,7 @@ export interface CategorySlice {
 const CATEGORY_COLORS = ["#4f46e5", "#22a879", "#eab308", "#f97316", "#38aee8", "#c7c9d0"];
 
 function amountOf(message: ParsedSms): number | null {
-  if (!message.result.trx) return null;
-  const value = Number.parseFloat(message.result.trx.replace(/,/g, ""));
-  return Number.isFinite(value) ? value : null;
+  return parseDecimalAmount(message.result.trx);
 }
 
 export function primaryExpenseCurrency(messages: ParsedSms[]): string | null {

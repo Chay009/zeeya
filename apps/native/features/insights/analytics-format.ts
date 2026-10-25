@@ -1,11 +1,14 @@
+import { addCalendarMonths } from "@/lib/calendar";
+import { dateFormat } from "@/lib/intl-format";
+
 import type { AnalyticsTab } from "./analytics-scope";
 
 export function formatAnalyticsPeriod(at: Date): string {
-  return at.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+  return dateFormat("en-IN", { month: "long", year: "numeric" }).format(at);
 }
 
 function shortMonth(at: Date): string {
-  return at.toLocaleDateString("en-IN", { month: "short" });
+  return dateFormat("en-IN", { month: "short" }).format(at);
 }
 
 /**
@@ -21,12 +24,7 @@ export function formatMonthToDate(at: Date, withYear = true): string {
 
 /** The like-for-like window last month: "1–3 Sep" (clamped to its length). */
 export function formatPreviousMonthToDate(at: Date): string {
-  const lastDayOfPrevious = new Date(at.getFullYear(), at.getMonth(), 0);
-  const day = Math.min(at.getDate(), lastDayOfPrevious.getDate());
-  return formatMonthToDate(
-    new Date(lastDayOfPrevious.getFullYear(), lastDayOfPrevious.getMonth(), day),
-    false,
-  );
+  return formatMonthToDate(new Date(addCalendarMonths(at, -1)), false);
 }
 
 export function formatAnalyticsHeaderSubtitle(at: Date, currency: string): string {

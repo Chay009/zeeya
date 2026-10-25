@@ -1,4 +1,5 @@
 import { Chip } from "heroui-native";
+import type { ReactNode } from "react";
 import { ScrollView, View } from "react-native";
 
 import { AppText as Text } from "@/components/app-text";
@@ -63,17 +64,26 @@ export function ProductDetailMessage({
   onBack,
   title,
   body,
+  visual,
 }: {
   topInset: number;
   onBack: () => void;
   title: string;
   body: string;
+  visual?: ReactNode;
 }) {
   return (
     <View className="flex-1 bg-background">
       <NavBar topInset={topInset} onBack={onBack} />
       <View className="flex-1 justify-center pb-24">
-        <EmptyState icon="receipt" title={title} body={body} actionLabel="Go back" onAction={onBack} />
+        <EmptyState
+          icon="receipt"
+          visual={visual}
+          title={title}
+          body={body}
+          actionLabel="Go back"
+          onAction={onBack}
+        />
       </View>
     </View>
   );

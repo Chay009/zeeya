@@ -39,11 +39,19 @@ const TONE: Record<MoneyTone, { main: string; minor: string }> = {
 };
 
 export function currencySymbol(currency: string): string {
-  if (currency === "INR") return "₹";
-  if (currency === "USD") return "$";
-  if (currency === "EUR") return "€";
-  if (currency === "GBP") return "£";
-  return `${currency} `;
+  try {
+    const part = numberFormat("en-IN", {
+      style: "currency",
+      currency,
+      currencyDisplay: "narrowSymbol",
+      maximumFractionDigits: 0,
+    })
+      .formatToParts(0)
+      .find((item) => item.type === "currency");
+    return part?.value ?? `${currency} `;
+  } catch {
+    return `${currency} `;
+  }
 }
 
 // Built once — this runs for every amount on screen.
@@ -56,11 +64,17 @@ const MONEY_NO_FRACTION = numberFormat("en-IN", { maximumFractionDigits: 0 });
 
 export function splitMoney(value: number, currency: string) {
   const abs = Math.abs(value);
-  const hasFraction = Math.round(abs * 100) % 100 !== 0;
-  const [whole, fraction] = (hasFraction ? MONEY_WITH_FRACTION : MONEY_WHOLE)
-    .format(abs)
-    .split(".");
-  return { symbol: currencySymbol(currency), whole: whole ?? "0", fraction: fraction ?? null };
+  // formatToParts, not `amount * 100`: that multiply is already inexact for
+  // values like 1.005 before the "% 100" check runs.
+  const probe = MONEY_WHOLE.formatToParts(abs);
+  const hasFraction = probe.some((part) => part.type === "fraction");
+  const parts = (hasFraction ? MONEY_WITH_FRACTION : MONEY_WHOLE).formatToParts(abs);
+  const whole = parts
+    .filter((part) => part.type === "integer" || part.type === "group")
+    .map((part) => part.value)
+    .join("");
+  const fraction = parts.find((part) => part.type === "fraction")?.value ?? null;
+  return { symbol: currencySymbol(currency), whole: whole || "0", fraction };
 }
 
 /** Plain-string version for accessibility labels and tight captions. */

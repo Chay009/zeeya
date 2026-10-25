@@ -1,3 +1,6 @@
+import { parseDecimalAmount } from "@zeeya/parser/normalize";
+
+import { isSameMonth } from "./calendar";
 import { trxDirection } from "./transaction-direction";
 import {
   allQualifyingSubscriptions,
@@ -176,22 +179,12 @@ function isParserRecognized(message: ParsedSms): boolean {
   return message.result.category !== null || (message.result.matchedCategories?.length ?? 0) > 0;
 }
 
-function parseAmount(raw: string | null): number | null {
-  if (!raw) return null;
-  const n = Number.parseFloat(raw.replace(/,/g, ""));
-  return Number.isFinite(n) ? n : null;
-}
-
-function isSameMonth(a: Date, b: Date): boolean {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
-}
-
 // Different SMS from the same bank mask the account number differently
-// ("1234", "XX1234", "*1234", or missing entirely) — normalize to just the
-// trailing digits so the same real account doesn't produce multiple cards.
-function normalizeAcc(acc: string | null): string {
-  if (!acc) return "";
-  const digits = acc.replace(/\D/g, "");
+// ("1234", "XX1234", "*1234", or missing entirely). Keep the trailing four
+// digits so the same real account doesn't produce multiple cards.
+function accountLast4(account: string | null): string {
+  if (!account) return "";
+  const digits = account.replace(/\D/g, "");
   return digits.slice(-4);
 }
 
@@ -210,14 +203,14 @@ function displayBankName(bankName: string): string {
 }
 
 function accountKey(bankName: string, acc: string | null): string | null {
-  const normalizedAcc = normalizeAcc(acc);
-  return normalizedAcc ? `${normalizeBankName(bankName)}|${normalizedAcc}` : null;
+  const last4 = accountLast4(acc);
+  return last4 ? `${normalizeBankName(bankName)}|${last4}` : null;
 }
 
 function signedTransactionChange(message: ParsedSms): number | null {
   const { result } = message;
   if (!result.trxTypeRich) return null;
-  const amount = parseAmount(result.trx);
+  const amount = parseDecimalAmount(result.trx);
   if (amount === null) return null;
   const direction = trxDirection(result.trxTypeRich);
   if (direction === "neutral") return null;
@@ -309,14 +302,14 @@ function newestReadingAfter(readingsNewestFirst: readonly BalanceReading[], date
 
 function referencedTransactionKey(message: ParsedSms): string | null {
   const { result } = message;
-  const amount = parseAmount(result.trx);
+  const amount = parseDecimalAmount(result.trx);
   if (!result.ref || !result.trxTypeRich || amount === null) return null;
 
   const direction = trxDirection(result.trxTypeRich);
   const institution = (result.bankName ?? message.sender).trim().toLowerCase();
   const reference = result.ref.replace(/\s/g, "").toLowerCase();
   const currency = result.currency ?? "INR";
-  return [institution, normalizeAcc(result.acc), reference, amount, currency, direction].join("|");
+  return [institution, accountLast4(result.acc), reference, amount, currency, direction].join("|");
 }
 
 export interface DashboardProjection {
@@ -384,17 +377,17 @@ export function deriveDashboardProjection(
     if (!isParserRecognized(m)) continue;
 
     if (result.bal && !result.bankName) {
-      const last4 = normalizeAcc(result.acc);
-      const balance = parseAmount(result.bal);
+      const last4 = accountLast4(result.acc);
+      const balance = parseDecimalAmount(result.bal);
       if (last4 && balance !== null) banklessReadings.push({ message: m, last4, balance });
     }
 
     const detectedAccountKey = result.bankName ? accountKey(result.bankName, result.acc) : null;
-    const detectedLast4 = normalizeAcc(result.acc);
-    const transactionAmount = parseAmount(result.trx);
+    const detectedLast4 = accountLast4(result.acc);
+    const transactionAmount = parseDecimalAmount(result.trx);
     const hasTransactionEvidence = result.trxTypeRich !== null && transactionAmount !== null;
     const hasAccountEvidence =
-      parseAmount(result.bal) !== null || hasTransactionEvidence || result.mandateId !== null;
+      parseDecimalAmount(result.bal) !== null || hasTransactionEvidence || result.mandateId !== null;
     if (detectedAccountKey && detectedLast4 && result.bankName && hasTransactionEvidence) {
       const existing = accountsByKey.get(detectedAccountKey);
       if (!existing) {
@@ -452,7 +445,7 @@ export function deriveDashboardProjection(
       // technically non-null, but actively misleading: it looks like the
       // subscribed merchant, not "we don't actually know."
       const merchant = result.mandateMerchant ?? result.brandName ?? "Unknown merchant";
-      const amount = parseAmount(result.mandateAmount);
+      const amount = parseDecimalAmount(result.mandateAmount);
       const status = result.mandateEvent ?? "active";
       const event: MandateEvent = { status, date: m.date, sender: m.sender, smsId: m.id };
       const existing = mandatesById.get(result.mandateId);
@@ -481,13 +474,13 @@ export function deriveDashboardProjection(
     }
 
     if (result.bal && result.bankName) {
-      const normalizedAcc = normalizeAcc(result.acc);
+      const last4 = accountLast4(result.acc);
       // Only parsed account digits establish account identity. Sender IDs are
       // delivery-channel metadata and can vary for one account, so they must
       // never create account cards. Do not pad or suffix-match partial digits
       // ("12" vs "0012"): that can silently merge two real accounts.
       const key = accountKey(result.bankName, result.acc);
-      const balance = parseAmount(result.bal);
+      const balance = parseDecimalAmount(result.bal);
       if (balance !== null) {
         const currency = result.currency ?? "INR";
         const reading: BalanceReading = {
@@ -496,8 +489,8 @@ export function deriveDashboardProjection(
           asOf: m.date,
           detectedBankName: result.bankName,
           detectedAccount: result.acc,
-          association: normalizedAcc
-            ? { kind: "confirmed", accountLast4: normalizedAcc }
+          association: last4
+            ? { kind: "confirmed", accountLast4: last4 }
             : { kind: "unassigned" },
           sender: m.sender,
           smsId: m.id,
@@ -514,7 +507,7 @@ export function deriveDashboardProjection(
             accountsByKey.set(key, {
               anchorStatus: "reported",
               bankName: result.bankName,
-              last4: normalizedAcc,
+              last4,
               balance,
               currency,
               asOf: m.date,
@@ -552,7 +545,7 @@ export function deriveDashboardProjection(
     }
 
     if (!isDuplicateTransaction && result.trxTypeRich && isSameMonth(new Date(m.date), now)) {
-      const amount = parseAmount(result.trx);
+      const amount = parseDecimalAmount(result.trx);
       if (amount !== null) {
         const currency = result.currency ?? "INR";
         const direction = trxDirection(result.trxTypeRich);
@@ -568,7 +561,7 @@ export function deriveDashboardProjection(
     // telecom "your plan is valid till..." notice can trigger the RECHARGE
     // tag without being a real recharge purchase. Require a real parsed
     // amount too, so informational notices don't show up as transactions.
-    if (!isDuplicateTransaction && result.trxTypeRich && parseAmount(result.trx) !== null) {
+    if (!isDuplicateTransaction && result.trxTypeRich && parseDecimalAmount(result.trx) !== null) {
       recognized.push(m);
     }
   }

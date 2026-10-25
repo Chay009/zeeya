@@ -1,3 +1,6 @@
+import { parseDecimalAmount } from "@zeeya/parser/normalize";
+
+import { isSameMonth, startOfDay } from "./calendar";
 import type { ParsedSms } from "./sms";
 import { trxDirection } from "./transaction-direction";
 
@@ -183,8 +186,7 @@ export function parseAmountString(raw: string | null | undefined): number | null
   if (!raw) return null;
   const match = /-?\d[\d,]*(?:\.\d+)?/.exec(raw);
   if (!match) return null;
-  const value = Number.parseFloat(match[0].replace(/,/g, ""));
-  return Number.isFinite(value) ? value : null;
+  return parseDecimalAmount(match[0]);
 }
 
 function fullYear(year: number): number {
@@ -364,15 +366,6 @@ export function toMessageFact(message: ParsedSms): MessageFact | null {
       packBalance: result.packBalance,
     },
   };
-}
-
-function startOfDay(at: Date): number {
-  return new Date(at.getFullYear(), at.getMonth(), at.getDate()).getTime();
-}
-
-function isSameMonth(ms: number, at: Date): boolean {
-  const date = new Date(ms);
-  return date.getFullYear() === at.getFullYear() && date.getMonth() === at.getMonth();
 }
 
 /** Keeps the newest item per key. */

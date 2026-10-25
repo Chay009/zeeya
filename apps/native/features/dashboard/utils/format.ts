@@ -12,16 +12,19 @@ export function formatMoney(amount: number, currency: string): string {
   return `${symbol}${MONEY.format(amount)}`;
 }
 
-// Axis labels and tight chart captions — not full precision formatMoney.
+// Axis labels and tight chart captions. en-IN compact notation already
+// knows thousands, lakhs, and crores (₹2.5K, ₹1.3L, ₹1Cr). Dividing by
+// 1,000 or 1,00,000 here rounded ₹2,500 to "₹3k" and rendered one crore
+// as "₹100L".
 export function formatCompactMoney(amount: number, currency: string): string {
-  const symbol = currency === "INR" ? "₹" : `${currency} `;
-  const abs = Math.abs(amount);
-  if (abs >= 100_000) {
-    return `${symbol}${(abs / 100_000).toFixed(abs >= 1_000_000 ? 0 : 1)}L`;
-  }
-  if (abs >= 1_000) return `${symbol}${Math.round(abs / 1_000)}k`;
-  if (abs === 0) return `${symbol}0`;
-  return `${symbol}${Math.round(abs)}`;
+  return numberFormat("en-IN", {
+    style: "currency",
+    currency,
+    notation: "compact",
+    maximumFractionDigits: 1,
+  })
+    .format(Math.abs(amount))
+    .replace(/[\u00a0\u202f]/g, "");
 }
 
 // Currencies present across a set of per-currency totals, INR first (this

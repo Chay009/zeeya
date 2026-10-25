@@ -8,6 +8,9 @@
     },
     "./malana": {
       "default": "./src/malana/index.ts"
+    },
+    "./normalize": {
+      "default": "./src/normalize.ts"
     }
   },
   "scripts": {

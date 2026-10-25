@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Pressable, ScrollView, TextInput, View } from "react-native";
 
 import { AppText as Text } from "@/components/app-text";
+import { MessageArrived } from "@/components/art/message-arrived";
 import { useAppTheme } from "@/contexts/app-theme-context";
 import { currentLocalMessageTime, importSharedMessage } from "./import-shared-message";
 
@@ -58,6 +59,9 @@ export function ShareImportScreen() {
       keyboardShouldPersistTaps="handled"
       style={{ backgroundColor: isDark ? "#18181b" : "#f7f7f8" }}
     >
+      <View style={{ alignItems: "center" }}>
+        <MessageArrived size={96} />
+      </View>
       <Text className="text-foreground" style={{ fontSize: 24, fontWeight: "700" }}>
         Import a financial message
       </Text>

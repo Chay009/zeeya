@@ -1,11 +1,7 @@
 // Exact 1:1 port of FederalBankParser.kt from Cashiro parser-core
 import { BankParser } from "../base-parser.js";
+import { parseDecimalAmount } from "../normalize.js";
 import type { MandateInfo, TransactionType } from "../types.js";
-
-function parseNum(str: string): number | null {
-  const n = parseFloat(str.replace(/,/g, ""));
-  return Number.isFinite(n) ? n : null;
-}
 
 export class FederalBankParser extends BankParser {
   getBankName(): string {
@@ -81,49 +77,49 @@ export class FederalBankParser extends BankParser {
     // Pattern 1: ₹882.00 (rupee symbol format for Scapia card)
     const p1 = /₹\s*([0-9,]+(?:\.\d{2})?)/.exec(message);
     if (p1?.[1]) {
-      const val = parseNum(p1[1]);
+      const val = parseDecimalAmount(p1[1]);
       if (val !== null) return val;
     }
 
     // Pattern 2: INR 506.52 spent (credit card format)
     const p2 = /INR\s+([0-9,]+(?:\.\d{2})?)\s+spent/i.exec(message);
     if (p2?.[1]) {
-      const val = parseNum(p2[1]);
+      const val = parseDecimalAmount(p2[1]);
       if (val !== null) return val;
     }
 
     // Pattern 3: "you've received INR 10,509.09"
     const p3 = /you've received INR\s+([0-9,]+(?:\.\d{2})?)/i.exec(message);
     if (p3?.[1]) {
-      const val = parseNum(p3[1]);
+      const val = parseDecimalAmount(p3[1]);
       if (val !== null) return val;
     }
 
     // Pattern 4: Rs 34.51 debited via UPI
     const p4 = /Rs\s+([0-9,]+(?:\.\d{2})?)\s+debited/i.exec(message);
     if (p4?.[1]) {
-      const val = parseNum(p4[1]);
+      const val = parseDecimalAmount(p4[1]);
       if (val !== null) return val;
     }
 
     // Pattern 5: Rs 70.00 sent via UPI
     const p5 = /Rs\s+([0-9,]+(?:\.\d{2})?)\s+sent/i.exec(message);
     if (p5?.[1]) {
-      const val = parseNum(p5[1]);
+      const val = parseDecimalAmount(p5[1]);
       if (val !== null) return val;
     }
 
     // Pattern 6: Rs 500.00 credited
     const p6 = /Rs\s+([0-9,]+(?:\.\d{2})?)\s+credited/i.exec(message);
     if (p6?.[1]) {
-      const val = parseNum(p6[1]);
+      const val = parseDecimalAmount(p6[1]);
       if (val !== null) return val;
     }
 
     // Pattern 7: withdrawn Rs 500
     const p7 = /withdrawn\s+Rs\s+([0-9,]+(?:\.\d{2})?)/i.exec(message);
     if (p7?.[1]) {
-      const val = parseNum(p7[1]);
+      const val = parseDecimalAmount(p7[1]);
       if (val !== null) return val;
     }
 
@@ -426,7 +422,7 @@ export class FederalBankParser extends BankParser {
     const amountMatch =
       /(?:for\s+a\s+)?maximum\s+amount\s+of\s+Rs\.?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)/i.exec(message);
     if (!amountMatch?.[1]) return null;
-    const amount = parseNum(amountMatch[1]);
+    const amount = parseDecimalAmount(amountMatch[1]);
     if (amount === null) return null;
 
     const dateMatch = /starting\s+from\s+(\d{2}-\d{2}-\d{4})/i.exec(message);
@@ -456,7 +452,7 @@ export class FederalBankParser extends BankParser {
 
     const amountMatch = /INR\s+(\d+(?:,\d{3})*(?:\.\d{2})?)/i.exec(message);
     if (!amountMatch?.[1]) return null;
-    const amount = parseNum(amountMatch[1]);
+    const amount = parseDecimalAmount(amountMatch[1]);
     if (amount === null) return null;
 
     let dueDate: string | null = null;

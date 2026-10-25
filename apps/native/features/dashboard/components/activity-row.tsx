@@ -1,4 +1,5 @@
 import { View } from "react-native";
+import { parseDecimalAmount } from "@zeeya/parser/normalize";
 
 import { AppText as Text } from "@/components/app-text";
 
@@ -13,7 +14,7 @@ export function ActivityRow({ item, isRecurring }: { item: ParsedSms; isRecurrin
   const { result } = item;
   const label = result.brandName ?? result.vendor ?? result.bankName ?? item.sender;
   const direction = trxDirection(result.trxTypeRich);
-  const amount = result.trx ? Number.parseFloat(result.trx.replace(/,/g, "")) : null;
+  const amount = parseDecimalAmount(result.trx);
   const category = ACTIVITY_CATEGORY_FILTERS.find(
     (option) => option.value === result.matchedCategories?.[0],
   )?.label;

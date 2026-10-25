@@ -1,3 +1,5 @@
+import { calendarDaysBetween, startOfDay } from "./calendar";
+import { dateFormat } from "./intl-format";
 import type { MessageInsights } from "./message-insights";
 
 // Home's Action Center: the few things from the user's messages that need
@@ -36,21 +38,17 @@ const CARD_FRESH_MS = 7 * DAY_MS;
 const LOW_DATA_MB = 500;
 export const ACTION_CENTER_LIMIT = 4;
 
-function startOfDay(at: Date): number {
-  return new Date(at.getFullYear(), at.getMonth(), at.getDate()).getTime();
-}
-
 function dayPhrase(at: number, now: Date): string {
-  const days = Math.round((startOfDay(new Date(at)) - startOfDay(now)) / DAY_MS);
+  const days = calendarDaysBetween(now, at);
   if (days === 0) return "today";
   if (days === 1) return "tomorrow";
-  return new Date(at).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+  return dateFormat("en-IN", { day: "numeric", month: "short" }).format(at);
 }
 
 function clockTime(at: number): string | null {
   const date = new Date(at);
   if (date.getHours() === 0 && date.getMinutes() === 0) return null;
-  return date.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false });
+  return dateFormat("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(at);
 }
 
 /** "150 MB" / "1.2 GB" / "800MB" → MB; null when the text isn't a data amount. */

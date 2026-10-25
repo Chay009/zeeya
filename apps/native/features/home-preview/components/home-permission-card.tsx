@@ -2,6 +2,7 @@ import { Button, Spinner, Surface } from "heroui-native";
 import { View } from "react-native";
 
 import { AppText as Text } from "@/components/app-text";
+import { MessageArrived } from "@/components/art/message-arrived";
 import { IconTile } from "@/components/ui/controls";
 import { useThemeColors } from "@/components/ui/theme";
 
@@ -64,14 +65,22 @@ export function HomePermissionCard({
           ? "Your permission is granted. We are loading and parsing your real transactions."
           : "Checking whether zeeya can read your bank and transaction messages.";
 
+  const asking = needsPermission || unsupported;
+
   return (
     <Surface className="mt-4 rounded-card p-5">
-      <View className="flex-row items-center gap-3">
-        <IconTile icon={unsupported ? "info" : "shield"} color={colors.accentDeep} background={colors.accentSoft} size={36} />
-        <Text className="text-caption font-medium text-muted">
-          {unsupported ? "Device support" : "Private by design"}
-        </Text>
-      </View>
+      {asking ? (
+        <View className="mb-4 items-center">
+          <MessageArrived size={96} on="card" />
+        </View>
+      ) : (
+        <View className="mb-3 flex-row items-center gap-3">
+          <IconTile icon="shield" color={colors.accentDeep} background={colors.accentSoft} size={36} />
+        </View>
+      )}
+      <Text className="text-caption font-medium text-muted">
+        {unsupported ? "Device support" : "Private by design"}
+      </Text>
       <Text className="mt-3 text-subtitle font-semibold text-ink">{title}</Text>
       <Text className="mt-1 text-caption text-muted">{body}</Text>
 

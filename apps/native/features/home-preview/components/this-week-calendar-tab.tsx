@@ -4,6 +4,10 @@ import { Pressable, View } from "react-native";
 
 import { AppText as Text } from "@/components/app-text";
 import { AppIcon } from "@/components/icon";
+import { parseDecimalAmount } from "@zeeya/parser/normalize";
+
+import { daysInMonth, monthKey, startOfMonth } from "@/lib/calendar";
+import { dateFormat, numberFormat } from "@/lib/intl-format";
 
 import type { HomePreviewData } from "../data";
 import { DayDetailSheet } from "./day-detail-sheet";
@@ -54,14 +58,14 @@ function compactCalendarNet(value: string): string {
       : value.startsWith("±")
         ? "±"
         : "";
-  const amount = Number.parseFloat(value.replace(/[^\d.]/g, ""));
-  if (!Number.isFinite(amount)) return sign || value;
-  const amountLabel =
-    amount >= 1_000_000
-      ? `${(amount / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`
-      : amount >= 1_000
-        ? `${(amount / 1_000).toFixed(1).replace(/\.0$/, "")}k`
-        : String(Math.round(amount));
+  const amount = parseDecimalAmount(value.replace(/[^\d,.-]/g, ""));
+  if (amount === null) return sign || value;
+  const amountLabel = numberFormat("en-IN", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  })
+    .format(amount)
+    .replace(/[\u00a0\u202f]/g, "");
   return `${sign}${amountLabel}`;
 }
 
@@ -70,14 +74,14 @@ function compactCalendarNet(value: string): string {
 // grid still renders real dates instead of a fabricated "—" placeholder.
 function currentMonthWithNoData(): CalendarMonth {
   const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthStart = new Date(startOfMonth(now));
   return {
-    key: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`,
-    label: now.toLocaleDateString("en-IN", { month: "short", year: "numeric" }),
+    key: monthKey(now),
+    label: dateFormat("en-IN", { month: "short", year: "numeric" }).format(now),
     spent: "",
     income: "",
     offset: (monthStart.getDay() + 6) % 7,
-    days: new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate(),
+    days: daysInMonth(now),
     today: now.getDate(),
     nets: {},
   };

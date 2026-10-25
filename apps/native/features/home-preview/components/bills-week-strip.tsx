@@ -2,6 +2,7 @@ import { View } from "react-native";
 
 import { AppText as Text } from "@/components/app-text";
 import { useThemeColors } from "@/components/ui/theme";
+import { addDays, startOfDay } from "@/lib/calendar";
 
 import { merchantVisual } from "../data";
 import { BrandLogo } from "./brand-logo";
@@ -11,7 +12,6 @@ import { BrandLogo } from "./brand-logo";
 // on it — or a faint dashed ring when nothing does. One glance answers "is
 // anything due this week, and when?".
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEKDAY = ["S", "M", "T", "W", "T", "F", "S"];
 
 export interface StripItem {
@@ -21,17 +21,13 @@ export interface StripItem {
   at: number;
 }
 
-function startOfDay(ms: number): number {
-  const date = new Date(ms);
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
-}
-
 export function BillsWeekStrip({ items, today }: { items: readonly StripItem[]; today: number }) {
   const colors = useThemeColors();
   const start = startOfDay(today);
+  const weekEnd = addDays(start, 7);
   const days = Array.from({ length: 7 }, (_, index) => {
-    const day = new Date(start + index * DAY_MS + 2 * 60 * 60 * 1000); // DST-safe
-    const dayStart = startOfDay(day.getTime());
+    const dayStart = addDays(start, index);
+    const day = new Date(dayStart);
     return {
       key: dayStart,
       weekday: WEEKDAY[day.getDay()]!,
@@ -41,7 +37,7 @@ export function BillsWeekStrip({ items, today }: { items: readonly StripItem[]; 
   });
   const dueCount = items.filter((item) => {
     const at = startOfDay(item.at);
-    return at >= start && at < start + 7 * DAY_MS;
+    return at >= start && at < weekEnd;
   }).length;
 
   return (

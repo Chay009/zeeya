@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { LargeTitle } from "@/components/ui/header";
+import { SCREEN_PADDING_X } from "@/components/ui/screen";
 import { ErrorState, SkeletonHero, SkeletonRows } from "@/components/ui/states";
 import { HOME_ACTIVITY_PERIOD_MAX_LIMIT, HOME_ACTIVITY_SEARCH_MAX_LIMIT } from "@/db/queries-home";
 import { useHomeRecentActivity } from "@/features/dashboard/hooks/home-recent-activity";
@@ -71,7 +72,7 @@ export function ActivityScreen() {
 
   if (!hasLoaded && activityStatus === "loading" && activity.allItems.length === 0) {
     return (
-      <View className="flex-1 bg-background px-4">
+      <View className="flex-1 bg-background" style={{ paddingHorizontal: SCREEN_PADDING_X }}>
         <LargeTitle title="Transactions" topInset={insets.top} />
         <View className="mt-6">
           <SkeletonHero />
@@ -85,7 +86,7 @@ export function ActivityScreen() {
 
   if (activityStatus === "error") {
     return (
-      <View className="flex-1 bg-background px-4">
+      <View className="flex-1 bg-background" style={{ paddingHorizontal: SCREEN_PADDING_X }}>
         <LargeTitle title="Transactions" topInset={insets.top} />
         <View className="flex-1 justify-center pb-24">
           <ErrorState title="Couldn't load transactions" body={activityError} onRetry={reloadActivity} />

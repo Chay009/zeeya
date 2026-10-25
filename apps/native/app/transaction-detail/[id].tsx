@@ -9,6 +9,7 @@ import { useCallback } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 
+import { EmptyReceipt } from "@/components/art/state-marks";
 import { financeDataSource } from "@/features/dashboard/dashboard-data-source";
 import {
   productDetailSections,
@@ -40,6 +41,7 @@ export default function TransactionDetailRoute() {
         onBack={() => router.back()}
         title="Transaction not found"
         body="It may have been removed since this screen was opened."
+        visual={<EmptyReceipt size={96} />}
       />
     );
   }

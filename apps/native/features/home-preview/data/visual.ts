@@ -100,12 +100,6 @@ export const fallbackVisualStyle: VisualStyle = {
   bar: "#12a594",
 };
 
-export function parseAmount(raw: string | null): number | null {
-  if (!raw) return null;
-  const amount = Number.parseFloat(raw.replace(/,/g, ""));
-  return Number.isFinite(amount) ? amount : null;
-}
-
 export function normalized(value: string): string {
   return value
     .trim()

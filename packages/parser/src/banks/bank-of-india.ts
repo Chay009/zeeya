@@ -1,11 +1,7 @@
 // Exact 1:1 port of BankOfIndiaParser.kt from Cashiro parser-core
 import { BankParser } from "../base-parser.js";
+import { parseAmount } from "../normalize.js";
 import type { TransactionType } from "../types.js";
-
-function parseNum(str: string): number | null {
-  const n = parseFloat(str.replace(/,/g, ""));
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
 
 export class BankOfIndiaParser extends BankParser {
   getBankName(): string {
@@ -35,21 +31,21 @@ export class BankOfIndiaParser extends BankParser {
     // Pattern 1: Rs.200.00 debited/credited
     const p1 = /Rs\.?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)\s+(?:debited|credited)/i.exec(message);
     if (p1?.[1]) {
-      const val = parseNum(p1[1]);
+      const val = parseAmount(p1[1]);
       if (val !== null) return val;
     }
 
     // Pattern 2: INR format
     const p2 = /INR\s*(\d+(?:,\d{3})*(?:\.\d{2})?)\s+(?:debited|credited)/i.exec(message);
     if (p2?.[1]) {
-      const val = parseNum(p2[1]);
+      const val = parseAmount(p2[1]);
       if (val !== null) return val;
     }
 
     // Pattern 3: withdrawn Rs 500
     const p3 = /withdrawn\s+Rs\.?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)/i.exec(message);
     if (p3?.[1]) {
-      const val = parseNum(p3[1]);
+      const val = parseAmount(p3[1]);
       if (val !== null) return val;
     }
 
@@ -217,21 +213,21 @@ export class BankOfIndiaParser extends BankParser {
     // Pattern 1: Bal: Rs 1000.00
     const p1 = /Bal[:\s]+Rs\.?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)/i.exec(message);
     if (p1?.[1]) {
-      const val = parseNum(p1[1]);
+      const val = parseAmount(p1[1]);
       if (val !== null) return val;
     }
 
     // Pattern 2: Available Balance: Rs 1000.00
     const p2 = /Available\s+Balance[:\s]+Rs\.?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)/i.exec(message);
     if (p2?.[1]) {
-      const val = parseNum(p2[1]);
+      const val = parseAmount(p2[1]);
       if (val !== null) return val;
     }
 
     // Pattern 3: Avl Bal Rs 1000.00
     const p3 = /Avl\s+Bal[:\s]+Rs\.?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)/i.exec(message);
     if (p3?.[1]) {
-      const val = parseNum(p3[1]);
+      const val = parseAmount(p3[1]);
       if (val !== null) return val;
     }
 

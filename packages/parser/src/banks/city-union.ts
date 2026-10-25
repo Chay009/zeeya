@@ -1,5 +1,6 @@
 // Exact 1:1 port of CityUnionBankParser.kt from Cashiro parser-core
 import { BankParser } from "../base-parser.js";
+import { parseAmount } from "../normalize.js";
 import type { TransactionType } from "../types.js";
 
 /**
@@ -12,11 +13,6 @@ import type { TransactionType } from "../types.js";
  * - Your a/c no. XXXXXXXXXXXXXXX is credited for Rs.111.00 on 01-09-2025 and debited from a/c no. YYYYYYYYYYYYYYY (UPI Ref no 123456789012)
  * - Savings No XXXXXXXXXXXXXXX credited with INR 111.00 towards BY NEFT TRF:AMBANI YYYYYYYYYYYYYYY: on 01-SEP-2025. Avl Bal 120.00
  */
-
-function parseNum(str: string): number | null {
-  const n = parseFloat(str.replace(/,/g, ""));
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
 
 export class CityUnionBankParser extends BankParser {
   getBankName(): string {
@@ -40,7 +36,7 @@ export class CityUnionBankParser extends BankParser {
     for (const pattern of patterns) {
       const m = pattern.exec(message);
       if (m?.[1]) {
-        const val = parseNum(m[1]);
+        const val = parseAmount(m[1]);
         if (val !== null) return val;
       }
     }
@@ -122,7 +118,7 @@ export class CityUnionBankParser extends BankParser {
   protected override extractBalance(message: string): number | null {
     // Pattern: "Avl Bal 120.00"
     const m = /Avl\s+Bal\s+([0-9,]+(?:\.\d{2})?)/i.exec(message);
-    if (m?.[1]) return parseNum(m[1]);
+    if (m?.[1]) return parseAmount(m[1]);
     return super.extractBalance(message);
   }
 

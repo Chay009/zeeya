@@ -18,6 +18,7 @@ import {
   categoryMarkerEvidence,
   deriveAmbiguousTransactionForms,
   isPaymentAcknowledgement,
+  isProspectiveMoneyMessage,
   isUnconfirmedPromotionalTransaction,
   isMalanaCategory,
   isProductCategory,
@@ -323,12 +324,13 @@ export class MalanaEngine {
       recognizedCategory && isProductCategory(recognizedCategory) ? recognizedCategory : "GRM_BANK";
     const routedCategory = routePrimaryCategory(tokens, fallbackCategory);
     const spam = detectSpam(normalizedMessage);
-    const suppressPromotionalTransaction = isUnconfirmedPromotionalTransaction(
-      tokens,
-      spam.isSpam,
-      this.ambiguousTransactionForms,
-      this.balanceIndicatorTypes,
-    );
+    const suppressPromotionalTransaction =
+      isUnconfirmedPromotionalTransaction(
+        tokens,
+        spam.isSpam,
+        this.ambiguousTransactionForms,
+        this.balanceIndicatorTypes,
+      ) || isProspectiveMoneyMessage(normalizedMessage, tokens, this.balanceIndicatorTypes);
     const primaryCategory: MalanaCategory = suppressPromotionalTransaction
       ? "GRM_OFFERS"
       : routedCategory;

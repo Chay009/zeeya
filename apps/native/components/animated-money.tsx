@@ -1,11 +1,8 @@
 import { NumberFlow } from "number-flow-react-native";
 import { StyleSheet, type StyleProp, type TextStyle, type ViewStyle } from "react-native";
 
+import { currencySymbol } from "@/components/ui/money";
 import { appFontFamily } from "@/lib/fonts";
-
-function currencyPrefix(currency: string): string {
-  return currency === "INR" ? "₹ " : `${currency} `;
-}
 
 export function AnimatedMoney({
   value,
@@ -31,7 +28,7 @@ export function AnimatedMoney({
       value={value}
       locales="en-IN"
       format={{ maximumFractionDigits: 2 }}
-      prefix={currencyPrefix(currency)}
+      prefix={`${currencySymbol(currency)} `}
       animated={animated}
       respectMotionPreference
       style={{ ...flattened, fontFamily }}

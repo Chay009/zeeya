@@ -1,11 +1,7 @@
 // Exact 1:1 port of JioPaymentsBankParser.kt from Cashiro parser-core
 import { BankParser } from "../base-parser.js";
+import { parseAmount } from "../normalize.js";
 import type { TransactionType } from "../types.js";
-
-function parseNum(str: string): number | null {
-  const n = parseFloat(str.replace(/,/g, ""));
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
 
 export class JioPaymentsBankParser extends BankParser {
   getBankName(): string {
@@ -20,21 +16,21 @@ export class JioPaymentsBankParser extends BankParser {
     // Pattern 1: credited with Rs.1670.00
     const creditMatch = /credited\s+with\s+Rs\.?\s*([\d,]+(?:\.\d{2})?)/i.exec(message);
     if (creditMatch?.[1]) {
-      const val = parseNum(creditMatch[1]);
+      const val = parseAmount(creditMatch[1]);
       if (val !== null) return val;
     }
 
     // Pattern 2: Rs. 1170.00 Sent from
     const sentMatch = /Rs\.?\s*([\d,]+(?:\.\d{2})?)\s+Sent\s+from/i.exec(message);
     if (sentMatch?.[1]) {
-      const val = parseNum(sentMatch[1]);
+      const val = parseAmount(sentMatch[1]);
       if (val !== null) return val;
     }
 
     // Pattern 3: debited with Rs. 1750.00
     const debitMatch = /debited\s+with\s+Rs\.?\s*([\d,]+(?:\.\d{2})?)/i.exec(message);
     if (debitMatch?.[1]) {
-      const val = parseNum(debitMatch[1]);
+      const val = parseAmount(debitMatch[1]);
       if (val !== null) return val;
     }
 
@@ -74,7 +70,7 @@ export class JioPaymentsBankParser extends BankParser {
     // Pattern: Avl. Bal: Rs. 9095.5
     const balanceMatch = /Avl\.?\s*Bal:\s*Rs\.?\s*([\d,]+(?:\.\d{1,2})?)/i.exec(message);
     if (balanceMatch?.[1]) {
-      const val = parseNum(balanceMatch[1]);
+      const val = parseAmount(balanceMatch[1]);
       if (val !== null) return val;
     }
 
