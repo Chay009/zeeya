@@ -48,6 +48,15 @@ lerna-debug.log*
 coverage
 .nyc_output
 
+# Agent skills and local agent settings (installed per machine)
+.agents/
+.claude/
+skills-lock.json
+
+# Local pnpm store and Expo export checks
+.pnpm-store/
+apps/native/dist-*/
+
 # Misc
 *.tgz
 .cache
