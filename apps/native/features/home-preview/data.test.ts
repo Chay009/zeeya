@@ -318,12 +318,12 @@ describe("summarizeCaughtUpTransactions", () => {
   });
 });
 
-describe("createHomePreviewData — verified-domain-only logo.dev lookup (issue #15)", () => {
-  const ORIGINAL_TOKEN = process.env.EXPO_PUBLIC_LOGO_DEV_TOKEN;
+describe("createHomePreviewData — verified-domain-only logo lookup (issue #15)", () => {
+  const ORIGINAL_SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL;
 
   afterEach(() => {
-    if (ORIGINAL_TOKEN === undefined) delete process.env.EXPO_PUBLIC_LOGO_DEV_TOKEN;
-    else process.env.EXPO_PUBLIC_LOGO_DEV_TOKEN = ORIGINAL_TOKEN;
+    if (ORIGINAL_SERVER_URL === undefined) delete process.env.EXPO_PUBLIC_SERVER_URL;
+    else process.env.EXPO_PUBLIC_SERVER_URL = ORIGINAL_SERVER_URL;
   });
 
   function messageFor(vendor: string): ParsedSms {
@@ -344,8 +344,8 @@ describe("createHomePreviewData — verified-domain-only logo.dev lookup (issue 
   // An unrecognized merchant never had a fuzzy-search fallback to lose —
   // it always gets the deterministic tile, token configured or not, since
   // there's no verified domain to look up.
-  it("has no img for an unrecognized merchant even when a logo.dev token is configured", () => {
-    process.env.EXPO_PUBLIC_LOGO_DEV_TOKEN = "pk_test_token";
+  it("has no img for an unrecognized merchant even when logos are configured", () => {
+    process.env.EXPO_PUBLIC_SERVER_URL = "https://api.test";
     const home = createHomePreviewData(deriveDashboard([messageFor("Zomato")]), true);
     const item = home.activity.allItems.find((entry) => entry.name === "Zomato");
 
@@ -353,8 +353,8 @@ describe("createHomePreviewData — verified-domain-only logo.dev lookup (issue 
     expect(item!.img).toBeUndefined();
   });
 
-  it("has no img for a curated brand when no logo.dev token is configured", () => {
-    delete process.env.EXPO_PUBLIC_LOGO_DEV_TOKEN;
+  it("has no img for a curated brand when no server URL is configured", () => {
+    delete process.env.EXPO_PUBLIC_SERVER_URL;
     const home = createHomePreviewData(deriveDashboard([messageFor("Swiggy")]), true);
     const item = home.activity.allItems.find((entry) => entry.name === "Swiggy");
 
@@ -362,18 +362,18 @@ describe("createHomePreviewData — verified-domain-only logo.dev lookup (issue 
     expect(item!.img).toBeUndefined();
   });
 
-  it("uses the verified domain for a curated brand's logo.dev img once a token is configured", () => {
-    process.env.EXPO_PUBLIC_LOGO_DEV_TOKEN = "pk_test_token";
+  it("uses the verified domain for a curated brand's logo img once logos are configured", () => {
+    process.env.EXPO_PUBLIC_SERVER_URL = "https://api.test";
     const home = createHomePreviewData(deriveDashboard([messageFor("Swiggy")]), true);
     const item = home.activity.allItems.find((entry) => entry.name === "Swiggy");
 
     expect(item!.img).toBe(
-      "https://img.logo.dev/swiggy.com?token=pk_test_token&format=png&retina=true",
+      "https://api.test/logos/swiggy.com.png",
     );
   });
 
   it("still keeps the curated tile color for a known brand alongside its verified-domain image", () => {
-    process.env.EXPO_PUBLIC_LOGO_DEV_TOKEN = "pk_test_token";
+    process.env.EXPO_PUBLIC_SERVER_URL = "https://api.test";
     const home = createHomePreviewData(deriveDashboard([messageFor("Swiggy")]), true);
     const item = home.activity.allItems.find((entry) => entry.name === "Swiggy");
 
@@ -381,8 +381,8 @@ describe("createHomePreviewData — verified-domain-only logo.dev lookup (issue 
     expect(item!.tile).toBe("#fff0bf");
   });
 
-  it("does NOT attempt any logo lookup for a person's name (bene) even with a token configured — false-positive risk", () => {
-    process.env.EXPO_PUBLIC_LOGO_DEV_TOKEN = "pk_test_token";
+  it("does NOT attempt any logo lookup for a person's name (bene) even with logos configured — false-positive risk", () => {
+    process.env.EXPO_PUBLIC_SERVER_URL = "https://api.test";
     // No brandName/vendor — a plain person-to-person transfer, so
     // merchantName() falls through to bene. A person's name can never
     // match a curated brand entry, so this can only ever get the letter
@@ -408,7 +408,7 @@ describe("createHomePreviewData — verified-domain-only logo.dev lookup (issue 
   });
 
   it("does not resolve a logo for the raw bank name a transaction falls back to", () => {
-    process.env.EXPO_PUBLIC_LOGO_DEV_TOKEN = "pk_test_token";
+    process.env.EXPO_PUBLIC_SERVER_URL = "https://api.test";
     // No brandName/vendor/bene — falls all the way to bankName. "Test
     // Bank" doesn't match any curated entry, so it stays a plain tile
     // (account cards show the bank's own logo separately, via

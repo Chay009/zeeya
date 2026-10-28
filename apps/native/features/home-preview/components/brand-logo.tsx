@@ -3,22 +3,8 @@ import { Image, View } from "react-native";
 import { SvgXml } from "react-native-svg";
 
 import { AppText as Text } from "@/components/app-text";
-import { markLogoDomainFailed } from "../../../lib/logo-dev";
-
-// img.logo.dev/{domain}?token=...&... — pull the domain segment back out
-// so a failed fetch can be negative-cached (see lib/logo-dev.ts) instead
-// of being re-attempted on every re-render or for every other transaction
-// from the same merchant.
-function logoDevDomain(uri: string): string | null {
-  try {
-    const url = new URL(uri);
-    if (url.hostname !== "img.logo.dev") return null;
-    const domain = decodeURIComponent(url.pathname.replace(/^\//, ""));
-    return domain || null;
-  } catch {
-    return null;
-  }
-}
+import { authClient } from "@/lib/auth-client";
+import { logoDomainFromUrl, markLogoDomainFailed } from "../../../lib/logo-dev";
 
 // cdn.simpleicons.org (every curated brand/bank entry in
 // features/home-preview/data.ts's knownBrandStyles/knownBankStyles) serves
@@ -79,10 +65,18 @@ export const BrandLogo = memo(function BrandLogo({
   iconRatio?: number;
 }) {
   const [failed, setFailed] = useState(false);
+  const { data: session } = authClient.useSession();
   const iconSize = Math.round(size * iconRatio);
+  // Our /logos endpoint is for signed-in users: send the session cookie
+  // (Better Auth's Expo pattern); signed out, the letter tile stays.
+  const isOwnLogo = img ? logoDomainFromUrl(img) !== null : false;
+  const cookie = isOwnLogo && session ? authClient.getCookie() : "";
+  const showImage = !failed && img && !isKnownSvgSource(img) && (!isOwnLogo || cookie);
   const onImageError = () => {
     if (img) {
-      const domain = logoDevDomain(img);
+      // Negative-cache a failed logo so it isn't re-fetched on every render
+      // or for every other transaction from the same merchant.
+      const domain = logoDomainFromUrl(img);
       if (domain) markLogoDomainFailed(domain);
     }
     setFailed(true);
@@ -106,9 +100,13 @@ export const BrandLogo = memo(function BrandLogo({
           <RemoteSvg uri={img} size={iconSize} />
         </Suspense>
       ) : null}
-      {!failed && img && !isKnownSvgSource(img) && (
+      {showImage && (
         <Image
-          source={{ uri: img, cache: "force-cache" }}
+          source={{
+            uri: img,
+            cache: "force-cache",
+            ...(cookie ? { headers: { Cookie: cookie } } : {}),
+          }}
           onError={onImageError}
           style={{ position: "absolute", width: iconSize, height: iconSize }}
           resizeMode="contain"
