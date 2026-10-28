@@ -1,154 +1,22 @@
 // Optional account: Zeeya works fully offline; signing in only links the
-// device to a verified Google/Apple identity. Both buttons are the providers'
-// own native buttons (their branding rules), and each hands its ID token to
-// Better Auth, which creates the session (or links the provider when already
-// signed in).
+// device to a verified Google/Apple identity (see ../sign-in.tsx).
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { env } from "@zeeya/env/native";
-import * as AppleAuthentication from "expo-apple-authentication";
-import { randomUUID } from "expo-crypto";
 import { Avatar, Button, Spinner, Surface, useToast } from "heroui-native";
-import { useEffect, useState } from "react";
-import { Alert, Platform, View } from "react-native";
-import type * as GoogleSignInModule from "react-native-nitro-google-signin";
+import { useState } from "react";
+import { Alert, View } from "react-native";
 
 import { AppText as Text } from "@/components/app-text";
 import { AppIcon } from "@/components/icon";
 import { useThemeColors } from "@/components/ui/theme";
 import { authClient } from "@/lib/auth-client";
-import { trpc } from "@/utils/trpc";
-import { resolveProviderAvailability } from "../provider-availability";
-import { configureGoogleSignIn } from "../google-sign-in";
-
-type Provider = "google" | "apple";
-type IdToken = NonNullable<Parameters<typeof authClient.signIn.social>[0]["idToken"]>;
-
-const { EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: googleWebClientId, EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID } =
-  env;
-
-// The package creates its native object on import, so an app binary built
-// before it was added would crash this screen. Load it guarded: then Google
-// sign-in is simply hidden until the next native build.
-// iOS refuses to configure Google without its iOS client ID (and the matching
-// URL scheme in app.config.ts), so Google only exists when both are set.
-const google =
-  googleWebClientId && (Platform.OS !== "ios" || EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID)
-    ? configureGoogleSignIn(
-        { webClientId: googleWebClientId, iosClientId: EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ?? null },
-        () => require("react-native-nitro-google-signin") as typeof GoogleSignInModule,
-      )
-    : null;
-
-const isCancelled = (error: unknown) =>
-  (google?.isErrorWithCode(error) && error.code === google.statusCodes.SIGN_IN_CANCELLED) ||
-  (typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    error.code === "ERR_REQUEST_CANCELED");
-
-// The Google button's documented Credential Manager sequence, run by us so
-// errors are caught (its built-in handler rethrows into an unhandled promise).
-async function googleIdToken(): Promise<IdToken | null> {
-  if (!google) return null;
-  const { GoogleOneTapSignIn, isNoSavedCredentialFoundResponse, isSuccessResponse } = google;
-  let response = await GoogleOneTapSignIn.signIn();
-  if (isNoSavedCredentialFoundResponse(response)) {
-    response = await GoogleOneTapSignIn.createAccount();
-  }
-  return isSuccessResponse(response) ? { token: response.data.idToken } : null;
-}
-
-async function appleIdToken(): Promise<IdToken | null> {
-  // Apple embeds the SHA-256 of this nonce in the token; Better Auth checks it.
-  const nonce = randomUUID();
-  const credential = await AppleAuthentication.signInAsync({
-    requestedScopes: [
-      AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
-      AppleAuthentication.AppleAuthenticationScope.EMAIL,
-    ],
-    nonce,
-  });
-  if (!credential.identityToken) return null;
-  // Apple sends the name only on the first sign-in, outside the token.
-  const { givenName, familyName } = credential.fullName ?? {};
-  return {
-    token: credential.identityToken,
-    nonce,
-    user: { name: { firstName: givenName ?? undefined, lastName: familyName ?? undefined } },
-  };
-}
-
-const getIdToken: Record<Provider, () => Promise<IdToken | null>> = {
-  google: googleIdToken,
-  apple: appleIdToken,
-};
-
-function useAppleSignInAvailable() {
-  const [available, setAvailable] = useState(false);
-  useEffect(() => {
-    if (Platform.OS === "ios") {
-      void AppleAuthentication.isAvailableAsync().then(setAvailable);
-    }
-  }, []);
-  return available;
-}
-
-// Providers this device can use AND the server accepts. On iOS, Google is only
-// offered alongside Apple (App Store guideline 4.8).
-function useOfferedProviders() {
-  const appleAvailable = useAppleSignInAvailable();
-  const query = useQuery(trpc.authProviders.queryOptions());
-  const availability = query.data
-    ? resolveProviderAvailability({
-        platform: Platform.OS,
-        googleConfigured: Boolean(googleWebClientId),
-        googleNativeReady: google !== null,
-        appleNativeReady: appleAvailable,
-        server: query.data,
-      })
-    : { providers: [] as Provider[], reason: null };
-  return { ...availability, query };
-}
-
-function ProviderButtons({
-  providers,
-  busy,
-  onPress,
-}: {
-  providers: Provider[];
-  busy: boolean;
-  onPress: (provider: Provider) => void;
-}) {
-  const colors = useThemeColors();
-  return providers.map((provider) =>
-    provider === "google" ? (
-      google ? (
-        <google.GoogleSignInButton
-          key="google"
-          size="wide"
-          colorScheme={colors.isDark ? "dark" : "light"}
-          disabled={busy}
-          signInBehavior="none"
-          style={{ width: "100%", height: google.GOOGLE_SIGN_IN_BUTTON_HEIGHT }}
-          onPress={() => onPress("google")}
-        />
-      ) : null
-    ) : (
-      <AppleAuthentication.AppleAuthenticationButton
-        key="apple"
-        buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
-        buttonStyle={
-          colors.isDark
-            ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
-            : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
-        }
-        cornerRadius={12}
-        style={{ width: "100%", height: 44 }}
-        onPress={() => onPress("apple")}
-      />
-    ),
-  );
-}
+import {
+  getIdToken,
+  isCancelled,
+  ProviderButtons,
+  signOutOfGoogle,
+  useOfferedProviders,
+  type Provider,
+} from "../sign-in";
 
 export function AccountCard() {
   const queryClient = useQueryClient();
@@ -224,7 +92,7 @@ export function AccountCard() {
     run("Couldn't sign out", async () => {
       const { error } = await authClient.signOut();
       if (error) throw error;
-      await google?.GoogleOneTapSignIn.signOut();
+      await signOutOfGoogle();
     });
 
   const confirmDeletion = () => {

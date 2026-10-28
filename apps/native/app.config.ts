@@ -58,7 +58,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
 
   const appleTeamId = process.env.EXPO_APPLE_TEAM_ID?.trim();
   // Google sign-in on iOS needs the reversed iOS client ID as a URL scheme
-  // (react-native-nitro-google-signin, setup without Firebase).
+  // (@react-native-google-signin/google-signin, setup without Firebase).
   const googleIosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID?.trim();
   const googleIosUrlScheme = googleIosClientId
     ? `com.googleusercontent.apps.${googleIosClientId.replace(".apps.googleusercontent.com", "")}`
@@ -159,7 +159,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       "expo-apple-authentication",
       ...(googleIosUrlScheme
         ? [
-            ["react-native-nitro-google-signin", { iosUrlScheme: googleIosUrlScheme }] as [
+            ["@react-native-google-signin/google-signin", { iosUrlScheme: googleIosUrlScheme }] as [
               string,
               { iosUrlScheme: string },
             ],
