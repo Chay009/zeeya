@@ -2,6 +2,7 @@ import { AndroidConfig, type ConfigPlugin, withAndroidManifest } from "expo/conf
 
 const RECEIVER_CLASS = "expo.modules.zeeyamessagequeue.ZeeyaSmsReceiver";
 const SMS_RECEIVED_ACTION = "android.provider.Telephony.SMS_RECEIVED";
+const HEADLESS_SERVICE_CLASS = "expo.modules.zeeyamessagequeue.ZeeyaSmsHeadlessService";
 
 const withRealtimeSmsReceiver: ConfigPlugin = (config) =>
   withAndroidManifest(config, (androidConfig) => {
@@ -29,6 +30,15 @@ const withRealtimeSmsReceiver: ConfigPlugin = (config) =>
     Object.assign(receiver.$, { "android:permission": "android.permission.BROADCAST_SMS" });
 
     application.receiver = [...otherReceivers, receiver];
+
+    // Parses a newly arrived SMS in the background (see ZeeyaSmsHeadlessService).
+    const otherServices = (application.service ?? []).filter(
+      (service) => service.$?.["android:name"] !== HEADLESS_SERVICE_CLASS,
+    );
+    application.service = [
+      ...otherServices,
+      { $: { "android:name": HEADLESS_SERVICE_CLASS, "android:exported": "false" } },
+    ];
 
     return androidConfig;
   });

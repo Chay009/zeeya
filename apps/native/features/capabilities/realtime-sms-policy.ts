@@ -13,7 +13,7 @@ export function shouldSubscribeToRealtimeSms(
   return platform === "android" && appIsActive && hasCapturePermissions;
 }
 
-export function shouldNotifyBackgroundSms(
+export function shouldSyncSmsOnArrival(
   settings: Pick<LocalSettings, "backgroundSyncEnabled" | "transactionNotificationsEnabled">,
 ): boolean {
   return settings.backgroundSyncEnabled && settings.transactionNotificationsEnabled;

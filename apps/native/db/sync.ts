@@ -217,3 +217,16 @@ export function syncInboxChanges(
   inFlightSync = promise;
   return promise;
 }
+
+/**
+ * Like syncInboxChanges, but the inbox read is guaranteed to start after this
+ * call: a sync already in flight may have read the inbox before the message
+ * the caller is waiting for, so it is awaited rather than joined.
+ */
+export async function syncInboxChangesFresh(
+  readInbox: InboxReader,
+  options: SyncOptions = {},
+): Promise<SyncRun> {
+  while (inFlightSync) await inFlightSync.catch(() => undefined);
+  return syncInboxChanges(readInbox, options);
+}

@@ -13,7 +13,6 @@ import { AppStatusBar } from "@/components/app-status-bar";
 import { AppThemeProvider } from "@/contexts/app-theme-context";
 import { DatabaseProvider } from "@/db/provider";
 import { CapabilityProvider } from "@/features/capabilities/provider";
-import "@/features/capabilities/background/task";
 import { DashboardSyncProvider } from "@/features/dashboard/hooks/dashboard-sync-provider";
 import { OnboardingGate } from "@/features/onboarding/onboarding-gate";
 import { appFontsToLoad } from "@/lib/fonts";

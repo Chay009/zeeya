@@ -1,5 +1,6 @@
 package expo.modules.zeeyamessagequeue
 
+import android.app.ActivityManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -14,16 +15,17 @@ class ZeeyaSmsReceiver : BroadcastReceiver() {
     // reads the canonical inbox row, parses it with Malana, and deduplicates
     // it through the existing SQLite ledger.
     val applicationContext = context.applicationContext
-    val signal = ZeeyaSmsSignalStore.record(applicationContext, System.currentTimeMillis())
-    if (
-      ZeeyaSmsSignalStore.isBackgroundNotificationEnabled(applicationContext) &&
-      !ZeeyaSmsNotifier.isAppVisible()
-    ) {
-      // Do not inspect or display SMS contents here. The receiver's only
-      // immediate background work is a generic, privacy-safe OS notice;
-      // canonical inbox ingestion and parsing remain in the shared JS/SQL
-      // path on the next permitted worker or app launch.
-      ZeeyaSmsNotifier.show(applicationContext, signal.count)
+    ZeeyaSmsSignalStore.record(applicationContext, System.currentTimeMillis())
+    // In the foreground the app's own listener ingests; in the background the
+    // headless task does, and notifies only for transactions.
+    if (ZeeyaSmsSignalStore.isSyncOnArrivalEnabled(applicationContext) && !isAppVisible()) {
+      ZeeyaSmsHeadlessService.start(applicationContext)
     }
+  }
+
+  private fun isAppVisible(): Boolean {
+    val state = ActivityManager.RunningAppProcessInfo()
+    ActivityManager.getMyMemoryState(state)
+    return state.importance <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE
   }
 }

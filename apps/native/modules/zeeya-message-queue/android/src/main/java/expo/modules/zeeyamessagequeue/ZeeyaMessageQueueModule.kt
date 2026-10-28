@@ -23,16 +23,12 @@ class ZeeyaMessageQueueModule : Module() {
       val context = appContext.reactContext
         ?: throw MessageQueueContextUnavailableException()
       ZeeyaSmsSignalStore.acknowledge(context, generation)
-      if (ZeeyaSmsSignalStore.peek(context) == null) {
-        ZeeyaSmsNotifier.dismiss(context)
-      }
     }
 
-    AsyncFunction("setBackgroundNotificationEnabled") { enabled: Boolean ->
+    AsyncFunction("setSyncOnArrivalEnabled") { enabled: Boolean ->
       val context = appContext.reactContext
         ?: throw MessageQueueContextUnavailableException()
-      ZeeyaSmsSignalStore.setBackgroundNotificationEnabled(context, enabled)
-      if (!enabled) ZeeyaSmsNotifier.dismiss(context)
+      ZeeyaSmsSignalStore.setSyncOnArrivalEnabled(context, enabled)
     }
 
     OnStartObserving("onSmsReceived") {

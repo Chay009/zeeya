@@ -33,14 +33,14 @@ import {
   setScreenCaptureProtection,
 } from "./native-capabilities";
 import { subscribeToRealtimeSms } from "./realtime-sms";
-import { shouldNotifyBackgroundSms, shouldSubscribeToRealtimeSms } from "./realtime-sms-policy";
+import { shouldSyncSmsOnArrival, shouldSubscribeToRealtimeSms } from "./realtime-sms-policy";
 
-async function mirrorNativeBackgroundNotificationPreference(
+async function mirrorNativeSyncOnArrivalPreference(
   settings: Pick<LocalSettings, "backgroundSyncEnabled" | "transactionNotificationsEnabled">,
 ): Promise<void> {
   if (Platform.OS !== "android" || !AndroidMessageQueueModule) return;
-  await AndroidMessageQueueModule.setBackgroundNotificationEnabled(
-    shouldNotifyBackgroundSms(settings),
+  await AndroidMessageQueueModule.setSyncOnArrivalEnabled(
+    shouldSyncSmsOnArrival(settings),
   );
 }
 
@@ -76,7 +76,9 @@ export function CapabilityProvider({ children }: PropsWithChildren) {
   settingsRef.current = settings;
 
   const syncCapturedMessages = useCallback(
-    async (options: { failOnMissingReadPermission?: boolean } = {}): Promise<void> => {
+    async (
+      options: { failOnMissingReadPermission?: boolean; fresh?: boolean } = {},
+    ): Promise<void> => {
       if (!isDeviceMessageCaptureSupported()) return;
       if (deviceMessageCaptureRequiresReadPermission() && !(await hasSmsReadPermission())) {
         if (options.failOnMissingReadPermission) {
@@ -84,18 +86,19 @@ export function CapabilityProvider({ children }: PropsWithChildren) {
         }
         return;
       }
-      await syncDeviceMessages();
+      await syncDeviceMessages({ fresh: options.fresh });
       publishMessageSync();
     },
     [],
   );
 
   // While the app is active, publish the synchronized dashboard so Home's
-  // in-app caught-up dialog updates immediately. The native receiver owns
-  // the privacy-safe OS notice while backgrounded; the JS observer is
-  // unmounted outside the foreground so it cannot consume that signal.
+  // in-app caught-up dialog updates immediately. While backgrounded, the
+  // headless task handles arrivals instead; the JS observer is unmounted
+  // outside the foreground so it cannot consume that signal. The read is
+  // fresh: a sync already running may have read the inbox before this SMS.
   const notifyRealtimeSync = useCallback(async () => {
-    await syncCapturedMessages({ failOnMissingReadPermission: true });
+    await syncCapturedMessages({ failOnMissingReadPermission: true, fresh: true });
   }, [syncCapturedMessages]);
 
   const unlock = useCallback(async () => {
@@ -127,7 +130,7 @@ export function CapabilityProvider({ children }: PropsWithChildren) {
         const results = await Promise.allSettled([
           setBackgroundSyncRegistration(stored.backgroundSyncEnabled),
           setScreenCaptureProtection(stored.screenCaptureProtectionEnabled),
-          mirrorNativeBackgroundNotificationPreference(stored),
+          mirrorNativeSyncOnArrivalPreference(stored),
         ]);
         const rejected = results.find((result) => result.status === "rejected");
         if (rejected?.status === "rejected" && active) {
@@ -226,7 +229,7 @@ export function CapabilityProvider({ children }: PropsWithChildren) {
 
         const next = await updateLocalSettings({ [key]: enabled });
         if (key === "backgroundSyncEnabled" || key === "transactionNotificationsEnabled") {
-          await mirrorNativeBackgroundNotificationPreference(next);
+          await mirrorNativeSyncOnArrivalPreference(next);
         }
         setSettings(next);
         settingsRef.current = next;

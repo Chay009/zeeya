@@ -9,7 +9,7 @@ type AndroidMessageQueueEvents = {
 interface AndroidMessageQueueModule extends NativeModule<AndroidMessageQueueEvents> {
   peekPendingSmsSignal(): Promise<PendingSmsSignal | null>;
   acknowledgePendingSmsSignal(generation: number): Promise<void>;
-  setBackgroundNotificationEnabled(enabled: boolean): Promise<void>;
+  setSyncOnArrivalEnabled(enabled: boolean): Promise<void>;
   addListener(
     eventName: "onSmsReceived",
     listener: (signal: PendingSmsSignal) => void,

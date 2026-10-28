@@ -1,6 +1,7 @@
 package expo.modules.zeeyamessagequeue
 
 import android.content.Context
+import android.content.SharedPreferences
 
 data class PendingSmsSignal(
   val generation: Long,
@@ -9,26 +10,30 @@ data class PendingSmsSignal(
 )
 
 object ZeeyaSmsSignalStore {
-  private const val preferencesName = "zeeya_realtime_sms"
-  private const val pendingCountKey = "pending_count"
-  private const val lastReceivedAtKey = "last_received_at"
-  private const val generationKey = "generation"
-  private const val backgroundNotificationEnabledKey = "background_notification_enabled"
+  private const val PREFERENCES_NAME = "zeeya_realtime_sms"
+  private const val PENDING_COUNT_KEY = "pending_count"
+  private const val LAST_RECEIVED_AT_KEY = "last_received_at"
+  private const val GENERATION_KEY = "generation"
+  private const val SYNC_ON_ARRIVAL_ENABLED_KEY = "sync_on_arrival_enabled"
+  private const val LEGACY_SYNC_ON_ARRIVAL_ENABLED_KEY = "background_notification_enabled"
 
   private val observers = mutableSetOf<(PendingSmsSignal) -> Unit>()
 
-  fun record(context: Context, receivedAt: Long): PendingSmsSignal {
+  private fun preferences(context: Context): SharedPreferences =
+    context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+
+  fun record(context: Context, receivedAt: Long) {
     val (next, observersSnapshot) = synchronized(this) {
-      val preferences = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+      val preferences = preferences(context)
       val next = PendingSmsSignal(
-        generation = preferences.getLong(generationKey, 0) + 1,
-        count = preferences.getInt(pendingCountKey, 0) + 1,
-        lastReceivedAt = maxOf(receivedAt, preferences.getLong(lastReceivedAtKey, 0)),
+        generation = preferences.getLong(GENERATION_KEY, 0) + 1,
+        count = preferences.getInt(PENDING_COUNT_KEY, 0) + 1,
+        lastReceivedAt = maxOf(receivedAt, preferences.getLong(LAST_RECEIVED_AT_KEY, 0)),
       )
       preferences.edit()
-        .putInt(pendingCountKey, next.count)
-        .putLong(lastReceivedAtKey, next.lastReceivedAt)
-        .putLong(generationKey, next.generation)
+        .putInt(PENDING_COUNT_KEY, next.count)
+        .putLong(LAST_RECEIVED_AT_KEY, next.lastReceivedAt)
+        .putLong(GENERATION_KEY, next.generation)
         .commit()
       next to observers.toList()
     }
@@ -36,46 +41,47 @@ object ZeeyaSmsSignalStore {
     // store. Notify from the snapshot after releasing the monitor so an SMS
     // broadcast is never held behind arbitrary JS work.
     observersSnapshot.forEach { observer -> observer(next) }
-    return next
   }
 
   @Synchronized
   fun peek(context: Context): PendingSmsSignal? {
-    val preferences = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
-    val count = preferences.getInt(pendingCountKey, 0)
+    val preferences = preferences(context)
+    val count = preferences.getInt(PENDING_COUNT_KEY, 0)
     if (count == 0) return null
 
     return PendingSmsSignal(
-      generation = preferences.getLong(generationKey, 0),
+      generation = preferences.getLong(GENERATION_KEY, 0),
       count = count,
-      lastReceivedAt = preferences.getLong(lastReceivedAtKey, 0),
+      lastReceivedAt = preferences.getLong(LAST_RECEIVED_AT_KEY, 0),
     )
   }
 
   @Synchronized
   fun acknowledge(context: Context, acknowledgedGeneration: Long) {
-    val preferences = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
-    val currentCount = preferences.getInt(pendingCountKey, 0)
-    if (currentCount == 0) return
-    val currentGeneration = preferences.getLong(generationKey, 0)
-    if (currentGeneration != acknowledgedGeneration) return
+    val preferences = preferences(context)
+    if (preferences.getInt(PENDING_COUNT_KEY, 0) == 0) return
+    // A newer SMS arrived after the sync started; keep it pending.
+    if (preferences.getLong(GENERATION_KEY, 0) != acknowledgedGeneration) return
 
     preferences.edit()
-      .remove(pendingCountKey)
-      .remove(lastReceivedAtKey)
+      .remove(PENDING_COUNT_KEY)
+      .remove(LAST_RECEIVED_AT_KEY)
       .commit()
   }
 
-  fun setBackgroundNotificationEnabled(context: Context, enabled: Boolean) {
-    context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
-      .edit()
-      .putBoolean(backgroundNotificationEnabledKey, enabled)
-      .apply()
+  fun setSyncOnArrivalEnabled(context: Context, enabled: Boolean) {
+    preferences(context).edit().putBoolean(SYNC_ON_ARRIVAL_ENABLED_KEY, enabled).apply()
   }
 
-  fun isBackgroundNotificationEnabled(context: Context): Boolean =
-    context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
-      .getBoolean(backgroundNotificationEnabledKey, false)
+  // Installs from before the rename only have the old key until the app
+  // next writes the preference.
+  fun isSyncOnArrivalEnabled(context: Context): Boolean {
+    val preferences = preferences(context)
+    return preferences.getBoolean(
+      SYNC_ON_ARRIVAL_ENABLED_KEY,
+      preferences.getBoolean(LEGACY_SYNC_ON_ARRIVAL_ENABLED_KEY, false),
+    )
+  }
 
   @Synchronized
   fun addObserver(observer: (PendingSmsSignal) -> Unit) {
