@@ -1,5 +1,11 @@
 import alchemy from "alchemy";
-import { RateLimit, TanStackStart, VersionMetadata, Worker } from "alchemy/cloudflare";
+import {
+  R2Bucket,
+  RateLimit,
+  TanStackStart,
+  VersionMetadata,
+  Worker,
+} from "alchemy/cloudflare";
 import { config } from "dotenv";
 
 config({ path: "./.env" });
@@ -51,6 +57,12 @@ export const server = await Worker("server", {
     SENTRY_DSN: process.env.SENTRY_DSN ?? "",
     // Lets Sentry tag events with the deployed Worker version.
     CF_VERSION_METADATA: VersionMetadata(),
+    // Brand logos (apps/server/src/logos.ts): downloaded once through the
+    // Logo.dev API with its secret key, then served from R2.
+    // R2 bucket names must be lowercase; stage names (e.g. a machine name) may not be.
+    LOGOS: await R2Bucket("logos", { name: `zeeya-logos-${app.stage.toLowerCase()}` }),
+    LOGO_DEV_SECRET_KEY: alchemy.secret(process.env.LOGO_DEV_SECRET_KEY ?? ""),
+    LOGO_LIMITER: RateLimit({ namespace_id: 1003, simple: { limit: 600, period: 60 } }),
   },
   dev: {
     port: 3002,

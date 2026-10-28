@@ -52,6 +52,20 @@ describe("public gateway private-service boundary", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("forwards logo reads and refuses any other method on them", async () => {
+    const fetch = vi.fn(async () => new Response(null, { status: 200 }));
+    const read = new Request("https://api.example.com/logos/swiggy.com.png");
+    expect((await gateway.fetch(read, { BACKEND: { fetch } })).status).toBe(200);
+    expect(fetch).toHaveBeenLastCalledWith(read);
+
+    fetch.mockClear();
+    for (const method of ["POST", "OPTIONS"]) {
+      const write = new Request("https://api.example.com/logos/swiggy.com.png", { method });
+      expect((await gateway.fetch(write, { BACKEND: { fetch } })).status).toBe(405);
+    }
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("does not leak internal service errors", async () => {
     const fetch = vi.fn(async () => {
       throw new Error("private-worker internal details");

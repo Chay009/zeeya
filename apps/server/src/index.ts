@@ -11,10 +11,11 @@ import { HTTPException } from "hono/http-exception";
 import { secureHeaders } from "hono/secure-headers";
 
 import { apiLimit, authBodyLimit } from "./limits";
+import { logoEdgeCache, logoLimit, requireSession, serveLogo } from "./logos";
 import { sentryOptions } from "./sentry";
 
-// The whole public API: tRPC, plus Better Auth's handler (not tRPC). Any other
-// path is a 404. SMS never reaches the server: parsing runs on the device, and
+// The whole public API: tRPC, Better Auth's handler (not tRPC), and the brand
+// logo endpoint (binary images, so not tRPC). Any other path is a 404. SMS never reaches the server: parsing runs on the device, and
 // device data sync is planned through Turso, not this API.
 export const app = new Hono<{ Bindings: Env }>();
 
@@ -29,6 +30,9 @@ app.use(
   }),
 );
 app.on(["GET", "POST"], "/api/auth/*", authBodyLimit, (c) => createAuth().handler(c.req.raw));
+
+// Brand logos for signed-in users, cached in R2 (see logos.ts).
+app.get("/logos/:file", requireSession, logoLimit, logoEdgeCache, serveLogo);
 
 app.use(
   "/trpc/*",

@@ -314,37 +314,6 @@ export function isUnconfirmedPromotionalTransaction(
   return !hasIndependentCompletionEvidence;
 }
 
-// Money that *could* or *will* move is not money that moved. Loan and offer
-// SMS phrase a sum the user is invited to get — "Get Rs 25,000 credited to
-// your account in 5 minutes", "You are eligible for a loan of Rs 3,00,000.
-// Amount will be credited in 24 hrs", "Transfer Rs 1 … and get Rs 50
-// cashback" — and the bank grammar happily matches the amount + verb. Such
-// wording only stands as a transaction when something independent proves the
-// movement happened: a transaction reference, a reported balance, or the
-// masked account/card it hit ("A/c XX1234", "Card XX5678").
-const PROSPECTIVE_MONEY = [
-  /\bwill\s+be\s+(?:credited|debited|transferred|disbursed|deposited|refunded)\b/i,
-  /\b(?:get|receive|avail|claim|win|earn|grab|unlock)\b[^.!?\n]{0,40}?(?:rs\.?|inr|₹)\s?\d/i,
-  /\b(?:eligible|pre-?approved|pre-?qualified|instant\s+loan|personal\s+loan|apply\s+now|apply\s+in)\b/i,
-  /\b(?:would\s+you\s+like|do\s+you\s+want|you\s+can\s+(?:get|now)|you\s+could)\b/i,
-  /\b(?:offer\s+valid|t\s*&\s*c|download\s+(?:now|the\s+app)|install\s+now|click\s+here|tap\s+here)\b/i,
-  /^(?:transfer|send|pay|add|recharge|invest)\s+(?:rs\.?|inr|₹)\s?\d/i,
-] as const;
-const MASKED_ACCOUNT = /\b(?:a\/?c|acct|account|card|ac)\b[^.\n]{0,24}?(?:[x*]+\s?\d{3,}|ending\s+(?:with\s+)?\d{3,})/i;
-
-export function isProspectiveMoneyMessage(
-  message: string,
-  tokens: Token[],
-  balanceIndicatorTypes: ReadonlySet<string>,
-): boolean {
-  if (!PROSPECTIVE_MONEY.some((pattern) => pattern.test(message.trim()))) return false;
-  const provedByTokens = tokens.some(
-    (token) =>
-      token.type === "REF" || token.type === "TRANSID" || balanceIndicatorTypes.has(token.type),
-  );
-  return !provedByTokens && !MASKED_ACCOUNT.test(message);
-}
-
 // "Hi …, we have received a payment of Rs. 824.82 for your Airtel Black ID …"
 // is a biller confirming a payment the user MADE — not money coming in. From
 // a known biller sender it already routes to GRM_BILL; from an unknown sender

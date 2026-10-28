@@ -5,9 +5,16 @@ type GatewayEnv = { BACKEND: Pick<Fetcher, "fetch"> };
 export default {
   async fetch(request: Request, env: GatewayEnv): Promise<Response> {
     const path = new URL(request.url).pathname;
-    const allowedPath = path.startsWith("/trpc/") || path.startsWith("/api/auth/");
+    const isLogo = path.startsWith("/logos/");
+    const allowedPath = path.startsWith("/trpc/") || path.startsWith("/api/auth/") || isLogo;
     if (!allowedPath) {
       return Response.json({ error: "Not found" }, { status: 404 });
+    }
+    if (isLogo && request.method !== "GET") {
+      return Response.json(
+        { error: "Method not allowed" },
+        { status: 405, headers: { allow: "GET" } },
+      );
     }
     if (!["GET", "POST", "OPTIONS"].includes(request.method)) {
       return Response.json(
